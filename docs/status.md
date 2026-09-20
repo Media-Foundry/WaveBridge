@@ -2,6 +2,17 @@
 
 更新日期：2026-09-20。
 
+## 最新条件检查：入口前缀循环的有限迭代次数
+
+列区间checker成功报告增加逐线程最大迭代次数；entry_loop_check从同AST fresh
+恢复列域与归约入口义务，按精确loop/call范围连接有限递推上界。404项CPU测试
+通过，Sol只读审查未发现循环论证。真实工件
+`artifacts/wb04-entry-loops-4ITPxL/report.json` 条件checked：列数[1,1023]、步长256
+下每线程最多4次，最后一个线程最多3次；末次增量无溢出。
+这仍以到达循环、循环体正常完成及既有API/ABI为前提；两个调用正常返回义务与
+participation未解除，不声称helper可达或barrier收敛。本轮无GPU作业。见
+`.agents/handoffs/wb04-entry-loops-20260920.md`。
+
 ## 最新源码证据：归约调用前的控制义务
 
 entry_control定位精确顶层helper调用并恢复入口前缀的call/loop义务，接入

@@ -24,15 +24,27 @@ class ColumnCoverageIntervalTests(unittest.TestCase):
                             self.assertEqual(actual["status"], expected,
                                              (int_bits, lower, upper, stride, starts, fixed, actual))
                             self.assertEqual(actual["upper_check"], fixed[-1])
+                            if expected == "checked":
+                                iterations = [len(range(start, upper, stride)) for start in starts]
+                                self.assertEqual(actual["max_iterations_per_thread"], iterations)
+                                self.assertEqual(actual["max_iterations"], max(iterations))
 
     def test_zero_column_singleton_and_rejected_upper_evidence(self):
         checked = coverage.check_interval(0, 0, [0, 1], 2)
         self.assertEqual(checked["status"], "checked", checked)
         self.assertEqual(checked["interval_checked"], {"lower": 0, "upper": 0})
+        self.assertEqual(checked["max_iterations_per_thread"], [0, 0])
+        self.assertEqual(checked["max_iterations"], 0)
         rejected = coverage.check_interval(0, 7, [0], 2)
         self.assertEqual(rejected["status"], "rejected", rejected)
         self.assertEqual(rejected["counterexample"]["columns"], 7)
         self.assertEqual(rejected["upper_check"]["status"], "rejected")
+
+    def test_idle_threads_have_zero_max_iterations(self):
+        result = coverage.check_interval(2, 3, [0, 1, 2, 3, 9], 5)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["max_iterations_per_thread"], [1, 1, 1, 0, 0])
+        self.assertEqual(result["max_iterations"], 1)
 
     def test_invalid_bool_reversed_and_negative_bounds_are_unknown(self):
         cases = [

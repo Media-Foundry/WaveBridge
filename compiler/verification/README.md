@@ -223,3 +223,17 @@ parameter_id确实为已检查下标所用helper的shared形参；不拼接旧�
 无其它动态分配继续是显式前提。第三配置实参的API含义、真实ABI、源有效性、同步
 与参与也仍需成立。source_program_checked和deployable均false，不能把容量组合
 checked写成“完整内存安全”。
+
+## 入口前缀的有限递推上界
+
+`column-coverage-interval/v1`成功报告新增max_iterations_per_thread和max_iterations，
+在整个声明列数区间上分别给出每线程body执行次数及其最大值。计算依据是固定
+正步长、起点、列数上界，且已检查最后一次增量不溢出；不证明body正常返回。
+
+`entry_loop_check.check(root, thread_report, integer_types, binding,
+use_host_guard_assumptions=True)`fresh运行列域检查和归约链恢复，按精确call绑定
+及唯一loop range把entry_control义务关联到迭代上界。没有prefix loop或不能唯一
+关联则unknown。输出`conditional-entry-loop-check/v1`的checked只表示有限递推
+次数，不表示kernel入口可达或所有线程进入helper。上游列域的“线程到达循环”
+前提仍保留，不能循环使用本报告去证明该前提。body_normal_completion保持
+not_established，remaining_call_obligations原样保留，participation未建立。

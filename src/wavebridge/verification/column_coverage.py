@@ -116,8 +116,11 @@ def check_interval(lower, upper, starts, stride, *, int_bits=32):
     report["status"] = upper_check.get("status", "unknown")
     report["reason"] = upper_check.get("reason")
     if report["status"] == "checked":
+        iterations = [max(0, (upper - 1 - start) // stride + 1) for start in starts]
         report["interval_checked"] = {"lower": lower, "upper": upper}
         report["threads_checked"] = upper_check.get("threads_checked")
+        report["max_iterations_per_thread"] = iterations
+        report["max_iterations"] = max(iterations)
     elif report["status"] == "rejected":
         report["counterexample"] = {
             "columns": upper, "upper_counterexample": upper_check.get("counterexample")}
