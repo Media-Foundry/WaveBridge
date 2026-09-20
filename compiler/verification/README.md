@@ -208,3 +208,18 @@ source_program_checked/deployable始终false。当前为Python API，不提供�
 结果`conditional-shared-index-check/v1`仅连接坐标与这些整数关系；不证明shared
 指针/容量/别名、存储值、barrier或shuffle语义、参与收敛及浮点结果。线程到达
 这些阶段及所有上游API/ABI/源码有效性前提仍需成立，不授权GPU部署。
+
+## 同AST数组绑定与容量组合
+
+`shared_storage_check.check(root, thread_report, integer_types, sizeof_bytes, binding)`
+先fresh运行shared_index_check，再从原AST重新恢复归约调用链、shared数组实参和
+选定launch。组合门控核对kernel→helper精确ID、width/block一致，以及数组绑定的
+parameter_id确实为已检查下标所用helper的shared形参；不拼接旧容量成功报告。
+随后由shared_capacity检查实际静态extent或选定launch的第三配置实参字节数。
+
+报告`conditional-shared-storage-check/v1`保留indexing、chain_recovery、capacity。
+输入绑定由input_sha256和sizeof_bytes_sha256共同组成，两者都须保留。结论仅为
+该条件模型的整数下标与对应数组容量，不证明独占动态shared布局：单数组、偏移0、
+无其它动态分配继续是显式前提。第三配置实参的API含义、真实ABI、源有效性、同步
+与参与也仍需成立。source_program_checked和deployable均false，不能把容量组合
+checked写成“完整内存安全”。

@@ -2,6 +2,17 @@
 
 更新日期：2026-09-20。
 
+## 最新组合门控：同AST共享下标、数组绑定与容量
+
+shared_storage_check先fresh检查坐标及共享下标，再重建调用链、数组实参与选定
+launch；核对helper/shared形参、width/block一致后检查同一数组容量，避免混用
+不相干的成功报告。388项CPU测试通过，覆盖动态/静态容量不足、绑定错配和上游
+短路。真实HIP工件 `artifacts/wb04-shared-storage-QGyPZ1/report.json` 条件checked：
+8个float槽需32字节，launch提供128字节；运行前后src实现hash一致。
+这不是新GPU结果，也不是整体内存安全证明。单数组偏移0、无其它动态分配、
+外部API/ABI、源有效性、别名/同步/参与仍是前提。详见
+`.agents/handoffs/wb04-shared-storage-20260920.md`。
+
 ## 最新组合门控：共享写入/收集谓词与整数下标
 
 块归约恢复保留四个完整shared谓词/下标AST；shared_indexing在显式ABI和已建立的

@@ -197,3 +197,8 @@ kernel循环与共同起点/步长是支持边界。它检查索引生成次数�
 `conditional-shared-index-check/v1`重新检查同AST的helper坐标，并检查完整写入/
 收集谓词及活跃线程下标表达式；结论只覆盖整数关系，不将数组下标模型升级为
 真实shared读写安全或同步保证。所有坐标、ABI、有效执行与参与条件仍显式保留。
+
+`conditional-shared-storage-check/v1`进一步fresh恢复同AST调用链、数组绑定和
+选定launch，核对已检查helper/shared形参/线程模型一致后比较容量。整数下标与
+容量两项条件结论绑定到同一数组，不自动证明动态shared独占布局、别名、同步或
+整体内存安全；单数组偏移0、实际配置及ABI仍为前提，不签发部署许可。
