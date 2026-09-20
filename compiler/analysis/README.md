@@ -78,3 +78,22 @@ Kernel JSON 或 oracle。输出目录必须不存在，其中 `ast.json` 与 `re
 报告保留 `value_equivalence=not_established`、`start_semantics=unknown`。
 原始AST哈希和此次分析实现文件哈希同时记录；不支持的调用种类亦保留未知，
 不从调用计数中静默删除。
+
+## XOR 归约 helper
+
+`xor_reduction.recover(root, function_id, shuffle_declaration_id, int_bits)`
+恢复有限的单参数float helper：`offset=width/2; offset>0; offset>>=1`，
+循环体为同一accumulator加上选定函数的三参数调用，最后返回该accumulator。
+width来自真实常量定义；额外语句、错误ID、改变条件/更新均未知。
+`shuffle_declaration_id` 是显式外部选择，未证明其intrinsic语义。
+
+可保存绑定原始AST哈希的恢复结果及独立条件路由检查：
+
+```bash
+PYTHONPATH=src python3 -m wavebridge.analysis.xor_reduction AST_REPORT.json \
+  --root-index 0 --function-id CLANG_FUNCTION_ID --shuffle-id CLANG_CALLEE_ID \
+  --int-bits 32 --output artifacts/new-xor-report.json
+```
+
+Clang ID仅对指定AST工件/root有效。`source_program_checked=false` 始终保留；
+路由检查的条件保证见 [协议范围](../../docs/contracts.md)，不能当成完整kernel验证。

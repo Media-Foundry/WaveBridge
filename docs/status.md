@@ -138,4 +138,14 @@ WB-03 源码入口现已连接起点声明的初始化调用证据：两个循�
 最终完整源码重跑工件在 `artifacts/wb03-source-origins-02/{ast,report}.json`，
 两个step仍为256，共用起点的调用证据为OCKL local id，语义标记仍为unknown。
 
+WB-03/04 的首项通信路由证据：真实 HIP `warp_reduce_sum_logical32` helper
+恢复出width32与offsets `[16,8,4,2,1]`、同一accumulator的加法与返回关系。
+在外部声明的全参与logical-XOR快照语义下，独立checker枚举全部32个lane，
+确认每个输出恰好含每个初始贡献一次。持久报告为
+`artifacts/wb03-xor-evidence-01.json`，绑定既有完整AST文件哈希。
+真实Clang改名/width64源码变体也完成恢复与条件路由检查；这是CPU模型检查，
+不是native64 GPU执行。缺阶段/重复阶段被拒绝。`make check` 140项通过
+（含9项真实Clang测试）。intrinsic语义、参与收敛、浮点值、共享内存第二阶段、
+输出归属和候选源码检查尚未建立，WB-03/04及G2/G3均不能算整体通过。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03 关系恢复与 WB-04～08 仍待实施。
