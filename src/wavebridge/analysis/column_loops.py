@@ -80,17 +80,45 @@ def _contains_ref(node: dict[str, Any], declaration_ids: set[str]) -> bool:
     return False
 
 
-def _direct_ref_id(node: dict[str, Any]) -> str | None:
+def _storage_target(node: dict[str, Any], protected_ids: set[str]) -> None:
+    """Accept only direct scalar storage or a simple array element, never guess aliases."""
     current = node
-    while current.get("kind") in {"ParenExpr", "ImplicitCastExpr"}:
+    while current.get("kind") == "ParenExpr":
         children = _children(current)
         if len(children) != 1:
-            return None
+            raise _Unknown("unsupported_storage_target", current.get("range"))
         current = children[0]
-    referenced = current.get("referencedDecl")
-    if current.get("kind") == "DeclRefExpr" and isinstance(referenced, dict):
-        return referenced.get("id") if isinstance(referenced.get("id"), str) else None
-    return None
+    if current.get("kind") == "DeclRefExpr":
+        referenced = current.get("referencedDecl", {})
+        if referenced.get("id") in protected_ids:
+            raise _Unknown("protected_variable_may_be_modified", current.get("range"))
+        spelling = referenced.get("type", {}).get("qualType", "")
+        if (not isinstance(referenced.get("id"), str) or
+                referenced.get("kind") not in {"VarDecl", "ParmVarDecl"} or "&" in spelling):
+            raise _Unknown("unsupported_storage_target", current.get("range"))
+        return
+    if current.get("kind") == "ArraySubscriptExpr":
+        children = _children(current)
+        if len(children) == 2:
+            base = children[0]
+            while base.get("kind") in {"ParenExpr", "ImplicitCastExpr"}:
+                parts = _children(base)
+                if (len(parts) != 1 or (base.get("kind") == "ImplicitCastExpr" and
+                        base.get("castKind") not in {"LValueToRValue", "ArrayToPointerDecay", "NoOp"})):
+                    raise _Unknown("unsupported_storage_target", current.get("range"))
+                base = parts[0]
+            # The index is evaluated as a value; the enclosing traversal checks its effects.
+            if base.get("kind") == "DeclRefExpr" and not _contains_ref(base, protected_ids):
+                return
+    raise _Unknown("unsupported_storage_target", current.get("range"))
+
+
+BODY_KINDS = {
+    "CompoundStmt", "DeclStmt", "VarDecl", "NullStmt", "IfStmt",
+    "DeclRefExpr", "IntegerLiteral", "FloatingLiteral", "CXXBoolLiteralExpr",
+    "ParenExpr", "ImplicitCastExpr", "CXXStaticCastExpr", "CStyleCastExpr",
+    "BinaryOperator", "CompoundAssignOperator", "UnaryOperator", "ArraySubscriptExpr",
+}
 
 
 def _check_body(body: dict[str, Any], protected_ids: set[str]) -> None:
@@ -102,9 +130,18 @@ def _check_body(body: dict[str, Any], protected_ids: set[str]) -> None:
             raise _Unknown("unsupported_control_flow_in_body", node.get("range"))
         if kind in CALL_KINDS:
             raise _Unknown("call_in_body", node.get("range"))
+        # A whitelist is intentional: asm, constructors, statement expressions,
+        # opaque builtins and new AST kinds cannot silently be treated as pure.
+        if kind not in BODY_KINDS:
+            raise _Unknown("unsupported_body_effect", node.get("range"))
         if kind == "UnaryOperator" and node.get("opcode") in {"++", "--", "&"}:
             if _contains_ref(node, protected_ids):
                 raise _Unknown("protected_variable_may_be_modified", node.get("range"))
+            if node.get("opcode") in {"++", "--"}:
+                children = _children(node)
+                if len(children) != 1:
+                    raise _Unknown("unsupported_storage_target", node.get("range"))
+                _storage_target(children[0], protected_ids)
         if kind == "VarDecl" and "&" in (_type(node) or ""):
             if any(_contains_ref(child, protected_ids) for child in _children(node)):
                 raise _Unknown("protected_variable_reference_alias", node.get("range"))
@@ -112,10 +149,9 @@ def _check_body(body: dict[str, Any], protected_ids: set[str]) -> None:
             opcode = node.get("opcode")
             if opcode in ASSIGNMENT_OPCODES:
                 children = _children(node)
-                # Writing output[index] reads index; it does not write the index variable.
-                # Only an exact protected DeclRef lvalue is a supported definite mutation.
-                if children and _direct_ref_id(children[0]) in protected_ids:
-                    raise _Unknown("protected_variable_may_be_modified", node.get("range"))
+                if len(children) != 2:
+                    raise _Unknown("unsupported_storage_target", node.get("range"))
+                _storage_target(children[0], protected_ids)
 
 
 def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> dict[str, Any]:
@@ -123,6 +159,9 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> 
         "status": "unknown", "reason": None, "range": loop.get("range"),
         "induction": None, "start": None, "bound": None, "step": None,
         "step_source": None,
+        "header_recurrence_observed": False,
+        "body_preserves_induction": "not_established",
+        "body_preserves_bound": "not_established",
         "condition_ast": None, "assumptions": {
             "signed_recurrence_overflow": "external_precondition_unproven",
             "iteration_domain": "external_precondition_unproven",
@@ -211,11 +250,14 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> 
         if type(step_value) is not int or step_value <= 0:
             raise _Unknown("step_not_positive", step_expr.get("range"))
         step_source["value"] = step_value
+        item["header_recurrence_observed"] = True
 
         protected = {induction_id, bound_id}
         if start_id is not None:
             protected.add(start_id)
         _check_body(body, protected)
+        item.update(body_preserves_induction="established_in_supported_effect_subset",
+                    body_preserves_bound="established_in_supported_effect_subset")
         item.update(status="recovered", induction={"declaration_id": induction_id,
                     "range": induction.get("range")}, start=start, bound=bound,
                     step=step_value, step_source=step_source, condition_ast=condition)

@@ -26,6 +26,9 @@ class ColumnDomainTests(unittest.TestCase):
         self.bind_hashes()
         self.columns = {"status": "recovered", "function_id": "kernel", "loops": [
             {"status": "recovered", "range": {"begin": i}, "step": 256,
+             "header_recurrence_observed": True,
+             "body_preserves_induction": "established_in_supported_effect_subset",
+             "body_preserves_bound": "established_in_supported_effect_subset",
              "bound": {"kind": "parameter", "declaration_id": "parameter"},
              "start": {"kind": "declaration_reference", "declaration_id": "tid"}}
             for i in (1, 2)]}
@@ -65,6 +68,12 @@ class ColumnDomainTests(unittest.TestCase):
             self.bind_hashes()
             self.thread["input_sha256"][key] = "stale"
             self.assertEqual(self.run_check()["status"], "unknown")
+
+    def test_header_observation_alone_is_not_a_recurrence(self):
+        for field in ("header_recurrence_observed", "body_preserves_induction", "body_preserves_bound"):
+            self.setUp()
+            del self.columns["loops"][0][field]
+            self.assertEqual("unknown", self.run_check()["status"])
 
     def test_parameter_write_escape_and_early_exit_are_unknown(self):
         for extra in ({"kind": "DeclRefExpr", "referencedDecl": {"id": "parameter"}},

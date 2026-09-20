@@ -15,7 +15,20 @@
       "manual_oracle": "cases/llama-rmsnorm/oracle/manual.json",
       "baseline_status": "sanity_passed_nine_deterministic_shapes",
       "baseline_evidence": "cases/llama-rmsnorm/evidence.json",
-      "source_recovery": "not_implemented",
+      "source_recovery": "input_variant_specific_limited_mvp_not_fully_accepted",
+      "input_variants": {
+        "original_upstream_translation_unit": {"source_recovery": "not_validated"},
+        "manual_standalone_hip": {
+          "source_recovery": "restricted_source_analysis_mvp",
+          "source_path": "cases/llama-rmsnorm/baseline/rmsnorm_logical32.hip.cpp",
+          "full_wb03_acceptance": false
+        },
+        "manual_cuda_adapter": {
+          "source_recovery": "not_validated_by_wavebridge",
+          "polygeist_baseline": "patched_manual_O1_nine_deterministic_inputs_passed",
+          "evidence": "../.agents/handoffs/polygeist-o1-numeric-20260920.md"
+        }
+      },
       "validation_scope": "nine deterministic shapes on one verified wave32 target; not full frozen-domain validation",
       "holdout_status": "not_established"
     }

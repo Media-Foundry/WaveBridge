@@ -1,5 +1,13 @@
 # 关系恢复
 
+## 列循环副作用边界（2026-09-21修复）
+
+循环体采用受限节点白名单与存储目标分类，不能识别的写入目标不得被当成纯读。
+`output[col]`将col作为索引读取；直接写col/边界/起点、引用逃逸、复杂左值写入、
+不透明汇编或其它未支持效果使恢复unknown。报告分开记录观察到的循环头和
+循环体是否保持induction/bound；保持结论仍带memory_no_alias和有效源程序前提。
+真实Clang回归覆盖引用转换、逗号左值和汇编，不算独立ML代码谱系。
+
 row-prefix报告的source_offset/output_offset保留完整`offset_ast`及`update_ast`，
 包括乘法外层转换；结构恢复不解除整数转换或指针有效性义务。两侧同样窄化仍
 可以是匹配的结构，必须交由独立整数checker检查，不能将cast signature相同当证明。

@@ -1,6 +1,22 @@
 # 当前状态
 
-更新日期：2026-09-20。
+更新日期：2026-09-21。
+
+## WB-03 验收状态与P1修复
+
+WB-03是受限源码分析MVP，部分WB-04条件检查已接通；不是完整研究验收通过。
+独立谱系留出验证、完整原始生产TU处理与完整编译输入依赖绑定仍未建立。
+
+已在6f947ec复现审阅指出的循环体效果漏洞：真实Clang AST的引用转换、C-style
+引用转换、逗号左值和汇编四变体均错误recovered。修复改为存储目标分类及节点
+白名单，未知效果保守拒绝，区分header观察与body保持状态，下游列域checker
+必须同时获得保持证据。当前四变体均unknown，普通下标写入保持支持；原HIP
+AST两个step256循环亦继续recovered。451项CPU测试通过，含不mock循环/launch/
+guard恢复的Clang→column_domain_check组合正负例（线程报告仍是外部fixture
+前提），及实际CPU执行512/768漏列witness。未运行GPU。
+CI新增显式Clang18任务并记录版本，尚未核验该远端任务结果。Polygeist总结与
+corpus输入版本状态已同步；O1九输入通过来自既有记录，不是本轮重新实测。
+详见 `.agents/handoffs/wb03-body-effects-fix-20260921.md`。
 
 ## 最新组合门控：两处行偏移的整数关系
 

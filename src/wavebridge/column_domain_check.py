@@ -101,6 +101,9 @@ def check(root, thread_report, integer_types, binding, *, use_host_guard_assumpt
     for loop in loops:
         bound, start = loop.get("bound"), loop.get("start")
         if (loop.get("status") != "recovered" or not isinstance(bound, dict) or
+                loop.get("header_recurrence_observed") is not True or
+                loop.get("body_preserves_induction") != "established_in_supported_effect_subset" or
+                loop.get("body_preserves_bound") != "established_in_supported_effect_subset" or
                 bound.get("kind") != "parameter" or not isinstance(bound.get("declaration_id"), str) or
                 not bound["declaration_id"] or not isinstance(start, dict) or
                 start.get("kind") != "declaration_reference" or

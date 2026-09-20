@@ -3,6 +3,23 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  clang-source-regressions:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y clang-18
+      - name: Record compiler and run real source regressions
+        env:
+          PYTHONPATH: src
+        run: |
+          export PATH=/usr/lib/llvm-18/bin:$PATH
+          command -v clang++
+          clang++ --version
+          test "$(clang++ -dumpversion | cut -d. -f1)" = 18
+          python -m unittest discover -s tests -p '*clang*.py' -v
   reference-model:
     runs-on: ubuntu-latest
     strategy:

@@ -185,6 +185,13 @@ checker。外部`thread-start-assumptions/v1`绑定root hash、kernel、选定la
 
 ## 条件列数域覆盖
 
+循环报告将`header_recurrence_observed`与`body_preserves_induction`、
+`body_preserves_bound`分开。后两项只有在受支持的副作用子集中完成检查才为
+`established_in_supported_effect_subset`；仅观察循环头不允许进入列域checker。
+允许的存储目标为直接非保护变量及简单数组下标；引用转换、逗号等复杂写入
+目标和未支持节点（包括汇编）返回unknown。数组写入仍依赖不与受保护标量
+别名的显式前提；这不是任意C++别名分析，也不证明循环体内存访问有效。
+
 `column-coverage-interval/v1`在固定starts/stride与signed递推语义下，将上界的
 索引覆盖和末增量安全性推广到整个闭区间，保留完整upper_check及域内拒绝反例。
 `conditional-column-domain-check/v1`将同AST线程证据与新恢复的launch列数实参、

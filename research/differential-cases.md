@@ -16,9 +16,13 @@ G1 的可审查产物是完整案例包和能力表，而不是预先确定“�
 
 2026-09-20补充[固定版本与共同案例待执行矩阵](baseline-checks-20260920.md)：
 Polygeist论文提交及LLVM子模块已定位，CKTI出版元数据已核实。后续已实际构建
-带环境兼容补丁的Polygeist ROCm后端，并对人工host adapter生成MLIR/HSACO；
-仍有共享容量/launch遗漏及未解析shuffle、rsqrt符号，未进入GPU执行。
-静态shared诊断消除了容量不足，却未消除未解析符号；不能把这些普通lowering
-缺口直接当成本项目关系恢复的创新。CKTI仍未执行，G1仍未通过。
+带环境兼容补丁的Polygeist ROCm后端。早期共享容量/launch遗漏及未解析符号
+记录保留；后续人工static-shared、OCML/OCKL适配，加上wrapper、AS5地址空间和
+wave库常量兼容补丁，已打通完整RMSNorm执行。O0失败证据仍保留，O1版本在
+W7900的9个确定性输入上通过冻结数值协议，见
+[完整O1记录](../.agents/handoffs/polygeist-o1-numeric-20260920.md)。
+这是人工适配baseline，不是原始输入的自动支持、native64适配或性能收益证据；
+不能继续用“Polygeist没跑起来”支持研究差异。本次仅同步既有记录，未重跑GPU。
+CKTI仍未执行，G1仍未通过。
 
 2026-09-20 的候选源码核对见 `benchmarks/intake/llama-rmsnorm.json`。该版本已有显式 logical32 的 HIP 路径，应作为强基线；尚无证据证明它需要本项目的方法。首例需要 XOR shuffle、共享内存归约与广播及浮点协议，不能直接套用当前 qdot 检查器。

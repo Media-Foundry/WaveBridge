@@ -41,6 +41,22 @@ def root_with(loop_node, extra=None, function_id="fn"):
 
 
 class ColumnLoopTests(unittest.TestCase):
+    def test_complex_storage_targets_and_opaque_effects_fail_closed(self):
+        for identifier in ("i", "limit", "seed"):
+            for kind in ("CXXStaticCastExpr", "CStyleCastExpr"):
+                target = typed(kind, castKind="NoOp", inner=[ref(identifier)])
+                assignment = typed("CompoundAssignOperator", opcode="+=", inner=[target, literal(32)])
+                result = recover(root_with(loop(body={"kind": "CompoundStmt", "inner": [assignment]})),
+                                 "fn", 32)["loops"][0]
+                self.assertEqual("unknown", result["status"])
+                self.assertTrue(result["header_recurrence_observed"])
+                self.assertEqual("not_established", result["body_preserves_induction"])
+                self.assertEqual("not_established", result["body_preserves_bound"])
+        for kind in ("GCCAsmStmt", "MSAsmStmt", "StmtExpr", "CXXConstructExpr", "FutureOpaqueExpr"):
+            result = recover(root_with(loop(body={"kind": kind})), "fn", 32)
+            self.assertEqual("unknown", result["status"])
+            self.assertEqual("unsupported_body_effect", result["loops"][0]["reason"])
+
     def test_renamed_loop_and_step_change_are_recovered(self):
         result = recover(root_with(loop(8)), "fn", 32)
         self.assertEqual("recovered", result["status"])
