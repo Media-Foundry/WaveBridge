@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新提交验收：CUDA 共同输入准备
+
+新增首例 RMSNorm 的人工 HIP→CUDA API 移植及来源哈希清单，保留原协议。
+CPU 回归核对三个计算函数体除明确的 shuffle API 替换外与 HIP 父版本一致；
+这不是语义等价证明，也不增加生产 kernel 谱系。主代理重跑 `make check`，
+250 项测试通过。CUDA 编译、CUDA GPU 执行与 Polygeist 共同案例对照尚未建立，
+G1 不因此通过。按用户要求在当前分支直接 commit，不创建 PR、不推送。
+交接见 `.agents/handoffs/cuda-common-input-20260920.md`。
+
 ## 已落地
 
 - 仓库分层、模块依赖规则、协议和设计决策记录。

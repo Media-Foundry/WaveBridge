@@ -1,0 +1,87 @@
+{
+  "schema_version": "manual-cuda-port/v1",
+  "case_id": "llama-rmsnorm-f32",
+  "status": "source_port_not_cuda_gpu_validated",
+  "derivation": "manual_minimal_hip_to_cuda_api_port",
+  "automatic_recovery": false,
+  "parent": {
+    "path": "baseline/rmsnorm_logical32.hip.cpp",
+    "sha256": "7284151f806d710ff3396b94b62b3ec35d5bef3f44815e1e7837aad66dc85823"
+  },
+  "cuda_source": {
+    "path": "baseline/rmsnorm_logical32.cu",
+    "sha256": "069811c2d7f40a9df0b2927837f4190ce9b7de9ad35e90e8f68a29bc78a52671"
+  },
+  "protocol": {
+    "path": "protocol.json",
+    "sha256": "f8706a25e68b2354cc839c5d9a08aee7e0abf1fded236bcdfe1f3d577808dcae",
+    "status": "unchanged"
+  },
+  "license": {
+    "spdx": "MIT",
+    "path": "LICENSE.upstream",
+    "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+  },
+  "upstream": {
+    "repository": "https://github.com/ggml-org/llama.cpp",
+    "revision": "b23efaa2ef147f547ee75cbf0c621d61904de80e"
+  },
+  "preserved_structure": [
+    "logical width 32 and block size 256 constants",
+    "XOR reduction offsets 16,8,4,2,1 derived by the source loop",
+    "per-logical-group shared partial write by lane zero",
+    "block-wide barrier, shared partial reload, second XOR reduction, and broadcast",
+    "two column loops with start threadIdx.x and stride 256",
+    "grid nrows, block 256, dynamic shared memory 128 bytes",
+    "frozen input domain and numeric comparison protocol"
+  ],
+  "manual_changes": [
+    {
+      "area": "runtime_header_and_math_shim",
+      "from": "HIP runtime and math headers plus AMD OCML rsqrtf compatibility macro",
+      "to": "cuda_runtime.h and CUDA-provided rsqrtf declaration",
+      "semantic_claim": "not_established"
+    },
+    {
+      "area": "xor_shuffle_intrinsic",
+      "from": "__shfl_xor(value, offset, 32)",
+      "to": "__shfl_xor_sync(0xffffffffu, value, offset, 32)",
+      "semantic_claim": "conditional_on_full_active_converged_logical32_group"
+    },
+    {
+      "area": "runtime_api",
+      "from": "hipError_t, hipMalloc/hipMemcpy/hipFree and HIP device/version queries",
+      "to": "cudaError_t, cudaMalloc/cudaMemcpy/cudaFree and CUDA device/version queries",
+      "semantic_claim": "manual_api_mapping_not_execution_validation"
+    },
+    {
+      "area": "launch_syntax",
+      "from": "hipLaunchKernelGGL with grid, block, shared bytes, stream and arguments",
+      "to": "CUDA triple-chevron launch with the same grid, block, shared bytes, stream and arguments",
+      "semantic_claim": "source_shape_preserved_not_device_validated"
+    },
+    {
+      "area": "device_identity_output",
+      "from": "HIP name, GCN architecture, PCI ID and HIP versions",
+      "to": "CUDA name, PCI ID and CUDA versions; no GCN architecture field",
+      "semantic_claim": "diagnostic_only"
+    },
+    {
+      "area": "typed_allocation",
+      "from": "HIP typed pointer allocation calls",
+      "to": "cudaMalloc calls with explicit void** casts",
+      "semantic_claim": "manual_api_mapping_not_execution_validation"
+    }
+  ],
+  "external_assumptions": [
+    "all 32 lanes named by the shuffle mask are active and converged at every shuffle",
+    "the CUDA compilation target implements the recorded logical32 subgroup operations",
+    "the CUDA runtime launch and allocation APIs have their documented behavior"
+  ],
+  "validation": {
+    "cuda_compile": "not_yet_established",
+    "cuda_gpu_execution": "not_run",
+    "cuda_numeric_comparison": "not_run",
+    "machine_code_warp_metadata": "not_extracted"
+  }
+}

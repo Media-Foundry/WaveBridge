@@ -39,3 +39,8 @@ runtime/driver 身份；host 属性中的 warp size 不会单独被当作物理�
 `nrows=3`，`ncols∈{1,31,32,33,255,256,257,777,1023}` 的全部输出均满足预冻结
 容差，观测到的最大绝对误差不超过 `1.1920928955078125e-07`。这些只建立九个
 确定 shape 的 baseline sanity，不建立整个协议域、留出谱系、自动恢复或 G1。
+
+另提供供共同案例接入准备的 [CUDA 人工移植](cuda-port.md)，来源、文件哈希和
+全部 API 修改类别见 `cuda-port.json`。CPU 回归核对计算函数体除显式 shuffle
+API 替换外保持一致；这不是跨 API 语义证明。CUDA 编译和 GPU 数值验证尚未建立，
+原 HIP 执行记录不适用于该 CUDA 文件，也不表示 Polygeist 已能接入此案例。
