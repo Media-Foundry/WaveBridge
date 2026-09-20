@@ -102,6 +102,13 @@ receiver和成员callee的receiver须完整一致，成员目标须exact ID唯�
 `recovered`只说明条件结构连接，初始化值等价、坐标语义、整核正确性及部署仍未建立。
 `receiver_purity=not_established`也保持不变，不能据此删除receiver求值。
 
+## 块级索引初始化证据
+
+块级归约恢复还保留`index_initializers.group/lane`的完整初始化AST，不仅保留
+`coordinate_asts`中的左操作数。这样独立检查可见除法/取模、宽度操作数转换和
+最终赋给const int的窄化，而不从扁平cast列表猜表达式顺序。恢复报告自身的
+coordinate/conversion语义状态不因此升级；组合检查见verification说明。
+
 ## XOR 归约 helper
 
 `xor_reduction.recover(root, function_id, shuffle_declaration_id, int_bits)`

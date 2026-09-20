@@ -32,6 +32,14 @@ class BlockReductionClangTests(unittest.TestCase):
         self.assertEqual(unsigned["status"], "recovered", unsigned)
         self.assertEqual(unsigned["conversion_semantics"], "not_established")
         self.assertTrue(unsigned["casts"])
+        self.assertEqual(set(unsigned["index_initializers"]), {"group", "lane"})
+        for name, opcode in (("group", "/"), ("lane", "%")):
+            initializer = unsigned["index_initializers"][name]
+            self.assertEqual(initializer["kind"], "ImplicitCastExpr")
+            self.assertEqual(initializer["castKind"], "IntegralCast")
+            self.assertEqual(initializer["inner"][0]["opcode"], opcode)
+            self.assertEqual(initializer["inner"][0]["inner"][0],
+                             unsigned["coordinate_asts"][name + "_coordinate"])
         missing = recover(root, functions["missing_barrier"], functions["reduce_group"],
                           functions["rendezvous"], 32)
         self.assertEqual(missing["status"], "unknown")

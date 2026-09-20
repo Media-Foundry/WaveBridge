@@ -150,3 +150,26 @@ getter的[0,block.x-1]区间由已检查block配置与该外部local-id语义共
 浮点等价或外部实现本身。嵌套checker的premises保留；block checker只检查配置
 与一维模型相符，不再预设kernel起点使用x，避免将待证结论作为自身前提。
 source_program_checked/deployable始终false。当前是Python API，无自动部署或CLI。
+
+## Helper 的逐线程 group/lane 分解
+
+`verification.index_partition.check(expression, coordinate_expression, width_declaration_id,
+width, block_threads, integer_types, operation=...)`枚举最多1024个线程，逐点核对
+完整初始化表达式是否为`t//width`或`t%width`，不以输出范围相等替代关系相等。
+表达式最多128节点/32层，须含一个完整AST相等的坐标锚点；支持非负整数字面量、
+精确宽度声明引用、括号、允许的整数转换和除/余运算。逐节点核对显式ABI和
+转换值保持，坐标或宽度含义仍是外部前提。结果`index-partition-check/v1`只描述
+该模型上的逐点关系，窄化/错误分解可rejected，不支持/缺证据为unknown。
+
+`block_coordinate_check.check(root, thread_report, integer_types, binding)`是组合层。
+要求真正的`conditional-thread-start-check/v1`成功证据，并重新核对root、ABI、
+协议hash与kernel/launch；hash绑定不是证据真实性认证。随后从原AST重新发现
+已连接的block helper，核对其width/block与线程报告的关系链一致。
+
+group/lane的两个坐标表达式分别重新建立结果调用连接，并检查同一外部local-id
+协议和域下的getter/坐标转换；然后将原始完整初始化式交给逐点分解checker。
+返回`conditional-block-coordinate-check/v1`，只证明显式协议下这两个初始化式
+分别等于local_x/width和local_x%width。该范围不证明其它cast、writer谓词、
+参与收敛、shared索引访问、同步、shuffle路由或浮点等价。API语义在helper内
+仍成立、源码有效性及实际launch配置继续是前提，不签发source_program_checked
+或deployable。前端恢复仍属于可信基础，不能宣称独立验证了全部编译器。

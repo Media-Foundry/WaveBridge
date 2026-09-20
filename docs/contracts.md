@@ -173,3 +173,12 @@ checker。外部`thread-start-assumptions/v1`绑定root hash、kernel、选定la
 轴字段映射和local-id接口语义。满足全部门槛才可条件性确认该launch下列起点
 等于local x及其区间；原始AST可信性、外部API真实性和实际运行配置仍是前提。
 不授权GPU部署，不扩大到其它坐标读取、其它launch或完整kernel正确性。
+
+## 条件索引分解
+
+`index-partition-check/v1`在显式坐标锚点等于local_x和宽度常量绑定前提下，
+检查完整表达式在每个线程上的除法/余数关系及整数值保持。区间输出只是摘要，
+成功依据是逐点相等。`conditional-block-coordinate-check/v1`将同AST的真实线程
+起点证据、helper源码恢复、两个getter/坐标转换与该checker连接；外部local-id
+协议、ABI、源码有效性和实际运行配置继续显式保留。结论只覆盖group/lane
+初始化式，不自动解除路由、同步、其它表达式转换或整核数值正确性义务。

@@ -2,6 +2,19 @@
 
 更新日期：2026-09-20。
 
+## 最新组合门控：helper坐标与逐线程索引分解
+
+块归约恢复现保留完整group/lane初始化AST；独立index_partition检查器在显式
+坐标锚点/宽度/ABI下逐线程检查除法或余数与转换值保持，不以范围相同代替映射。
+block_coordinate_check重新发现同AST中已连接的helper，将两次坐标读取分别
+连接到同一外部local-id协议，再检查完整初始化式。355项CPU测试通过，含同范围
+错误映射被拒绝、真实Clang保留unsigned外层转换及组合门控回归。
+真实HIP工件 `artifacts/wb04-block-coordinates-8Jv9Ru/report.json` 条件checked：
+block256/width32下逐点符合group=t/32、lane=t%32，范围分别0..7与0..31。
+Sol审查及实现hash核验通过。结论只覆盖两个初始化式；其它转换、writer谓词、
+参与/同步/shared访问和浮点关系仍未证明，无GPU执行。见
+`.agents/handoffs/wb04-block-coordinates-20260920.md`。
+
 ## 最新组合门控：同AST的block、getter与列起点
 
 新增initializer_domain转换链checker与thread_start_check组合API。后者从同一
