@@ -151,3 +151,10 @@ CUDA或非generic路径的分支。它不是原论文工件，也不是WaveBridg
 目前仅通过host编译/链接，尚未执行。它本身不是部署门控：链接工件含GPU注册
 constructor，运行前必须由外部核对设备、工件、wave库配置与数值协议。
 当前工件wave32 metadata与wave64库控制常量不一致，暂不部署；不能用链接成功放行。
+
+后续 `patches/rocm-device-wave.patch` 在 serializer 优化之前读取实际函数 subtarget，
+统一选择 `__oclc_wavefrontsize64`；波宽未知或模块内混合时拒绝。该补丁叠加在
+上述带补丁的固定 Polygeist 构建，不是上游原版或 WaveBridge 分析算法。
+双目标静态复测已得到 gfx1100 wave32/常量0、gfx90a wave64/常量1；原 host harness
+仍绑定旧工件，不能直接运行。尚无GPU数值验收；详见
+[波宽补丁记录](../../.agents/handoffs/polygeist-wave-patch-20260920.md)。

@@ -1,0 +1,60 @@
+diff --git a/lib/polygeist/Passes/SerializeToHsaco.cpp b/lib/polygeist/Passes/SerializeToHsaco.cpp
+index 1279bf3a324..f86c70e20e2 100644
+--- a/lib/polygeist/Passes/SerializeToHsaco.cpp
++++ b/lib/polygeist/Passes/SerializeToHsaco.cpp
+@@ -28,6 +28,7 @@
+ #include "llvm/IRReader/IRReader.h"
+ #include "llvm/Linker/Linker.h"
+ 
++#include "llvm/CodeGen/TargetSubtargetInfo.h"
+ #include "llvm/MC/MCAsmBackend.h"
+ #include "llvm/MC/MCAsmInfo.h"
+ #include "llvm/MC/MCCodeEmitter.h"
+@@ -132,6 +133,47 @@ SerializeToHsacoPass::optimizeLlvm(llvm::Module &llvmModule,
+            << "Invalid serizalize to gpu blob optimization level"
+            << llvmOptLevel << "\n";
+ 
++  if (auto *wavefrontSize64 =
++          llvmModule.getNamedGlobal("__oclc_wavefrontsize64")) {
++    Optional<bool> moduleUsesWave64;
++    bool foundDefinition = false;
++    for (llvm::Function &function : llvmModule) {
++      if (function.isDeclaration())
++        continue;
++
++      foundDefinition = true;
++      const llvm::TargetSubtargetInfo *subtarget =
++          targetMachine.getSubtargetImpl(function);
++      if (!subtarget)
++        return getOperation().emitError()
++               << "Could not determine subtarget for defined function "
++               << function.getName() << "\n";
++
++      bool usesWave32 = subtarget->checkFeatures("+wavefrontsize32");
++      bool usesWave64 = subtarget->checkFeatures("+wavefrontsize64");
++      if (usesWave32 == usesWave64)
++        return getOperation().emitError()
++               << "Defined function " << function.getName()
++               << " does not select exactly one wavefront size\n";
++      if (moduleUsesWave64 && *moduleUsesWave64 != usesWave64)
++        return getOperation().emitError()
++               << "Mixed wavefront sizes in one HSACO module are unsupported\n";
++      moduleUsesWave64 = usesWave64;
++    }
++
++    if (!foundDefinition)
++      return getOperation().emitError()
++             << "Cannot set __oclc_wavefrontsize64 without a defined function\n";
++
++    auto *constantType =
++        llvm::dyn_cast<llvm::IntegerType>(wavefrontSize64->getValueType());
++    if (!constantType)
++      return getOperation().emitError()
++             << "__oclc_wavefrontsize64 must have integer type\n";
++    wavefrontSize64->setInitializer(llvm::ConstantInt::get(
++        constantType, *moduleUsesWave64, /*isSigned=*/false));
++  }
++
+   targetMachine.setOptLevel(static_cast<llvm::CodeGenOpt::Level>(llvmOptLevel));
+ 
+   auto transformer =
