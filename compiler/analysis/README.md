@@ -4,6 +4,20 @@
 包含尚未检查的转换。保留AST不等于建立访问语义，需显式坐标和ABI下的独立检查；
 仅凭剥离转换后的lane/group声明引用，不能解除下标或条件的值保持义务。
 
+## 归约调用的入口控制义务
+
+`entry_control.recover(root, function_id, callee_id, call_range)`以同AST精确callee和
+唯一call range定位顶层直接调用或单变量初始化调用，扫描入口至首次调用的前缀
+及目标实参。仅接受受限表达式和直接For；条件调用、提前返回、跳转、嵌套循环、
+短路、汇编或未知节点保持unknown。前缀最多10000节点、深度64。
+
+`entry-control-obligations/v1`保存前缀调用的精确目标及normal_return未建立义务、
+循环range及termination未建立义务。MemberExpr仅记录声明ID，不证明dispatch或
+receiver行为。`reduction_chain.entry_control`自动保存该子报告；顶层结构recovered
+不会被误标为参与证明。它只描述首次目标调用前缀，不分析后缀回跳或多次调用的
+同步序列，不证明内存/算术有效性、循环终止或外部调用正常返回。
+即使recovered，participation仍为not_established，checked/deployable均false。
+
 计划联合恢复数据索引、线程分工、collective 和输出归属。存在多种解释时保留冲突，并给出未知或拒绝原因。
 
 当前实现：`src/wavebridge/analysis/source_facts.py` 从已采集的 Clang AST

@@ -4,6 +4,7 @@ from wavebridge.frontend.clang_ast import _walk
 from wavebridge.analysis.local_contribution import recover as recover_local
 from wavebridge.analysis.reduction_discovery import discover
 from wavebridge.analysis.shared_storage import recover as recover_storage
+from wavebridge.analysis.entry_control import recover as recover_entry
 
 
 def recover(root, function_id, int_bits):
@@ -17,6 +18,7 @@ def recover(root, function_id, int_bits):
         "scope": "local_accumulator_to_block_to_xor_structural_connections_only",
         "links": [], "width": None, "block_threads": None, "offsets": None,
         "shared_storage": None,
+        "entry_control": None,
         "unresolved_calls": discovery["unresolved_calls"],
         "external_preconditions": ["source_validity", "coordinate_and_conversion_semantics",
             "shuffle_and_barrier_semantics", "active_converged_participation",
@@ -59,6 +61,8 @@ def recover(root, function_id, int_bits):
         return unknown("column_step_block_threads_mismatch")
     result["shared_storage"] = recover_storage(root, function_id, block["function_id"],
         local["consumer"]["call_range"], block["bindings"]["shared_parameter_id"])
+    result["entry_control"] = recover_entry(root, function_id, block["function_id"],
+                                          local["consumer"]["call_range"])
     result.update(status="recovered", width=block["width"],
                   block_threads=block["block_threads"], offsets=xor["offsets"],
                   accumulator_declaration_id=local["accumulator_declaration_id"],

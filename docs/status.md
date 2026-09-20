@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新源码证据：归约调用前的控制义务
+
+entry_control定位精确顶层helper调用并恢复入口前缀的call/loop义务，接入
+reduction_chain与源码入口实现hash清单；不把局部归约匹配当线程参与证明。
+397项CPU测试通过，包含真实Clang按tid提前返回时entry_control为unknown的反例。
+固定HIP AST恢复出2个getter调用正常返回义务和1个循环终止义务，工件为
+`artifacts/wb03-entry-control-ocHj3Y/report.json`，实现hash前后一致。
+这些义务尚未解除，participation=not_established，无GPU作业或部署许可。见
+`.agents/handoffs/wb03-entry-control-20260920.md`。
+
 ## 最新组合门控：同AST共享下标、数组绑定与容量
 
 shared_storage_check先fresh检查坐标及共享下标，再重建调用链、数组实参与选定

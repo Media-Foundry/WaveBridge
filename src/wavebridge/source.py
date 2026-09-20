@@ -47,7 +47,7 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
                 "analysis/row_prefix.py", "analysis/launch_facts.py",
                 "analysis/constructor_arguments.py", "analysis/constructor_fields.py",
                 "analysis/launch_guards.py", "analysis/reduction_chain.py",
-                "analysis/shared_storage.py")
+                "analysis/shared_storage.py", "analysis/entry_control.py")
         },
     }
     locations = frontend["function_locations"]

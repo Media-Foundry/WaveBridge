@@ -50,6 +50,19 @@ class ReductionChainTests(unittest.TestCase):
         self.assertFalse(chain["deployable"])
         self.assertTrue(chain["unresolved_calls"])
         self.assertIn("analysis/reduction_chain.py", report["implementation_sha256"])
+        self.assertIn("analysis/entry_control.py", report["implementation_sha256"])
+        self.assertEqual(chain["entry_control"]["status"], "recovered")
+        self.assertEqual(len(chain["entry_control"]["loop_obligations"]), 1)
+        self.assertEqual(chain["entry_control"]["participation"], "not_established")
+
+    def test_real_early_return_does_not_inherit_local_structure_participation(self):
+        source = self.source.replace("float partial = 0.0f;", "if (tid != 0) return;\n  float partial = 0.0f;")
+        report, _ = self.analyze(source)
+        chain = report["reduction_chain"]
+        self.assertEqual(chain["status"], "recovered", chain)
+        self.assertEqual(chain["entry_control"]["status"], "unknown")
+        self.assertEqual(chain["entry_control"]["reason"], "unsupported_prefix_control_or_expression")
+        self.assertFalse(chain["checked"])
 
     def test_value_parameter_is_not_assumed_to_be_first(self):
         source = self.source.replace("aggregate(float value, float *shared)", "aggregate(float *shared, float value)")
