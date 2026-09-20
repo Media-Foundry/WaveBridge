@@ -17,6 +17,10 @@ bash experiments/baselines/build_polygeist_frontend.sh \
 拒绝已有构建目录，避免混用旧缓存和覆盖证据。失败后保留目录与日志；修复配置
 应使用新的目录。构建中断后的恢复需要检查原配置，再显式重跑同目录 build 命令，
 不重新调用初始化脚本。默认并行度 8，上限 16；链接任务限制为 1。
+链接池通过 `CMAKE_JOB_POOLS` / `CMAKE_JOB_POOL_LINK` 配置，不使用
+`LLVM_PARALLEL_LINK_JOBS`：此固定版本在 unified build 中重复载入
+`HandleLLVMOptions.cmake`，后者会追加重复的 `link_job_pool`，导致 Ninja 拒绝。
+首次实际失败日志保留在本地 `polygeist-cgo24-frontend-build/build.log`。
 
 配置为 Release + assertions、LLVM host target、clang/MLIR，关闭 CUDA/ROCm
 runner 和 Polygeist GPU 后端。使用当前 PATH 中的 clang/clang++、lld、CMake、

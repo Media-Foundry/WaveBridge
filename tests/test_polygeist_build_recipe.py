@@ -22,6 +22,13 @@ class PolygeistBuildRecipeTests(unittest.TestCase):
                                 text=True, timeout=10)
         self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_uses_cmake_pool_without_duplicate_llvm_pool(self):
+        recipe = SCRIPT.read_text()
+        self.assertIn("-DLLVM_PARALLEL_LINK_JOBS= ", recipe)
+        self.assertIn("-DCMAKE_JOB_POOLS=wavebridge_link=1", recipe)
+        self.assertIn("-DCMAKE_JOB_POOL_LINK=wavebridge_link", recipe)
+        self.assertNotIn("-DLLVM_PARALLEL_LINK_JOBS=1", recipe)
+
     def test_missing_arguments_do_not_start_build(self):
         result = self.invoke()
         self.assertEqual(2, result.returncode)

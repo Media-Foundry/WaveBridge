@@ -2,6 +2,19 @@
 
 更新日期：2026-09-20。
 
+## 最新推进：实际构建与 CUDA 源码分析
+
+LLVM 第二次获取成功，精确检出 `0b9310c6e4416ee48c07edfef81144e22850dfe7`。
+首次 CMake 配置通过，但 Ninja 因 unified build 重复定义链接池失败；保留日志，
+改用 CMake 自身链接池后，在新目录 `polygeist-cgo24-frontend-build-02` 开始
+实际编译。工具构建尚未完成，不宣称 cgeist 可用或同例转换成功。
+
+Sol 使用现有入口对真实 CUDA 端口运行完整 device AST/source 分析，工件在
+`artifacts/wb03-cuda-source-01/`：两条列循环、局部贡献、输出与行前缀结构恢复，
+归约候选仍为空。四参数 sync shuffle、CUDA builtin cast、坐标和外部语义
+仍未支持或建立。主代理核对源码/AST/实现哈希；它仍是同一案例，不算新谱系。
+`make check` 258 项通过。交接见 `.agents/handoffs/polygeist-build-cuda-analysis-20260920.md`。
+
 ## 最新推进：固定 Polygeist 前端构建准备
 
 新增 `experiments/baselines/build_polygeist_frontend.sh`：核对 Polygeist/LLVM
