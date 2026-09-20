@@ -14,7 +14,7 @@
 | --- | --- | --- | --- | --- |
 | 源码接入 | `compiler/frontend/`、`src/wavebridge/frontend/` | 源文件、编译命令、launch → 原始语义工件 | 保留源码位置、宏展开、intrinsic 语义和 host/device 关联；不猜测数值容限 | JSON fixture 与真实 Clang AST 采集；launch/调用闭包尚未恢复 |
 | 关系表示 | `compiler/ir/`、`src/wavebridge/ir/` | 原始语义 → 显式关系模型 | 数据索引、运算、路由、参与条件、存储阶段、输出归属、假设、来源 | 仅版本化 qdot 专用模型 |
-| 关系恢复 | `compiler/analysis/`、`src/wavebridge/analysis/` | 原始语义 → 关系模型或拒绝原因 | 支持范围内联合推断；冲突和不确定性必须保留 | 仅展示人工给定关系 |
+| 关系恢复 | `compiler/analysis/`、`src/wavebridge/analysis/` | 原始语义 → 关系模型或拒绝原因 | 支持范围内联合推断；冲突和不确定性必须保留 | 人工模型描述与真实 AST 结构事实提取；跨 lane 关系未恢复 |
 | 关系检查 | `compiler/verification/`、`src/wavebridge/verification/` | 源/目标、输入域、数值协议 → 检查报告 | 独立于生成器；比较输出计算，保留重复计数和保证范围 | 固定形状无界整数多项式检查 |
 | 候选生成 | `compiler/transforms/`、`src/wavebridge/transforms/` | 关系与目标能力 → kernel/launch 候选对 | 数据格式不可随协作宽度修改；候选尚不可信 | qdot 模型 32/64 重新分工 |
 | 决策编排 | `src/wavebridge/pipeline.py` | 候选与检查证据 → 接受、拒绝或验证过的 fallback | 未知不接受；所有调用者遵循同一门槛 | 只接受模型候选，不部署 |

@@ -81,4 +81,14 @@ G1/G2 均未因此通过。后续按用户要求直接 commit，不再创建 PR�
 本轮 `make check` 81 项 CPU 测试通过，含多 JSON 根、超时日志、非法超时和
 禁止覆盖源码/已有工件的回归；没有执行新的 GPU 数值或性能实验。
 
+WB-03 后续增加 `analysis/source_facts.py`：从真实 AST 提取直接调用、声明
+引用、运算符和循环，保留源码范围。三个 HIP 函数的结构事实在
+`artifacts/wb03-facts-Fnn8eF/`，可见 `__shfl_xor`、`__syncthreads`、helper
+和 OCML 调用。`threadIdx.x` / `blockIdx.x` 的 HIP 属性 getter 仍标未知；
+没有把仅有引用的 `kLogicalWidth` 猜成常量 32。输入工件哈希与 root index
+隔离 Clang ID，不跨编译猜连边。真实 C++ 改名与嵌套间接调用回归通过；
+该测试 fixture 不是 ML benchmark，不计入真实语料覆盖。
+本轮最终 `make check` 91 项通过，其中 2 项使用本机真实 Clang；没有 Clang
+的环境会显式跳过这 2 项，不能把跳过记为真实编译验证。跨 lane 恢复仍未完成。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03 关系恢复与 WB-04～08 仍待实施。
