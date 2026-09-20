@@ -57,8 +57,8 @@ canonicalization、Mem2Reg 等 pass，`-O0` 在 664 行附近关闭一部分 inl
 报告因此标为默认 O0 pass 路径，而不是 identity translation；是否保留通信
 和 launch 必须检查输出，不能从命令选项直接推断。
 
-待当前 cgeist 构建完成后，先在同一配置构建 `clang-resource-headers`；不要同时
-在同一构建目录启动另一个 Ninja。然后运行（尚待实际执行的命令）：
+cgeist 与 `clang-resource-headers` 已实际构建成功；不要同时在同一构建目录
+启动另一个 Ninja。以下为首次实际运行命令（失败记录见下文）：
 
 ```bash
 cmake --build artifacts/toolchains/polygeist-cgo24-frontend-build-02 --target clang-resource-headers --parallel 8
@@ -74,3 +74,11 @@ PYTHONPATH=src python3 experiments/baselines/polygeist_frontend.py \
 
 不预判这个完整输入能成功；失败后分别定位工具环境、输入语言范围与实际语义
 变换限制。CPU mock 测试只核对记录状态，不计作 cgeist 实验。
+
+2026-09-20 实际执行两次，均为 `tool_failed`，未产生 IR。上面的旧视图缺
+`lib`/`lib64`，固定 Clang 的 CUDA 安装检测因此失败。第二次使用独立视图
+`artifacts/toolchains/cuda-polygeist-view-LRVuEu`，在原有 include/bin/nvvm
+之外，将 lib64 指向同一 CUDA runtime wheel 的 lib 目录；不修改原视图或 SDK。
+安装检测通过后，遇到 CUDA 12.1 texture 与 GCC 13 `__noinline__` 头文件错误。
+不能忽略这些前置错误，将后续断言归因于 kernel 通信模式。
+两份报告和哈希见 [实际执行交接](../../.agents/handoffs/polygeist-first-execution-20260920.md)。

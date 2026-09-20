@@ -2,6 +2,18 @@
 
 更新日期：2026-09-20。
 
+## 最新验证：Polygeist 构建完成，实际共同输入受环境阻断
+
+固定论文版本的前端构建完成，3296 个任务、退出码 0；随后独立构建
+`clang-resource-headers` 成功。已真实运行两次完整 CUDA 输入（`--function=*`），
+均未产生 MLIR。首次缺 SDK 库目录；新建同版本 runtime 的 lib64 视图后，
+安装识别通过，但出现 Clang 16 / CUDA 12.1 texture 头错误，以及 GCC 13
+标准库与 CUDA `__noinline__` 宏冲突，随后工具断言退出。
+这些是当前环境接入失败，不是子组模式不支持的证据，G1 仍未通过。
+命令、原始诊断、二进制及报告哈希见
+`.agents/handoffs/polygeist-first-execution-20260920.md`。
+未修改分析实现，未运行新 GPU 实验；下一步建立兼容头文件环境后重试同一完整输入。
+
 ## 最新实现：CUDA 块级归约结构
 
 严格支持 barrier callee 位置的 `BuiltinFnToFnPtr`，保留转换和原 callee AST，

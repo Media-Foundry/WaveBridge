@@ -62,7 +62,7 @@ CKTI查询包括正式DOI的abs/full页面、Crossref works API、网页检索�
 | 对象 | 当前可确认 | 同例运行状态 | 下一项实际验收 |
 | --- | --- | --- | --- |
 | 正确logical32基线 | 已有W7900的9形状冻结数值记录；人工CUDA移植已有API记录和计算函数体对照 | HIP既有证据；CUDA仅host/device语法通过 | CUDA代码生成及独立数值核验；不能转用HIP运行记录 |
-| Polygeist论文版本 | 固定源码已checkout；LLVM gitlink已核对、未初始化 | `not_executed`；尚未构建cgeist | 取得固定LLVM并构建；先无变换编译，再单独coarsening并保存IR/launch |
+| Polygeist论文版本 | 固定源码及LLVM已检出，前端cgeist构建成功 | 两次完整输入前端尝试，环境/头文件错误，未生成IR | 建立兼容CUDA/标准库头环境，重试默认O0路径；再分别检查IR与变换 |
 | Polygeist较新版本 | 本轮没有固定版本或运行 | `unverified` | 不能用旧版的未来失败断言最新方法能力不足 |
 | CKTI | 出版元数据 | `not_executed`；实现入口未定位 | 取得合法全文/实现及版本，再确定共同输入与所需人工修改 |
 | WaveBridge | 受限源码分析、条件模型检查、手工GPU基线 | 无自动源码→候选→GPU闭环 | 不将当前条件模型checked记为完整适配成功 |
@@ -72,3 +72,10 @@ CKTI查询包括正式DOI的abs/full页面、Crossref works API、网页检索�
 保存补丁、工时和独立reference核验。按解析、IR、变换、编译、数值与性能分别
 记录结果；工具缺失、环境构建失败与语义不支持必须分开。只有共同案例实际执行
 之后，才判断是否存在值得研究的额外关系恢复/检查需求。
+
+后续实际执行更新（同日）：前端构建退出 0，两次尝试均保留完整 host/kernel
+输入。第一次 CUDA 视图缺库目录，第二次补齐同版本 lib64 后，失败在旧 Clang
+与当前 CUDA 12.1 / GCC 13 头文件接入。工具在前置诊断后断言退出，不能将
+断言当成 shuffle/shared/barrier 不支持的结论。没有 MLIR、重定向或 GPU 结果。
+实际命令、原始日志和哈希见
+[交接](../.agents/handoffs/polygeist-first-execution-20260920.md)。
