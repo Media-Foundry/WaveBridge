@@ -2,6 +2,14 @@
 
 更新日期：2026-09-20。
 
+## 最新诊断：动态 shared 与 shuffle 分开追踪
+
+原adapter的独立副本仅将extern动态shared改为32元素定长shared；实际默认及
+cuda-lower均输出IR。lowering分配从1变为32，原0～7访问的容量矛盾消失；
+外部NVVM shuffle及警告保持。原launch动态字节数未改，因此副本增加了静态
+资源，不能作等资源性能比较或自动适配结果。详见
+`research/polygeist-static-shared-diagnostic.md`。无新GPU执行，G1未通过。
+
 ## 最新验证：完整 launch 适配与实际 Polygeist IR
 
 新增有父源码/补丁/协议哈希的人工 host adapter，保留三计算函数、域守卫与
