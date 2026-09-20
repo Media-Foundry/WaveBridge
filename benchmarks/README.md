@@ -2,6 +2,8 @@
 
 当前真实语料为空。`examples/qdot/` 是接口验证模型，不能作为真实 ML workload 数量计入覆盖统计。
 
+`intake/llama-rmsnorm.json` 固定了一个经源码核对的候选及文件哈希，但独立 reference、数值协议和目标运行尚未完成，因此不计入 `corpus.json` 的有效案例。`intake/` 记录是人工筛选资料，不是自动恢复器的输入或 oracle。
+
 ## 纳入语料
 
 每个案例在 `corpus.json` 中记录：唯一 ID、上游 URL、精确提交、文件与符号、文件 SHA-256、许可证、代码谱系、ML 场景、源语义和 launch、人工关系 oracle、外部数值/输入协议、原样或修改状态及补丁。

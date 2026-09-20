@@ -18,10 +18,10 @@
 | 关系检查 | `compiler/verification/`、`src/wavebridge/verification/` | 源/目标、输入域、数值协议 → 检查报告 | 独立于生成器；比较输出计算，保留重复计数和保证范围 | 固定形状无界整数多项式检查 |
 | 候选生成 | `compiler/transforms/`、`src/wavebridge/transforms/` | 关系与目标能力 → kernel/launch 候选对 | 数据格式不可随协作宽度修改；候选尚不可信 | qdot 模型 32/64 重新分工 |
 | 决策编排 | `src/wavebridge/pipeline.py` | 候选与检查证据 → 接受、拒绝或验证过的 fallback | 未知不接受；所有调用者遵循同一门槛 | 只接受模型候选，不部署 |
-| 执行与测量 | `runtime/`、`experiments/` | 已检查代码、设备协议 → 原始执行记录 | 能力探测、正确性测试、计时与环境隔离 | 协议文档；无执行器 |
+| 执行与测量 | `runtime/`、`experiments/` | 已检查代码、设备协议 → 原始执行记录 | 能力探测、正确性测试、计时与环境隔离 | 最小设备探测器；通用执行器待实现 |
 | 研究评估 | `benchmarks/`、`research/` | 原始证据、预先声明的协议 → 主张评估 | 覆盖/拒绝/有效接受/错误放行、强基线、成本和性能分开报告 | 登记模板与阶段门槛 |
 
-`compiler/` 和 `runtime/` 当前只有设计边界说明。它们不是可调用的编译器或 HIP 库，尚无需要配置的 CMake 工程。
+`compiler/` 当前只有设计边界说明；`runtime/probes/` 已有可调用的最小 HIP 探测器。尚无通用编译器、HIP 执行库或需要配置的 CMake 工程。探针编译失败、未建立元数据或运行证据不一致，都不能作为目标能力通过的依据。
 
 ## 工件流与信任边界
 

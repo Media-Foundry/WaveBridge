@@ -2,7 +2,7 @@
 
 WaveBridge 面向既有 ML kernel 中的显式子组通信，研究跨 lane 数据依赖和输出归属的恢复，以及改变协作宽度时的关系检查。
 
-当前阶段是**架构与可运行参考模型**。没有实现 HIP/CUDA 源码分析、GPU 代码生成或硬件评测；创新性仍待与 Polygeist、CKTI 等工作逐例对照。参考模型的检查结果不能用作真实 kernel 正确性的证明。
+当前阶段是**架构、可运行参考模型与最小设备探测工具**。没有实现 HIP/CUDA 源码分析、GPU 候选代码生成或性能评测；创新性仍待与 Polygeist、CKTI 等工作逐例对照。参考模型的检查结果不能用作真实 kernel 正确性的证明。
 
 ## 快速开始
 
@@ -16,6 +16,8 @@ PYTHONPATH=src python3 -m wavebridge check examples/qdot/source.json examples/qd
 PYTHONPATH=src python3 -m wavebridge check examples/qdot/source.json examples/qdot/wrong_quant64.json
 ```
 
+WB-01 的设备探测入口为 `python3 runtime/probes/probe.py --hipcc /path/to/hipcc`，需要完整 HIP 开发工具链及可用设备，详见 [探测协议](runtime/probes/README.md)。CPU 测试不触发 GPU 执行。当前本机编译尝试失败，尚无成功设备执行证据。
+
 最后一条命令故意检查错误候选，返回 `rejected` 和退出码 1。`checked` 返回 0，`unknown` 返回 2，输入或命令错误返回 3。检查报告以 JSON 输出，包含模型哈希、数值语义、适用范围和诊断。
 
 可选安装：`python3 -m pip install --no-build-isolation -e .`，随后使用 `wavebridge demo`。
@@ -28,7 +30,7 @@ AGENTS.md                  中文回复与全仓工程/证据规则
 docs/                      架构、协议、当前状态、决策记录、阶段门槛
 src/wavebridge/             Python 参考模型、检查、候选生成与 CLI
 compiler/                   后续 Clang/LLVM 源码分析与变换的接入边界
-runtime/                    后续 HIP 执行、目标能力探测与 fallback 的边界
+runtime/                    最小 HIP 设备探测器；通用执行与 fallback 待实现
 examples/qdot/              量化点积的结构化模型与错误候选
 tests/                     CPU 语义回归和命令行集成测试
 benchmarks/                 真实语料纳入协议、谱系拆分、基线定义

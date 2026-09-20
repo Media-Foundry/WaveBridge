@@ -1,0 +1,75 @@
+{
+  "schema_version": "candidate-intake/v1",
+  "case_id": "llama-rmsnorm-f32",
+  "status": "source_reviewed_not_admitted",
+  "review_date": "2026-09-20",
+  "repository": "https://github.com/ggml-org/llama.cpp",
+  "revision": "b23efaa2ef147f547ee75cbf0c621d61904de80e",
+  "license": "MIT",
+  "lineage_id": "ggml-llama-cuda-norm",
+  "entry_symbol": "rms_norm_f32<256, false, false>",
+  "launch_symbol": "rms_norm_f32_cuda",
+  "source_modifications": [],
+  "source_snapshot_imported": false,
+  "reviewed_files": [
+    {
+      "path": "LICENSE",
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "bytes": 1078
+    },
+    {
+      "path": "ggml/src/ggml-cuda/norm.cu",
+      "sha256": "8cb872a9633a7c68c5e9fa8c1f7d39afe9e66636c1299b9fc610b1b4217e7307",
+      "bytes": 30588
+    },
+    {
+      "path": "ggml/src/ggml-cuda/common.cuh",
+      "sha256": "a210a71f965419ab55cce071b900df118c2520c1566ea5e068d8be07805644a2",
+      "bytes": 65285
+    },
+    {
+      "path": "ggml/src/ggml-cuda/vendors/hip.h",
+      "sha256": "087f721fcab92e4b716b2469398a0177cf81cecb1fb6172dfcb909949b867aa5",
+      "bytes": 12413
+    },
+    {
+      "path": "ggml/src/ggml-hip/CMakeLists.txt",
+      "sha256": "f75d837afc14f8da51d8c44fb5ee8d3d96777643670f89c4fe8fd8c92cb211de",
+      "bytes": 4279
+    }
+  ],
+  "observed_source_facts": {
+    "logical_width": 32,
+    "physical_wave_width": null,
+    "small_columns_branch": "ncols < 1024",
+    "block": [256, 1, 1],
+    "grid": ["nrows", "nchannels", "nsamples"],
+    "dynamic_shared_bytes": 128,
+    "reduction": "warp_reduce_sum<float,32> via XOR shuffle; shared-memory block reduction and broadcast",
+    "hip_mapping": "__shfl_xor_sync(mask,value,offset,width) maps to __shfl_xor(value,offset,width)",
+    "output": "x * rsqrt(sum(x*x)/ncols + eps), without multiply/add fusion"
+  },
+  "admission_gates": {
+    "fixed_source_and_license": "reviewed",
+    "complete_transitive_source_bundle": "pending",
+    "frozen_input_and_numeric_protocol": "pending",
+    "independent_reference": "pending",
+    "logical32_baseline_target_validation": "not_run",
+    "manual_oracle_isolated_from_frontend": "pending",
+    "source_recovery": "not_implemented"
+  },
+  "common_case_comparisons": {
+    "upstream_hip_logical32": "source_path_identified_not_run",
+    "scale": "not_evaluated",
+    "polygeist": "not_evaluated",
+    "ckti": "not_evaluated",
+    "manual_parameterized": "not_implemented"
+  },
+  "research_gap": "unverified; existing logical32 HIP path is a required strong baseline",
+  "required_semantics": [
+    "template instantiation and helper inlining",
+    "XOR shuffle rather than current qdot shuffle-down model",
+    "shared-memory reduction with barrier and broadcast",
+    "external floating-point numerical contract"
+  ]
+}

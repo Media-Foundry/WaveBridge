@@ -1,6 +1,7 @@
-# 目标执行与 fallback（待实现）
+# 目标执行与 fallback
 
-本目录预留 HIP runner、目标能力探测和经过验证的兼容实现。当前没有可执行 GPU runner 或保证正确的设备 fallback。
+`probes/` 已包含 WB-01 最小 HIP 设备探测器；尚无通用 GPU runner 或保证正确的设备 fallback。
+探测器的用法、证据和退出状态见 [`probes/README.md`](probes/README.md)。
 
 计划的执行协议：
 

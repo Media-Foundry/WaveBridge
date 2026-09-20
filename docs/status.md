@@ -12,13 +12,15 @@
 - 合法/错误候选示例、CPU 回归测试及 GitHub Actions 工作流定义。
 - benchmark 来源/谱系/基线协议，实验配置和证据模板，候选主张及相关工作核实表。
 - Git 主分支约定为 `master`，origin 指向 `Media-Foundry/WaveBridge`；初始化前确认远端为空仓库。
+- WB-01 最小 HIP 设备探测工具：分阶段报告、命令与原始日志、工件哈希、超时与拒绝状态；工具实现不等于硬件门槛通过。
+- WB-02 固定 llama.cpp RMSNorm 候选的上游 SHA、许可证、关键文件哈希及已有 logical32 路径；尚未纳入有效语料。
 
 ## 尚未完成
 
 - HIP/CUDA 源码关系恢复与通用关系 IR。
 - 通用跨 lane checker、ballot/掩码/共享内存/浮点协议支持。
 - Clang/LLVM 集成、目标代码生成及模型到生成代码的一致性检查。
-- 设备能力探测、实际 wave32/wave64 验证、正确兼容 fallback 与 GPU runner。
+- 成功的实际 wave32/wave64 验证、MI250 接入、正确兼容 fallback 与通用 GPU runner。
 - 真实 kernel 语料、Polygeist/CKTI 共同案例验证、强基线复现。
 - 性能数据、端到端部署、人工成本数据、创新性结论和论文结果。
 
@@ -34,6 +36,23 @@
 
 本地验证不代表 GPU 正确性或性能。没有执行 GPU 实验；GitHub Actions 的实际状态以对应提交的运行记录为准。
 
+## WB-01 / WB-02 首轮门控
+
+WB-01 由一个 GPT-5.6 Sol 子代理实现，主代理负责验收；保留原有 qdot 路径和整数检查范围。
+
+本机 `rocminfo` 可见两个 gfx1100 GPU agent。探测时的 `rocm-smi` 采样显示两卡空闲、无 KFD PID；这只是设备可见性和负载采样，不证明实际波宽。
+
+两条工具链尝试均未执行 kernel：
+
+- 默认 Conda `hipcc`：链接阶段缺少其配置引用的 `libamdhip64.so`，报告 `compile_failed`。
+- `/opt/rocm/bin/hipcc`：缺少 `hip/hip_runtime.h`，报告 `compile_failed`。没有安装工具链或混搭 headers/runtime。
+
+原始报告保存在本地 `artifacts/wb01-*/report.json`，每次尝试独立记录。metadata、execute、semantic validation 均未建立；WB-01 的目标硬件验收门槛仍未通过。
+
+最终验收：主代理重跑 `make check`，55 项测试通过（原 42 项和探测器 13 项）；检查通过 `git diff --check`。最终本机报告为 `artifacts/wb01-20260920T065807Z-618484-d01566/report.json`，HIP 源码与 runner 副本哈希均核对一致。CPU mock 状态测试不替代设备执行证据。
+
+WB-02 当前只完成候选来源核对。独立 reference、冻结输入与数值协议、人工 oracle 隔离和正确 logical32 目标运行仍待完成，`benchmarks/corpus.json` 保持空有效语料。
+
 ## 下一项研究任务
 
-依照 `research/differential-cases.md` 纳入一个许可清楚、来源固定的真实 kernel，人工标出跨 lane 关系并设计错误变体。检查 Polygeist/CKTI 的实际能力后，再决定源码恢复的首个支持子集。
+提供或修复一套完整 HIP 开发工具链后，重跑 WB-01；并沿固定候选补齐 WB-02 的独立 reference、协议和 baseline。两项前提明确后，再确定源码恢复的首个支持子集。Polygeist/CKTI 的共同案例能力仍待验证，WB-03～08 尚未展开。
