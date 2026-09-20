@@ -36,3 +36,15 @@
 常量/调用闭包和运算依赖。需要同时加入改名、改变 shuffle 路由、改变
 列步长和不支持调用的源码测试。获得 AST 不代表这些测试已满足；跨谱系
 恢复、目标源码重提取和 Polygeist/CKTI 共同案例比较均仍未完成。
+
+## 本机 HIP 索引定义核对
+
+2026-09-20 检查本机同源 SDK 的 `hip/amd_detail/amd_hip_runtime.h`：
+`threadIdx.x` 的属性 getter 调用 `__hip_get_thread_idx_x()`，其 body 调用
+`__ockl_get_local_id(0)`；`blockIdx.x` 类似地通向 `__ockl_get_group_id(0)`。
+这是对当前头文件的人工核对，不是通用名称映射或已实现的分析规则。
+自动路径仍需检查 referencedMemberDecl 对应的实际 body、调用参数与外部语义
+前提，不能接受用户自定义的同名 getter 为内建索引。
+
+同一 HIP compiler 的预定义宏 `__INT_WIDTH__=32`、`__SIZEOF_INT__=4` 已核对。
+常量求值器接受外部显式位宽；目前未自动收集完整目标 ABI 协议。

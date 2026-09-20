@@ -100,4 +100,14 @@ WB-03 声明接入继续推进：新增完整 translation-unit 模式及 root-lo
 成功报告；改为流式写出并去除重复 AST stdout 后，同限额运行成功。
 最终本地 `make check` 98 项通过（含 3 项真实 Clang 测试）；未运行新 GPU kernel。
 
+WB-03 受限整数常量求值已接入：`integer_constants.evaluate` 从同 root 精确
+声明 ID 和初始化表达式计算 signed-int 常量。当前 HIP compiler 的
+`__INT_WIDTH__=32` 已通过预定义宏核对，调用时仍显式传入 `int_bits=32`。
+在上述完整 HIP AST 上得到 `kLogicalWidth=32`、`kBlockSize=256`，保留
+声明与表达式 range；没有按名字填值，也尚未自动判断常量的协作/格式角色。
+每步检查有符号溢出，C++ 向零除法和负余数；volatile、unsigned、未支持转换、
+缺定义、循环引用及除零返回未知。真实 Clang 回归覆盖常量改名、声明引用
+乘法和负数除余；全仓 `make check` 106 项通过（含 4 项真实 Clang 测试）。
+本轮未执行新的 GPU kernel，线程 getter 的自动语义解释仍未完成。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03 关系恢复与 WB-04～08 仍待实施。

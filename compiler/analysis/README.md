@@ -29,3 +29,13 @@ Clang 内部地址不能用于跨次编译连接。规范化哈希不等于输�
 PYTHONPATH=src python3 -m wavebridge.analysis.declaration_index \
   artifacts/full-tu.json --output artifacts/new-declaration-index.json
 ```
+
+## 受限整数常量
+
+`integer_constants.evaluate(root, declaration_id, int_bits=...)` 以一个 AST root
+和精确声明 ID 为输入。整数宽度是外部显式条件，不从名字猜测，也不借用 qdot
+检查器的无界整数语义。仅在支持的 signed-int constexpr 表达式内求值；
+不支持的类型/转换、溢出、除零、循环引用和缺失定义必须返回未知。
+
+常量值不带自动角色分类：求出 32 不代表它是协作宽度，更不能据此修改数据格式。
+后续还必须将该声明在索引、collective 参数和 launch 中的使用关系分别恢复。
