@@ -229,4 +229,16 @@ WB-03 launch 实参已按唯一kernel定义的位置关联4个形参，缺定义
 该路径正确返回unknown；不按类型名补猜。`make check`196项通过。字段映射、
 转换后值、实际grid/block及运行时launch一致性仍未证明，没有新GPU执行。
 
+WB-03 构造字段已按精确声明恢复：真实HIP工件
+`artifacts/wb03-source-constructor-fields-01/{ast,report}.json` 中两个配置构造均
+得到x←参数0、y←参数1、z←参数2，并核对直接所属record全部字段。字段交换的
+真实Clang fixture恢复成显式交换关系；额外body写入、base/delegating、算术或
+不支持转换保持unknown，不从字段名字猜参数位置。
+只读ABI探测 `artifacts/wb03-abi-macros-01/report.json` 保存device-only空TU
+预定义宏（int32、long/long long64）与原始命令输出，不能替代完整源码ABI绑定。
+独立区间转换checker在显式int32→unsigned int32条件下确认256/1/1值保持，
+证据在上述源码工件目录 `conditional-conversions.json`，绑定宏/源码报告与
+checker哈希；full_source_abi_binding仍未建立。`make check`206项通过，
+实现hash核对一致，无新GPU执行或完整适配保证。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

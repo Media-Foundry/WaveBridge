@@ -15,6 +15,7 @@ from wavebridge.analysis.normalization_output import recover as recover_output
 from wavebridge.analysis.row_prefix import recover as recover_prefix
 from wavebridge.analysis.launch_facts import inspect as inspect_launch
 from wavebridge.analysis.constructor_arguments import inspect as inspect_constructor
+from wavebridge.analysis.constructor_fields import recover as recover_constructor_fields
 
 
 def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=30.0):
@@ -41,7 +42,7 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
                 "analysis/block_reduction.py", "analysis/xor_reduction.py",
                 "analysis/local_contribution.py", "analysis/normalization_output.py",
                 "analysis/row_prefix.py", "analysis/launch_facts.py",
-                "analysis/constructor_arguments.py")
+                "analysis/constructor_arguments.py", "analysis/constructor_fields.py")
         },
     }
     locations = frontend["function_locations"]
@@ -73,6 +74,11 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
             site["configuration_constructor_arguments"] = [
                 inspect_constructor(frontend["ast_roots"][0], expression, int_bits)
                 for expression in site["configuration_arguments"][:2]]
+            for constructor in site["configuration_constructor_arguments"]:
+                constructor_id = constructor.get("constructor_declaration_id")
+                if constructor_id is not None:
+                    constructor["field_initialization"] = recover_constructor_fields(
+                        frontend["ast_roots"][0], constructor_id)
         report["status"] = "analyzed"
         report["reason"] = None
     with (directory / "report.json").open("x", encoding="utf-8") as stream:

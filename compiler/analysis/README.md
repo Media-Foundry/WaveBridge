@@ -171,3 +171,10 @@ launch site 的 `parameter_bindings` 按精确 kernel 定义与实参位置关�
 目标、参数位置、默认参数来源和转换链。`pre_conversion_constant` 仅是源码
 叶表达式的转换前常量；它不是已证明的dim3字段值或实际grid/block大小。
 不带默认表达式内容的AST节点不得被猜成1。
+
+`constructor_fields.recover(root, constructor_id)` 核对唯一空body构造定义，
+按FieldDecl与ParmVarDecl的精确ID恢复直传初始化及参数位置。允许字段交换，
+但必须显式呈现交换后的映射；不会将第一个实参固定解释为x。字段与参数
+desugared类型须对应，额外body写入、算术、base/delegating初始化或不支持转换
+保持unknown。能定位直接所属record时核对全部字段；否则保留所有权不完整标记。
+源码入口将其保存为构造参数报告的 `field_initialization`，仍不签发配置正确性。
