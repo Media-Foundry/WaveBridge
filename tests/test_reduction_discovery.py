@@ -19,6 +19,23 @@ def function(identifier, calls, parameters=None):
         *(parameters or []), {"kind": "CompoundStmt", "inner": calls}]}
 
 
+def method(identifier, calls, virtual=False):
+    node = function(identifier, calls)
+    node["kind"] = "CXXMethodDecl"
+    node["storageClass"] = "static"
+    if virtual:
+        node["virtual"] = True
+    return node
+
+
+def member_call(identifier=None):
+    member = {"kind": "MemberExpr", "range": R,
+              "inner": [{"kind": "DeclRefExpr", "name": "receiver"}]}
+    if identifier is not None:
+        member["referencedMemberDecl"] = identifier
+    return {"kind": "CXXMemberCallExpr", "range": R, "inner": [member]}
+
+
 def parameter(identifier, qual_type):
     return {"id": identifier, "kind": "ParmVarDecl", "type": {"qualType": qual_type}}
 
@@ -74,6 +91,29 @@ class ReductionDiscoveryTests(unittest.TestCase):
         result = discovery.discover(tree, "entry", 32)
         self.assertEqual(["entry"], result["reachable_function_ids"])
         self.assertEqual("unsupported_nested_callable", result["unresolved_calls"][0]["reason"])
+
+    def test_exact_nonvirtual_member_edge_preserves_receiver_without_semantics(self):
+        tree = root(function("entry", [member_call("getter")]), method("getter", []))
+        result = discovery.discover(tree, "entry", 32)
+        self.assertEqual(["entry", "getter"], result["reachable_function_ids"])
+        edge = result["call_edges"][0]
+        self.assertEqual("static_member_exact_declref", edge["dispatch"])
+        self.assertTrue(edge["receiver_ast"])
+        self.assertEqual("not_established", edge["receiver_semantics"])
+
+    def test_missing_member_id_and_virtual_dispatch_remain_unknown(self):
+        dynamic = method("virtual", [], virtual=True)
+        dynamic.pop("storageClass")
+        nonstatic = method("ordinary", [])
+        nonstatic.pop("storageClass")
+        tree = root(function("entry", [member_call(), member_call("virtual"), member_call("ordinary")]),
+                    dynamic, nonstatic)
+        result = discovery.discover(tree, "entry", 32)
+        reasons = {item["reason"] for item in result["unresolved_calls"]}
+        self.assertIn("member_callee_id_missing", reasons)
+        self.assertIn("dynamic_virtual_member_call", reasons)
+        self.assertIn("member_dispatch_not_proven_static", reasons)
+        self.assertEqual(["entry"], result["reachable_function_ids"])
 
     def test_entry_and_input_errors_are_unknown(self):
         self.assertEqual("root_not_object", discovery.discover([], "entry", 32)["reason"])

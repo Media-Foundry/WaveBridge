@@ -41,24 +41,60 @@ def _body(node: dict[str, Any]) -> dict[str, Any] | None:
     return bodies[0] if len(bodies) == 1 else None
 
 
-def _callee(call: dict[str, Any]) -> tuple[str | None, str | None]:
+def _callee(call: dict[str, Any], declarations: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    result: dict[str, Any] = {"callee_id": None, "reason": None, "receiver_ast": None,
+                              "receiver_semantics": "not_applicable",
+                              "dispatch": "not_established"}
     children = _children(call)
     if not children:
-        return None, "callee_missing"
+        result["reason"] = "callee_missing"
+        return result
     current = children[0]
     while current.get("kind") in CALLEE_WRAPPERS:
         wrapped = _children(current)
         if len(wrapped) != 1:
-            return None, "ambiguous_callee_wrapper"
+            result["reason"] = "ambiguous_callee_wrapper"
+            return result
         if (current.get("kind") == "ImplicitCastExpr" and
                 current.get("castKind") not in ALLOWED_CALLEE_CASTS):
-            return None, "unsupported_callee_cast"
+            result["reason"] = "unsupported_callee_cast"
+            return result
         current = wrapped[0]
-    referenced = current.get("referencedDecl")
-    if (current.get("kind") != "DeclRefExpr" or not isinstance(referenced, dict) or
-            referenced.get("kind") != "FunctionDecl" or not isinstance(referenced.get("id"), str)):
-        return None, "indirect_or_unresolved_callee"
-    return referenced["id"], None
+    if current.get("kind") == "DeclRefExpr":
+        referenced = current.get("referencedDecl")
+        if (isinstance(referenced, dict) and referenced.get("kind") == "FunctionDecl" and
+                isinstance(referenced.get("id"), str)):
+            result.update(callee_id=referenced["id"], dispatch="direct_free_function")
+            return result
+        result["reason"] = "indirect_or_unresolved_callee"
+        return result
+    if current.get("kind") == "MemberExpr":
+        referenced = current.get("referencedMemberDecl")
+        if isinstance(referenced, dict):
+            member_id = referenced.get("id")
+            referenced_kind = referenced.get("kind")
+        else:
+            member_id, referenced_kind = referenced, None
+        result["receiver_ast"] = _children(current)
+        result["receiver_semantics"] = "not_established"
+        if not isinstance(member_id, str):
+            result["reason"] = "member_callee_id_missing"
+            return result
+        matching = declarations.get(member_id, [])
+        methods = [node for node in matching if node.get("kind") == "CXXMethodDecl"]
+        if referenced_kind not in {None, "CXXMethodDecl"} or not methods:
+            result["reason"] = "member_callee_declaration_missing"
+            return result
+        if any(method.get("virtual") is True for method in methods):
+            result["reason"] = "dynamic_virtual_member_call"
+            return result
+        if not all(method.get("storageClass") == "static" for method in methods):
+            result["reason"] = "member_dispatch_not_proven_static"
+            return result
+        result.update(callee_id=member_id, dispatch="static_member_exact_declref")
+        return result
+    result["reason"] = "indirect_or_unresolved_callee"
+    return result
 
 
 def discover(root: object, entry_id: str, int_bits: int) -> dict[str, Any]:
@@ -126,13 +162,19 @@ def discover(root: object, entry_id: str, int_bits: int) -> dict[str, Any]:
                     "call_kind": call.get("kind"), "call_range": call.get("range"),
                     "reason": "unsupported_call_kind"})
                 continue
-            target_id, reason = _callee(call)
+            callee = _callee(call, declarations)
+            target_id, reason = callee["callee_id"], callee["reason"]
             if target_id is None:
                 result["unresolved_calls"].append({"caller_id": function_id,
-                    "call_kind": call.get("kind"), "call_range": call.get("range"), "reason": reason})
+                    "call_kind": call.get("kind"), "call_range": call.get("range"), "reason": reason,
+                    "receiver_ast": callee["receiver_ast"],
+                    "receiver_semantics": callee["receiver_semantics"]})
                 continue
             result["call_edges"].append({"caller_id": function_id, "callee_id": target_id,
-                                          "call_range": call.get("range")})
+                                          "call_range": call.get("range"),
+                                          "dispatch": callee["dispatch"],
+                                          "receiver_ast": callee["receiver_ast"],
+                                          "receiver_semantics": callee["receiver_semantics"]})
             if target_id not in seen_targets:
                 seen_targets.add(target_id)
                 targets.append(target_id)

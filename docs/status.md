@@ -169,4 +169,12 @@ AST 与全部实现文件哈希复核一致；`make check` 158 项通过。真�
 确认不可达相似 helper 不纳入候选；局部 callable、间接/特殊调用及预算边界
 有独立回归。首轮 `wb03-source-reductions-01` 与编辑并发，保留但不作最终证据。
 
+WB-03 调用发现已支持声明明确为 static 的精确成员调用。真实 HIP 重跑工件
+`artifacts/wb03-source-static-members-01/{ast,report}.json` 增加四条属性 getter
+调用边，可达定义从 9 个变为 13 个，两个归约候选不变；receiver AST 保留，
+不赋予线程坐标语义。21 条剩余诊断为 17 条不支持的 callee cast、3 条缺唯一
+定义和1条缺成员声明；分析完整性仍为 false。实现哈希核对一致，本地
+`make check` 161 项通过，包括真实 Clang static property 和 virtual 拒绝回归。
+本轮未执行 GPU kernel，也未解除外部 intrinsic 或数值语义前提。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

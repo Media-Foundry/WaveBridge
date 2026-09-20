@@ -119,3 +119,8 @@ Clang ID仅对指定AST工件/root有效。`source_program_checked=false` 始终
 特殊调用、缺少定义和预算耗尽必须保留诊断；发现部分候选不能掩盖未遍历部分。
 候选中的外部语义、坐标、转换及收敛义务不自动解除，源码入口也不自动将其
 提交给条件路由 checker 后签发“源码通过”。旧的显式 ID 接口仍可用于诊断。
+
+精确 `MemberExpr` 调用仅在同 root 声明明确为 `static` 的 `CXXMethodDecl`
+时加入调用边。receiver AST 保留且其语义未建立；virtual、缺失成员声明或
+未证明 static 的调用仍为 unresolved。此规则可以接入 HIP 静态属性 getter，
+但不证明属性结果等于线程坐标，也不删除 receiver 或整数转换。
