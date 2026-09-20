@@ -119,4 +119,14 @@ wrapper 子集内沿同 root 精确 ID 追踪。实际完整 HIP AST 中，threa
 不计入ML语料。下一步需把调用证据、目标外部接口协议及可达表达式连接起来。
 最终本地 `make check` 114 项通过，其中5项使用真实Clang；工作未涉及性能测量。
 
+WB-03 首条源码到列递推路径已运行：`python3 -m wavebridge.source` 直接输入
+WB-02 HIP standalone，采集同次完整 AST 后恢复两个列循环的声明起点、参数
+边界与步长256，不读取人工 Kernel JSON。工件在
+`artifacts/wb03-source-columns-01/{ast,report}.json`，源码 SHA 与基线一致，
+报告绑定 AST 字节哈希，`checked=false`、`deployable=false`。
+真实Clang改名/步长128变体反映源码变化；额外induction/bound写入、引用别名、
+调用与复杂控制流保守未知。全仓 `make check` 123 项通过，其中7项真实Clang。
+该递推带无溢出、合法输入域和别名等未证明前提；起点尚未自动解释为线程ID，
+数据覆盖、host launch 与collective路由均未检查，不能宣布WB-03或G2完成。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03 关系恢复与 WB-04～08 仍待实施。

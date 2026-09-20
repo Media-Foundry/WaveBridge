@@ -50,3 +50,24 @@ PYTHONPATH=src python3 -m wavebridge.analysis.declaration_index \
 返回算术、多个语句、循环链、缺失目标或需要参数替换的内部调用保持未知。
 跟随 MemberExpr 只建立调用证据，不证明 receiver 无副作用，也不证明删除
 记录的窄化转换是合法的。结果不能作为代码改写或部署许可。
+
+## 从源码到列递推证据
+
+```bash
+PYTHONPATH=src python3 -m wavebridge.source \
+  benchmarks/cases/llama-rmsnorm/baseline/rmsnorm_logical32.hip.cpp \
+  --compiler /path/to/hipcc --compiler-arg=--cuda-device-only \
+  --symbol rms_norm_f32_logical32 --int-bits 32 --output-dir artifacts/new-columns
+```
+
+入口直接采集完整 AST，再按唯一入口声明提取受限 `for` 列递推；不读人工
+Kernel JSON 或 oracle。输出目录必须不存在，其中 `ast.json` 与 `report.json`
+以哈希绑定。多个编译视图或同名入口不猜选；报告 `analyzed` 仅表示分析执行，
+具体循环仍可能为未知。位宽是外部声明，不代表已自动建立目标 ABI。
+
+`column_loops.recover(root, function_id, int_bits)` 支持 signed-int 的
+`i=start; i<bound; i+=positive_constant`，以声明 ID 匹配条件与增量。
+起点保留源码表达式引用，不预设为线程 ID；额外循环变量/边界写入、可疑引用
+别名、调用或复杂控制流保守拒绝。普通 `output[i]` 下标读取不是对 `i` 的写入。
+递推仍以无溢出、合法域、未建立的别名前提为条件；没有证明输入覆盖、launch
+一致性、归约通信或浮点等价，不生成可部署候选。
