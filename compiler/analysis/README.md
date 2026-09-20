@@ -39,3 +39,14 @@ PYTHONPATH=src python3 -m wavebridge.analysis.declaration_index \
 
 常量值不带自动角色分类：求出 32 不代表它是协作宽度，更不能据此修改数据格式。
 后续还必须将该声明在索引、collective 参数和 launch 中的使用关系分别恢复。
+
+## getter 返回调用链
+
+`return_trace.trace(root, declaration_id, max_depth=16)` 针对单个 root 内的
+单 return、无参数 wrapper 追踪精确声明引用，记录每层 body/range、转换及
+外部调用的实参 AST。到达仅有声明的外部函数只是调用链端点，不自动赋予
+该函数线程索引或 collective 语义。完整声明链与外部语义协议需要分别建立。
+
+返回算术、多个语句、循环链、缺失目标或需要参数替换的内部调用保持未知。
+跟随 MemberExpr 只建立调用证据，不证明 receiver 无副作用，也不证明删除
+记录的窄化转换是合法的。结果不能作为代码改写或部署许可。

@@ -110,4 +110,13 @@ WB-03 受限整数常量求值已接入：`integer_constants.evaluate` 从同 ro
 乘法和负数除余；全仓 `make check` 106 项通过（含 4 项真实 Clang 测试）。
 本轮未执行新的 GPU kernel，线程 getter 的自动语义解释仍未完成。
 
+WB-03 getter 追踪取得源码证据：`return_trace.trace` 在单 return、无参数
+wrapper 子集内沿同 root 精确 ID 追踪。实际完整 HIP AST 中，threadIdx 的
+`__get_x` 经 `__hip_get_thread_idx_x` 到 `__ockl_get_local_id`；blockIdx
+对应链到 `__ockl_get_group_id`。两条外部调用都保留维度 0 的原始实参 AST
+及转换，不自动移除 size_t/unsigned 转换或赋予外部接口语义。
+真实 Clang fixture 验证改名、维度0/1变化、多语句/额外算术拒绝；fixture
+不计入ML语料。下一步需把调用证据、目标外部接口协议及可达表达式连接起来。
+最终本地 `make check` 114 项通过，其中5项使用真实Clang；工作未涉及性能测量。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03 关系恢复与 WB-04～08 仍待实施。
