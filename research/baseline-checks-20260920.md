@@ -90,3 +90,9 @@ shared[32]后固定空间成为128字节，符号缺口仍在。该副本是人�
 [静态共享对照](../.agents/handoffs/polygeist-rocm-static-shared-20260920.md)。
 这些结果限定到已记录版本、兼容补丁及输入；尚未证明需要新的跨lane分析算法，
 也没有排除普通lowering扩展即可完成的可能，因此G1保持未通过。
+
+进一步隔离数学符号：在静态shared人工诊断副本中仅加OCML device声明并把
+rsqrtf调用改为__ocml_rsqrt_f32，固定后端实际链接已有设备库，HSACO未定义
+符号从两个减少为仅shuffle。这支持“数学库链接可通过普通API适配接通”，
+不支持自动恢复、数值等价或新颖性结论。证据见
+[OCML探针](../.agents/handoffs/polygeist-ocml-rsqrt-20260920.md)。

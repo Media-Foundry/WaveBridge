@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新诊断：显式 OCML 调用可消除 rsqrt 未解析符号
+
+在独立静态shared副本中人工声明并调用__ocml_rsqrt_f32，同一cgeist后端生成
+HSACO成功；动态未定义符号只剩shuffle。固定共享128字节、gfx1100/wave32
+元数据不变。这是数学API/设备库链接诊断，不是自动math.rsqrt恢复，也未验证
+数值等价。原案例与编译器均未改动，没有GPU执行。
+见 `.agents/handoffs/polygeist-ocml-rsqrt-20260920.md`；下一步单独验证受限
+shuffle兼容路径，不能把普通映射补全当关系恢复的创新。
+
 ## 最新对照：静态 shared 修正容量，但未打通后端
 
 固定静态shared[32]诊断副本在同一ROCm工具链两阶段均退出0；GPU MLIR为
