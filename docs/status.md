@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新诊断：受限 OCKL shuffle 探针在指令选择阶段失败
+
+独立副本使用已有__ockl_readuplane_i32与signed lane差表达logical32 XOR，
+float/int位搬运用4字节memcpy。GPU MLIR生成成功，但LLVM/HSACO路径在helper的
+AMDGPU指令选择阶段触发BITCAST位宽断言，未产出IR/HSACO；不放行GPU执行。
+条件整数路由枚举2560项通过，仅覆盖声明前提，不证明库或实际机器执行。
+详见 `.agents/handoffs/polygeist-ockl-shuffle-20260920.md`；下一步定位地址空间/
+位搬运降级，不将该断言直接解释为shuffle语义不支持。
+
 ## 最新诊断：显式 OCML 调用可消除 rsqrt 未解析符号
 
 在独立静态shared副本中人工声明并调用__ocml_rsqrt_f32，同一cgeist后端生成
