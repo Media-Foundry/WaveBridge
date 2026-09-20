@@ -1,0 +1,39 @@
+{
+  "schema_version": "cuda-syntax-evidence-index/v1",
+  "scope": "host_and_device_fsyntax_only_with_kernel_ast_filter",
+  "source_sha256": "069811c2d7f40a9df0b2927837f4190ce9b7de9ad35e90e8f68a29bc78a52671",
+  "compiler": "/opt/AMD/aocc-compiler-5.1.0/bin/clang-17",
+  "compiler_sha256": "0aafa5b0712f974db5bbdd93a849b0b1e094bbb6314b8163278a22a90ce766b8",
+  "compiler_warning": "CUDA version 12.1 is only partially supported [-Wunknown-cuda-version]",
+  "target": "sm_70",
+  "source_program_checked": false,
+  "deployable": false,
+  "codegen_link_and_gpu_execution": "not_run",
+  "raw_artifacts_published": false,
+  "successful_reports": [
+    {"mode": "host", "path": "artifacts/cuda-common-input-01/host-sdk-view.json", "sha256": "e75c409529c0fadfefc3cdd48f07b2adcfc9c6df3516e2318d9e067fc0ee9e89"},
+    {"mode": "device", "path": "artifacts/cuda-common-input-01/device-sdk-view.json", "sha256": "a1e3f0be35d69feadfaf37c403aa2a3540cb95b9bb2c556dd2eb56aca513499f"}
+  ],
+  "failed_reports": [
+    {"path": "artifacts/cuda-common-input-01/missing-curand.json", "sha256": "2fb590698c0643a9ac49ed94f0640b0a78f14a1cbef25b99c7c9247e13b34610", "reason": "missing_curand_header"},
+    {"path": "artifacts/cuda-common-input-01/host.json", "sha256": "e6831d64368627efbc64148de26b28ac0719f1d75e0456dee3f36aa8c6d516e9", "reason": "missing_nv_target"},
+    {"path": "artifacts/cuda-common-input-01/device.json", "sha256": "c03d35960175da048fe437bd1f807f71e6fb5faf2e1fdc06de9d6848947a88a9", "reason": "missing_nv_target"},
+    {"path": "artifacts/cuda-common-input-01/host-complete-headers.json", "sha256": "94e31d92ec3f95659c57f9d326dafcfca8532bd34786619f9504b1f2463a11ce", "reason": "explicit_wrapper_without_sdk_detection_uses_legacy_cudaConfigureCall"}
+  ],
+  "dependencies": {
+    "nvidia-cuda-runtime-cu12": "12.1.105",
+    "nvidia-cuda-nvcc-cu12": "12.1.105",
+    "nvidia-curand-cu12": "10.3.2.56",
+    "libcudacxx_revision": "538a6a57bb155ea7a0a5d8371b7b5480b5a963f1",
+    "libcudacxx_tag": "1.9.0",
+    "unused_dependency_note": "nvidia-cuda-cccl-cu12 12.1.55 wheel was inspected but lacked nv/target and is not on the successful include path"
+  },
+  "selected_header_sha256": {
+    "cuda_runtime/include/cuda.h": "08063f8f80fdaa01152c3c517ed44e6c223ebc2a534e44ab2eaf7305154dc092",
+    "cuda_nvcc/include/crt/host_config.h": "02e556b38fde79da7027994f21f244cde1183fa65395ada877a66418d6d07b31",
+    "curand/include/curand_mtgp32_kernel.h": "6a36675ebe595e7404c4495fe8b3e98a0aeb28f4e630865b4724c49c9f810e1c",
+    "libcudacxx/include/nv/target": "74a1208d79828f6eb7d191ae056a5127c23d06ad7023100b8e4b506ab24c2b60",
+    "clang/17/include/__clang_cuda_runtime_wrapper.h": "c9caa8175918bfbcf82062730e900fb9b4aa699fe4271ef7abbd7e0fb5548c73"
+  },
+  "header_hash_scope": "selected_entry_headers_only_not_complete_transitive_environment"
+}

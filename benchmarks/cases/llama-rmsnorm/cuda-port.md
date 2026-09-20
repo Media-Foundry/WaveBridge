@@ -13,8 +13,12 @@ The subgroup intrinsic is the one semantic-sensitive source edit:
 `__shfl_xor_sync(0xffffffffu, value, offset, 32)`. Correct use of the full mask
 requires all 32 logical lanes to be active and converged at every call. This is
 an explicit external assumption, not a result established by the source port.
-The CUDA compiler, runtime, device identity, machine-code warp metadata, and
-numeric behavior remain to be recorded by an independent execution workflow.
+Host and device syntax-only checks passed with AOCC Clang 17.0.6 and real CUDA
+headers, targeting sm_70. The compiler warns that CUDA 12.1 is only partially
+supported. See `cuda-syntax-evidence.json` for successful and failed local report
+hashes. Code generation, linking, runtime, device identity, machine-code warp
+metadata, and numeric behavior remain unvalidated. Filtered kernel AST collection
+does not establish communication semantics or a complete declaration closure.
 
 The upstream source snapshots and MIT license already vendored in this case
 remain the provenance and license basis; see `provenance.json` and

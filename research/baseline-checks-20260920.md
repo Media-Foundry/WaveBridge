@@ -25,7 +25,9 @@ CKTI的ACM摘要/全文入口本轮访问失败，Crossref响应没有摘要或�
 GitHub仓库搜索 `CKTI compiler` 返回0项，只能记录这次检索未定位实现，不能
 推断实现未公开或不支持RMSNorm。其技术能力仍为unverified。
 
-因此G1仍未通过。本仓已有HIP手工提取基线，但它不是已准备好的共同CUDA输入；
+因此G1仍未通过。首次核查时本仓只有HIP手工提取基线；后续已补充人工CUDA
+API移植，并通过host/device语法检查，详见案例目录的 `cuda-port.md` 和
+`cuda-syntax-evidence.json`。这仍不是已验证的共同工具输入；
 不能把HIP输入接入失败当作CUDA重定向工具的语义不足，也不能用WaveBridge的
 局部条件检查与他人的完整执行结果直接比较。本轮没有性能或新颖性结论。
 
@@ -59,8 +61,8 @@ CKTI查询包括正式DOI的abs/full页面、Crossref works API、网页检索�
 
 | 对象 | 当前可确认 | 同例运行状态 | 下一项实际验收 |
 | --- | --- | --- | --- |
-| 正确logical32基线 | 已有W7900的9形状冻结数值记录 | 既有证据；本轮未重跑 | 共同CUDA输入与现有HIP提取的对应关系与补丁 |
-| Polygeist论文版本 | 提交、LLVM依赖和公开构建入口已定位 | `not_executed`；PATH无cgeist | 按固定版本构建；先无变换编译，再单独coarsening并保存IR/launch |
+| 正确logical32基线 | 已有W7900的9形状冻结数值记录；人工CUDA移植已有API记录和计算函数体对照 | HIP既有证据；CUDA仅host/device语法通过 | CUDA代码生成及独立数值核验；不能转用HIP运行记录 |
+| Polygeist论文版本 | 固定源码已checkout；LLVM gitlink已核对、未初始化 | `not_executed`；尚未构建cgeist | 取得固定LLVM并构建；先无变换编译，再单独coarsening并保存IR/launch |
 | Polygeist较新版本 | 本轮没有固定版本或运行 | `unverified` | 不能用旧版的未来失败断言最新方法能力不足 |
 | CKTI | 出版元数据 | `not_executed`；实现入口未定位 | 取得合法全文/实现及版本，再确定共同输入与所需人工修改 |
 | WaveBridge | 受限源码分析、条件模型检查、手工GPU基线 | 无自动源码→候选→GPU闭环 | 不将当前条件模型checked记为完整适配成功 |

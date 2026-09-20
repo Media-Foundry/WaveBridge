@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新验证：CUDA 前端实际接入
+
+固定人工 CUDA 输入在真实 CUDA 头文件下通过 host/device 两侧语法检查并取得
+kernel AST（AOCC Clang 17.0.6，sm_70）。保留编译器 CUDA 12.1 部分支持警告，
+以及缺 cuRAND、缺 nv/target 和未识别 SDK 布局的四份失败报告。
+`cuda-syntax-evidence.json` 记录本地证据索引；没有生成机器码、链接或执行 GPU。
+Polygeist 已 checkout 论文固定提交，LLVM 子模块尚未初始化，G1 对照仍未执行。
+完整命令和边界见 `.agents/handoffs/cuda-syntax-20260920.md`。
+本轮 `make check`：251 项测试通过，六份原始报告的索引哈希全部复核一致。
+
 ## 最新提交验收：CUDA 共同输入准备
 
 新增首例 RMSNorm 的人工 HIP→CUDA API 移植及来源哈希清单，保留原协议。

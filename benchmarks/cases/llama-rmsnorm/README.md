@@ -42,5 +42,6 @@ runtime/driver 身份；host 属性中的 warp size 不会单独被当作物理�
 
 另提供供共同案例接入准备的 [CUDA 人工移植](cuda-port.md)，来源、文件哈希和
 全部 API 修改类别见 `cuda-port.json`。CPU 回归核对计算函数体除显式 shuffle
-API 替换外保持一致；这不是跨 API 语义证明。CUDA 编译和 GPU 数值验证尚未建立，
+API 替换外保持一致；这不是跨 API 语义证明。CUDA host/device 语法检查已通过，
+但代码生成、链接和 GPU 数值验证尚未建立，
 原 HIP 执行记录不适用于该 CUDA 文件，也不表示 Polygeist 已能接入此案例。

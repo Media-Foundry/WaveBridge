@@ -79,7 +79,9 @@
     "the CUDA runtime launch and allocation APIs have their documented behavior"
   ],
   "validation": {
-    "cuda_compile": "not_yet_established",
+    "cuda_compile": "host_and_device_syntax_only_passed",
+    "compile_evidence": "cuda-syntax-evidence.json",
+    "cuda_codegen_and_link": "not_run",
     "cuda_gpu_execution": "not_run",
     "cuda_numeric_comparison": "not_run",
     "machine_code_warp_metadata": "not_extracted"

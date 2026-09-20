@@ -40,7 +40,17 @@ class RmsNormCudaPortTests(unittest.TestCase):
         self.assertEqual("7284151f806d710ff3396b94b62b3ec35d5bef3f44815e1e7837aad66dc85823",
                          manifest["parent"]["sha256"])
         self.assertEqual("not_run", manifest["validation"]["cuda_gpu_execution"])
-        self.assertEqual("not_yet_established", manifest["validation"]["cuda_compile"])
+        self.assertEqual("host_and_device_syntax_only_passed", manifest["validation"]["cuda_compile"])
+        self.assertEqual("not_run", manifest["validation"]["cuda_codegen_and_link"])
+
+    def test_syntax_evidence_does_not_authorize_execution(self):
+        evidence = json.loads((CASE / "cuda-syntax-evidence.json").read_text())
+        self.assertEqual(sha256(CUDA), evidence["source_sha256"])
+        self.assertFalse(evidence["deployable"])
+        self.assertFalse(evidence["source_program_checked"])
+        self.assertEqual({"host", "device"}, {r["mode"] for r in evidence["successful_reports"]})
+        self.assertEqual(4, len(evidence["failed_reports"]))
+        self.assertIn("partially supported", evidence["compiler_warning"])
 
     def test_frozen_protocol_and_launch_shape_are_preserved(self):
         protocol = json.loads((CASE / "protocol.json").read_text())
