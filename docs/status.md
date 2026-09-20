@@ -2,6 +2,14 @@
 
 更新日期：2026-09-20。
 
+## 最新实现：正式记录器支持显式优化级别
+
+`polygeist_frontend.py --optimization-level 1` 可复用已有O1编译配方；API严格接受
+整数0–3，默认0不变，命令/报告/pipeline标签一致。非法类型或范围在创建产物前
+拒绝，ROCm隔离与未验证状态保持不变。287项CPU测试通过，正式入口实际O1编译
+成功；本轮不重复GPU执行，也不将新编译产物继承为已通过数值测试。
+见 `.agents/handoffs/polygeist-optimization-recorder-20260920.md`。
+
 ## 最新对照：O1 人工 Polygeist 基线通过9个确定性形状
 
 分阶段实测发现O0局部平方和已经错误（输出位型0x100），而load-only与常量输出

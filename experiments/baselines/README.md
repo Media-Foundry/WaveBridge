@@ -162,5 +162,8 @@ constructor，运行前必须由外部核对设备、工件、wave库配置与�
 设备执行后发现O0数值失败，分阶段诊断中局部累加已经错误。相同人工输入改为
 O1后通过本机W7900的9个确定性形状；记录见
 [O1数值验收](../../.agents/handoffs/polygeist-o1-numeric-20260920.md)。
-当前通用 `polygeist_frontend.py` 仍固定O0，本次O1是保留完整命令的独立诊断，
-不要使用旧入口报告或旧harness冒充O1结果。下一步应将优化级别纳入正式记录器。
+正式 `polygeist_frontend.py` 现支持 `--optimization-level {0,1,2,3}`，API对应
+`optimization_level=1`。默认仍为0，保持旧调用行为；复现上述人工基线须显式选择1。
+报告记录整数 `optimization_level`，pipeline标签与命令中的-O级别一致，编译成功
+仍仅为 `emitted_unverified_ir`，不自动继承先前的GPU数值结论。O2/O3仅有编排测试，
+没有设备结果。不要使用旧入口报告或旧harness冒充O1结果。

@@ -15,7 +15,9 @@ from wavebridge.frontend import clang_ast
 
 def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
         architecture="sm_70", resource_dir=None, timeout=120.0, cuda_lower=False,
-        emit_llvm=False, rocm_path=None, amd_architecture=None):
+        emit_llvm=False, rocm_path=None, amd_architecture=None, optimization_level=0):
+    if type(optimization_level) is not int or optimization_level not in range(4):
+        raise ValueError("optimization_level must be an integer from 0 to 3")
     if rocm_path is None and amd_architecture is not None:
         raise ValueError("AMD architecture requires an explicit ROCm path")
     if rocm_path is not None:
@@ -55,8 +57,9 @@ def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
         "schema_version": "polygeist-frontend-attempt/v1",
         "scope": "llvm_ir_emission_only" if emit_llvm else "frontend_ir_emission_only",
         "requested_output_kind": "llvm_ir" if emit_llvm else "mlir",
-        "pipeline": ("cgeist_O0_cuda_lower_passes" if cuda_lower else
-                     "cgeist_O0_default_passes_not_identity_translation"),
+        "optimization_level": optimization_level,
+        "pipeline": (f"cgeist_O{optimization_level}_cuda_lower_passes" if cuda_lower else
+                     f"cgeist_O{optimization_level}_default_passes_not_identity_translation"),
         "cuda_lower_requested": cuda_lower,
         "status": "tool_missing",
         "source": {"path": str(source), "sha256": _sha256(source)},
@@ -74,7 +77,8 @@ def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
     if rocm_path is not None:
         report.update(
             scope="rocm_compilation_attempt_only",
-            pipeline="cgeist_O0_rocm_llvm" if emit_llvm else "cgeist_O0_rocm_gpu_mlir",
+            pipeline=(f"cgeist_O{optimization_level}_rocm_llvm" if emit_llvm else
+                      f"cgeist_O{optimization_level}_rocm_gpu_mlir"),
             gpu_execution="not_requested_not_independently_observed",
             amd_architecture=amd_architecture, rocm_path=str(rocm_path),
             alternatives_generation_requested=False,
@@ -89,7 +93,7 @@ def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
     if executable is not None:
         executable = Path(executable).resolve()
         report["tool"] = {"path": str(executable), "sha256": _sha256(executable)}
-        command = [str(executable), str(source), "-S", "-O0", f"--function={symbol}",
+        command = [str(executable), str(source), "-S", f"-O{optimization_level}", f"--function={symbol}",
                    "--std=c++17", f"--cuda-path={cuda_path}",
                    f"--cuda-gpu-arch={architecture}"]
         command += [f"-I{path}" for path in include_dirs]
@@ -143,6 +147,8 @@ def main():
     parser.add_argument("--symbol", default="*")
     parser.add_argument("--architecture", default="sm_70")
     parser.add_argument("--timeout", type=float, default=120)
+    parser.add_argument("--optimization-level", type=int, choices=range(4), default=0,
+                        help="cgeist optimization level (default: 0); not a correctness guarantee")
     parser.add_argument("--cuda-lower", action="store_true",
                         help="request CUDA-to-MLIR lowering, not GPU code generation")
     parser.add_argument("--emit-llvm", action="store_true",
@@ -157,7 +163,8 @@ def main():
                            args.output_base, symbol=args.symbol, architecture=args.architecture,
                            resource_dir=args.resource_dir, timeout=args.timeout,
                            cuda_lower=args.cuda_lower, emit_llvm=args.emit_llvm,
-                           rocm_path=args.rocm_path, amd_architecture=args.amd_architecture)
+                           rocm_path=args.rocm_path, amd_architecture=args.amd_architecture,
+                           optimization_level=args.optimization_level)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     print(json.dumps({"status": report["status"], "report": str(path)}))

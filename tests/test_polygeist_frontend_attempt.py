@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import sys
 from unittest.mock import patch
 
 
@@ -27,9 +28,11 @@ class PolygeistFrontendAttemptTests(unittest.TestCase):
         self.output_base = self.directory / "reports"
 
     def run_attempt(self, *, code=0, status="completed", output=None, cuda_lower=False,
-                    emit_llvm=False):
+                    emit_llvm=False, optimization_level=0):
         def invoke(command, timeout, cwd):
             self.assertIn("-S", command)
+            self.assertEqual([f"-O{optimization_level}"],
+                             [arg for arg in command if arg.startswith("-O")])
             self.assertIn("--function=*", command)
             self.assertNotIn("--emit-cuda", command)
             self.assertEqual(cuda_lower, "--cuda-lower" in command)
@@ -42,7 +45,39 @@ class PolygeistFrontendAttemptTests(unittest.TestCase):
         with patch.object(RUNNER.shutil, "which", return_value=str(self.tool)), \
                 patch.object(RUNNER, "invoke", side_effect=invoke):
             return RUNNER.run(self.source, self.tool, self.directory, [], self.output_base,
-                              cuda_lower=cuda_lower, emit_llvm=emit_llvm)
+                              cuda_lower=cuda_lower, emit_llvm=emit_llvm,
+                              optimization_level=optimization_level)
+
+    def test_optimization_levels_bind_command_and_report_without_verification(self):
+        for level in range(4):
+            for cuda_lower in (False, True):
+                with self.subTest(level=level, cuda_lower=cuda_lower):
+                    path, report = self.run_attempt(output="mock IR", optimization_level=level,
+                                                    cuda_lower=cuda_lower)
+                    self.assertEqual(level, report["optimization_level"])
+                    self.assertIn(f"cgeist_O{level}_", report["pipeline"])
+                    self.assertEqual(report, json.loads(path.read_text()))
+                    self.assertFalse(report["deployable"])
+                    self.assertFalse(report["ir_verified"])
+
+    def test_invalid_optimization_level_rejects_before_files_or_processes(self):
+        with patch.object(RUNNER, "invoke") as invoke:
+            for value in (-1, 4, True, False, 1.0, "1", "1 --emit-cuda", None):
+                with self.subTest(value=value), self.assertRaisesRegex(ValueError, "optimization_level"):
+                    RUNNER.run(self.source, self.tool, self.directory, [], self.output_base,
+                               optimization_level=value)
+            invoke.assert_not_called()
+        self.assertFalse(self.output_base.exists())
+
+    def test_cli_passes_explicit_optimization_and_preserves_default(self):
+        argv = ["polygeist_frontend.py", str(self.source), "--cgeist", str(self.tool),
+                "--cuda-path", str(self.directory)]
+        for extra, expected in (([], 0), (["--optimization-level", "1"], 1)):
+            with self.subTest(expected=expected), patch.object(sys, "argv", argv + extra), \
+                    patch.object(RUNNER, "run", return_value=("report.json", {
+                        "status": "emitted_unverified_ir"})) as run, patch("builtins.print"):
+                self.assertEqual(0, RUNNER.main())
+                self.assertEqual(expected, run.call_args.kwargs["optimization_level"])
 
     def test_llvm_output_is_separate_and_unverified(self):
         _, report = self.run_attempt(output="not validated LLVM", cuda_lower=True,
@@ -74,6 +109,8 @@ class PolygeistFrontendAttemptTests(unittest.TestCase):
         for emit_llvm in (False, True):
             def invoke(command, timeout, cwd):
                 self.assertIn("--emit-rocm", command)
+                self.assertIn("-O1", command)
+                self.assertNotIn("-O0", command)
                 self.assertIn("--amd-gpu-arch=gfx1100", command)
                 self.assertIn(f"--rocm-path={view}", command)
                 self.assertNotIn("--cuda-lower", command)
@@ -91,7 +128,10 @@ class PolygeistFrontendAttemptTests(unittest.TestCase):
                     patch.object(RUNNER, "invoke", side_effect=invoke):
                 _, report = RUNNER.run(self.source, self.tool, self.directory, [],
                     self.output_base, rocm_path=view, amd_architecture="gfx1100",
-                    emit_llvm=emit_llvm)
+                    emit_llvm=emit_llvm, optimization_level=1)
+                self.assertEqual(1, report["optimization_level"])
+                self.assertEqual("cgeist_O1_rocm_llvm" if emit_llvm else
+                                 "cgeist_O1_rocm_gpu_mlir", report["pipeline"])
                 self.assertEqual(emit_llvm, report["hsaco_serialization_requested"])
                 self.assertEqual(4, len(report["runtime_prerequisites"]))
                 self.assertTrue(report["visibility_mask_is_not_a_sandbox"])
