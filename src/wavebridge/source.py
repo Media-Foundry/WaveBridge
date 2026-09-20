@@ -16,6 +16,7 @@ from wavebridge.analysis.row_prefix import recover as recover_prefix
 from wavebridge.analysis.launch_facts import inspect as inspect_launch
 from wavebridge.analysis.constructor_arguments import inspect as inspect_constructor
 from wavebridge.analysis.constructor_fields import recover as recover_constructor_fields
+from wavebridge.analysis.launch_guards import recover as recover_launch_guards
 
 
 def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=30.0):
@@ -42,7 +43,8 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
                 "analysis/block_reduction.py", "analysis/xor_reduction.py",
                 "analysis/local_contribution.py", "analysis/normalization_output.py",
                 "analysis/row_prefix.py", "analysis/launch_facts.py",
-                "analysis/constructor_arguments.py", "analysis/constructor_fields.py")
+                "analysis/constructor_arguments.py", "analysis/constructor_fields.py",
+                "analysis/launch_guards.py")
         },
     }
     locations = frontend["function_locations"]
@@ -71,6 +73,8 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
             frontend["ast_roots"][0], locations[0]["id"], int_bits)
         report["launch_facts"] = inspect_launch(frontend["ast_roots"][0], locations[0]["id"])
         for site in report["launch_facts"]["sites"]:
+            site["host_guard_intervals"] = recover_launch_guards(
+                frontend["ast_roots"][0], site.get("launch_id"), int_bits)
             site["configuration_constructor_arguments"] = [
                 inspect_constructor(frontend["ast_roots"][0], expression, int_bits)
                 for expression in site["configuration_arguments"][:2]]

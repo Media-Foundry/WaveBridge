@@ -178,3 +178,21 @@ launch site 的 `parameter_bindings` 按精确 kernel 定义与实参位置关�
 desugared类型须对应，额外body写入、算术、base/delegating初始化或不支持转换
 保持unknown。能定位直接所属record时核对全部字段；否则保留所有权不完整标记。
 源码入口将其保存为构造参数报告的 `field_initialization`，仍不签发配置正确性。
+
+## launch 前的整数守卫
+
+`launch_guards.recover(root, launch_id, int_bits)` 从唯一 host 函数内的指定
+launch 回溯顶层提前返回守卫。受限模式为 signed int 局部常量与整数字面量
+的 `<`、`<=`、`>`、`>=` 比较，使用 `||` 组合拒绝条件，再对存活路径取
+区间交集。报告绑定变量声明、守卫和 launch 的源码位置，不根据变量名认定
+行数或列数。支持直接 launch 和单一 launch 的 `do { ... } while (0)` 包装。
+
+源码入口将结果保存为 site 的 `host_guard_intervals`。它仅给出执行到该
+launch 的必要条件，不证明 launch 一定可达、主机函数正确或配置字段值。
+mutable/volatile、地址逃逸、不支持的控制流或转换保持unknown。源程序有效性
+及 signed int 位宽仍是前提；这些区间不是外部合法输入/浮点数值协议，也不会
+使 `configuration_check` 自动接受 symbolic 实参。
+
+不符合该模式的普通 host 错误检查可以保留为 `skipped_guards`，但不能贡献
+区间约束。跳转绕过、嵌套可调用对象等不支持结构则阻止恢复；普通调用的存在
+不会被误判为边界成立的证据，受保护变量仍须通过只读使用审计。

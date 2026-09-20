@@ -250,4 +250,12 @@ WB-04 新增独立构造字段常量检查器及 `wavebridge.configuration_check
 具体验收与本地产物见
 `.agents/handoffs/wb04-configuration-20260920.md`；并非实际launch或GPU保证。
 
+WB-03 新增 launch 前置整数守卫恢复。真实HIP重跑工件
+`artifacts/wb03-source-launch-guards-01/{ast,report}.json` 中，grid首实参的
+精确声明对应必要区间 `[1,8]`，列数kernel形参的host实参声明对应 `[1,1023]`。
+5个不用于区间推导的普通错误检查保留为skipped；跳转绕过、非只读使用等拒绝。
+这些不是合法输入协议、host可达性或GPU保证；配置模型检查仍整体unknown。
+`make check`227项通过，源码/AST/实现hash核对一致，无新GPU执行。
+完整命令见 `.agents/handoffs/wb03-launch-guards-20260920.md`。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

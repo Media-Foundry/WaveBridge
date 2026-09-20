@@ -95,3 +95,12 @@ signedness，只检查区间内所有整数是否都能由两个类型表示。�
 checked以外部声明的值域与类型信息为前提，不自行从类型名或源码猜测ABI，
 不检查表达式求值、浮点转换、指针或完整源程序。编译器预定义宏记录与实际
 源码/目标配置的绑定仍需单独核对，不能以一次空TU宏探测替代全部前提。
+
+## host 守卫区间：`launch-guards/v1`
+
+受限 AST 分析输出 `intervals`、`guards` 与 `skipped_guards`，按精确声明 ID
+关联 launch 前的顶层提前返回条件。区间是执行到指定 launch 的必要条件，
+不是外部输入契约或 host 可达性证明。未支持的普通守卫不贡献约束；跳转绕过、
+变量非只读使用或不支持控制流阻止恢复。详见 `compiler/analysis/README.md`。
+此报告不由独立 checker 签发，始终保留 `checked=false`、`deployable=false`；
+整型位宽和源有效性仍是显式前提。
