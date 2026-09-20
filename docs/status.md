@@ -2,6 +2,18 @@
 
 更新日期：2026-09-20。
 
+## 最新组合门控：同AST的block、getter与列起点
+
+新增initializer_domain转换链checker与thread_start_check组合API。后者从同一
+原始AST重新恢复循环/归约/launch/构造字段/初始化式，用root hash及精确ID绑定
+显式轴和local-id协议，从已检查block.x导出getter域，再串接返回和初始化转换。
+删除block checker不必要的“起点已使用x”前提，避免循环论证；配置位置、子报告
+一维维度与模型大小均有严格门控。342项CPU测试通过，Sol审查修复后确认。
+真实HIP最终工件 `artifacts/wb04-thread-start-psY2gK/report-final.json` 条件checked，
+列起点域[0,255]；实现hash与运行前后一致。它仅覆盖选定launch的列起点，仍依赖
+显式外部API/ABI/运行配置和可信前端，不检查helper内其它坐标或整核等价，无GPU
+执行或部署放行。见 `.agents/handoffs/wb04-thread-start-20260920.md`。
+
 ## 最新独立检查：getter返回链的条件值保持
 
 新增verification/getter_returns，直接从单TU函数AST检查exact调用链、外部叶实参

@@ -13,7 +13,6 @@ def check(chain, site, integer_types, axis_binding):
                   "explicit_axis_field_binding_matches_launch_API",
                   "configuration_argument_1_is_block_dimensions",
                   "integer_ABI_and_declaration_constants_match_source_target",
-                  "kernel_uses_x_coordinate_for_recovered_column_start",
                   "runtime_executes_reported_launch_without_other_configuration_changes"]}
 
     def unknown(reason):

@@ -163,3 +163,13 @@ receiver上下文有效性、外部函数/轴语义和launch域须另行建立�
 声明区间上值保持；不根据函数名认定坐标。返回窄化可rejected；前提不匹配或
 不支持则unknown。checked仅描述该条件值保持性质，不能扩展为外部函数实现、
 线程坐标语义、真实launch或整核等价的保证。详见 `compiler/verification/README.md`。
+
+## 条件线程起点组合
+
+`initializer-domain-check/v1`检查可信value_link及getter证据的ID/ABI/类型连接，
+并逐级核对初始化整数转换；本身不重新验证前端恢复。
+`conditional-thread-start-check/v1`组合入口则从同一原始AST重新运行前端与三类
+checker。外部`thread-start-assumptions/v1`绑定root hash、kernel、选定launch、
+轴字段映射和local-id接口语义。满足全部门槛才可条件性确认该launch下列起点
+等于local x及其区间；原始AST可信性、外部API真实性和实际运行配置仍是前提。
+不授权GPU部署，不扩大到其它坐标读取、其它launch或完整kernel正确性。

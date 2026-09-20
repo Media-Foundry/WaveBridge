@@ -121,4 +121,32 @@ checked仅说明显式坐标语义下构造字段匹配；仍不证明kernel实�
 
 该API不证明外部函数语义、输入区间真实性、初始化表达式/属性receiver纯度、
 launch域或源/目标等价。source_program_checked/deployable始终false。尚无独立CLI，
-也未自动与value_link或block配置检查组合；不能据此放行GPU候选。
+本身不与value_link或block配置自动组合；不能据此放行GPU候选。组合API见下一节。
+
+## 初始化域与选定launch的线程起点组合
+
+`verification.initializer_domain.check(value_link, getter_report, integer_types)`
+在可信前端value_link与真实getter检查证据前提下，核对callee/start ID、call结果
+类型及getter的ABI hash，再从内到外检查最多32级初始化IntegralCast。它不重新
+解释pseudo-object或证明receiver纯度；缺失/不匹配保持unknown，确切窄化为rejected。
+结果为`initializer-domain-check/v1`，只在checked时给出完整结果区间。
+
+`thread_start_check.check(root, kernel_id, launch_id, integer_types, binding, int_bits=32)`
+是**源码恢复与检查的组合层**，不是新增独立前端。它不接收旧的成功报告，而从
+同一原始AST重新恢复列循环、归约链、launch配置、构造字段与初始化结果调用，
+再执行block配置、getter返回和初始化域三个检查。前端仍属于可信基础。
+支持所有已恢复列循环共用一个声明起点，且步长等于已恢复block线程数。
+
+外部`thread-start-assumptions/v1`必须绑定规范化`ast_root_sha256`、kernel ID、
+launch ID，并提供已有`launch-axis-assumptions/v1`的`axis_binding`及`coordinate`：
+`semantics=workgroup_local_id`、`axis=0`、外部函数`declaration_id`和`return_type`。
+还须显式声明`configuration_positions={grid:0,block:1}`，其它位置不支持。
+这些是外部API协议，不是按名称推断的发现；旧AST的ID/绑定不能复用。
+getter的[0,block.x-1]区间由已检查block配置与该外部local-id语义共同导出，
+不另填人工线程区间。三项通过后才返回`conditional-thread-start-check/v1`的checked。
+
+结论仅覆盖**这个选定launch的列循环起点**在显式API/ABI/有效源码/运行配置前提下
+等于local x；不覆盖其它launch、归约helper内其它坐标读取、所有线程参与、内存、
+浮点等价或外部实现本身。嵌套checker的premises保留；block checker只检查配置
+与一维模型相符，不再预设kernel起点使用x，避免将待证结论作为自身前提。
+source_program_checked/deployable始终false。当前是Python API，无自动部署或CLI。
