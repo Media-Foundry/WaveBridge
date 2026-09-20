@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新门控：LLVM16 设备库可读性已建立
+
+固定ROCm Device Libs 5.3.3提交cc06f706，在隔离副本仅将prepare-builtins的
+C++14改为17，使用既有固定LLVM16工具构建opencl/ocml/ockl成功（547任务）。
+三份bitcode逐个在opaque-pointers=0下verify通过，联合llvm-link后也verify
+通过；不再依赖不可读的LLVM23设备库。没有GPU或gfx1100 code-object保证。
+官方没有5.3.4标签，不能称原论文环境精确复现。下一步独立配置完整ROCm
+后端；命令/失败/哈希见 `.agents/handoffs/polygeist-device-libs-20260920.md`。
+
 ## 最新门控：属性字段审计通过，设备 bitcode 不兼容
 
 隔离编译期审计覆盖wrapper实际复制的42个字段：CUDA11.8与当前HIP头的

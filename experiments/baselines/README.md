@@ -114,3 +114,9 @@ CUDA与HIP冲突的surface/texture类型，不删CUDA→HIP函数；不保证设
 验证。当前SDK的设备bitcode由LLVM23生成，已实际确认固定LLVM16无法读取
 ocml.bc，不能未经门控接入完整ROCm构建。见
 [后端前提记录](../../.agents/handoffs/polygeist-backend-prerequisites-20260920.md)。
+
+已从固定ROCm Device Libs 5.3.3提交构建LLVM16可读的opencl/ocml/ockl，
+`patches/device-libs-cxx17.patch`只调整host辅助工具语言标准；不改设备算法。
+实际构建、typed-pointer验证与联合链接已通过，见
+[设备库记录](../../.agents/handoffs/polygeist-device-libs-20260920.md)。
+这些库仍需完整后端/目标机器码/实际数值验收，不能凭IR verifier通过宣称GPU正确。
