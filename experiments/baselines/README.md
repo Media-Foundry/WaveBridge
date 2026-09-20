@@ -137,3 +137,10 @@ HSACO请求也不代表序列化已经成功。
 沙箱，报告仅说明未请求设备执行、未独立观测。实际使用前仍需审查输入与输出
 不存在alternatives；不打开`--output-intermediate-gpu`以免污染文本IR。
 目前新增路径仅通过CPU编排测试，完整后端仍在构建，尚无这两阶段的新实测结果。
+
+后续实测已完成构建及两阶段诊断，见docs/status.md最新记录。
+`patches/rocm-private-alloca.patch`是额外、明确标记的编译器兼容补丁：仅ROCm
+设备模块的C-style generic alloca改用AS5分配再转换回原指针类型；不改变host、
+CUDA或非generic路径的分支。它不是原论文工件，也不是WaveBridge关系分析算法。
+增量构建及受限shuffle诊断已生成无非空未定义动态符号的HSACO，但未执行GPU。
+原二进制已保存，详见[补丁验收](../../.agents/handoffs/polygeist-alloca-patch-20260920.md)。

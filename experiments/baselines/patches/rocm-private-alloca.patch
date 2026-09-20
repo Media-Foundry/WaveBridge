@@ -1,0 +1,68 @@
+diff --git a/lib/polygeist/Passes/ConvertPolygeistToLLVM.cpp b/lib/polygeist/Passes/ConvertPolygeistToLLVM.cpp
+index 4d33e008b31..4b2887c4bb5 100644
+--- a/lib/polygeist/Passes/ConvertPolygeistToLLVM.cpp
++++ b/lib/polygeist/Passes/ConvertPolygeistToLLVM.cpp
+@@ -933,7 +933,10 @@ protected:
+ /// Pattern for lowering automatic stack allocations.
+ struct CAllocaOpLowering : public AllocLikeOpLowering<memref::AllocaOp> {
+ public:
+-  using AllocLikeOpLowering<memref::AllocaOp>::AllocLikeOpLowering;
++  CAllocaOpLowering(LLVMTypeConverter &typeConverter,
++                    bool useRocmPrivateAddressSpace)
++      : AllocLikeOpLowering<memref::AllocaOp>(typeConverter),
++        useRocmPrivateAddressSpace(useRocmPrivateAddressSpace) {}
+ 
+   LogicalResult
+   matchAndRewrite(memref::AllocaOp allocaOp, OpAdaptor adaptor,
+@@ -950,10 +953,22 @@ public:
+            "expected at most one dynamic size");
+ 
+     Value outerSize = getOuterSize(allocaOp, adaptor, rewriter);
++    if (useRocmPrivateAddressSpace && convertedType.getAddressSpace() == 0) {
++      auto privateType =
++          LLVM::LLVMPointerType::get(convertedType.getElementType(), 5);
++      Value privateAlloca = rewriter.create<LLVM::AllocaOp>(
++          loc, privateType, outerSize, adaptor.getAlignment().value_or(0));
++      rewriter.replaceOpWithNewOp<LLVM::AddrSpaceCastOp>(
++          allocaOp, convertedType, privateAlloca);
++      return success();
++    }
+     rewriter.replaceOpWithNewOp<LLVM::AllocaOp>(
+         allocaOp, convertedType, outerSize, adaptor.getAlignment().value_or(0));
+     return success();
+   }
++
++private:
++  bool useRocmPrivateAddressSpace;
+ };
+ 
+ /// Pattern for lowering heap allocations via malloc.
+@@ -2658,11 +2673,13 @@ public:
+ /// pointer to arrays of arrays.
+ static void
+ populateCStyleMemRefLoweringPatterns(RewritePatternSet &patterns,
+-                                     LLVMTypeConverter &typeConverter) {
+-  patterns.add<CAllocaOpLowering, CAllocOpLowering, CDeallocOpLowering,
+-               GetGlobalOpLowering, GlobalOpLowering, CLoadOpLowering,
+-               CStoreOpLowering, AllocaScopeOpLowering, CAtomicRMWOpLowering>(
+-      typeConverter);
++                                     LLVMTypeConverter &typeConverter,
++                                     bool useRocmPrivateAddressSpace) {
++  patterns.add<CAllocaOpLowering>(typeConverter,
++                                  useRocmPrivateAddressSpace);
++  patterns.add<CAllocOpLowering, CDeallocOpLowering, GetGlobalOpLowering,
++               GlobalOpLowering, CLoadOpLowering, CStoreOpLowering,
++               AllocaScopeOpLowering, CAtomicRMWOpLowering>(typeConverter);
+ }
+ 
+ /// Appends the patterns lowering operations from the Func dialect to the LLVM
+@@ -2829,7 +2846,8 @@ struct ConvertPolygeistToLLVMPass
+       populateForBreakToWhilePatterns(patterns);
+       cf::populateControlFlowToLLVMConversionPatterns(converter, patterns);
+       if (useCStyleMemRef) {
+-        populateCStyleMemRefLoweringPatterns(patterns, converter);
++        populateCStyleMemRefLoweringPatterns(
++            patterns, converter, gpuModule && gpuTarget == "rocm");
+         populateCStyleFuncLoweringPatterns(patterns, converter);
+       } else {
+         populateMemRefToLLVMConversionPatterns(converter, patterns);

@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新实现：最小 ROCm 栈兼容补丁打通诊断源码的代码生成
+
+Sol子代理实现限定ROCm GPU模块/generic alloca的AS5补丁，主代理审查并完成
+三任务增量构建。原cgeist已保留。相同shuffle诊断源码现在生成HSACO，动态
+符号表除空占位外无未定义项；gfx1100/wave32、固定共享128字节。
+host局部栈回归前后IR逐字节一致，284项CPU测试通过。不是GPU数值结果；
+人工API/静态shared副本与编译器补丁必须作为额外适配成本记录。
+见 `.agents/handoffs/polygeist-alloca-patch-20260920.md`。
+
 ## 最新定位：shuffle 探针的断言来自局部栈地址空间路径
 
 保存序列化前设备LLVM后，独立Clang复现同一BITCAST断言。仅将helper三处
