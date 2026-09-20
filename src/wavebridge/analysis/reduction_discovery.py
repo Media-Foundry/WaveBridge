@@ -12,7 +12,7 @@ MAX_CANDIDATE_ATTEMPTS = 512
 DIRECT_CALL_KINDS = {"CallExpr", "CXXMemberCallExpr"}
 SPECIAL_CALL_KINDS = {"CXXOperatorCallExpr", "CUDAKernelCallExpr"}
 CALLEE_WRAPPERS = {"ParenExpr", "ImplicitCastExpr"}
-ALLOWED_CALLEE_CASTS = {"FunctionToPointerDecay", "NoOp"}
+ALLOWED_CALLEE_CASTS = {"FunctionToPointerDecay", "NoOp", "BuiltinFnToFnPtr"}
 
 
 def _children(node: dict[str, Any]) -> list[dict[str, Any]]:
@@ -44,7 +44,7 @@ def _body(node: dict[str, Any]) -> dict[str, Any] | None:
 def _callee(call: dict[str, Any], declarations: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     result: dict[str, Any] = {"callee_id": None, "reason": None, "receiver_ast": None,
                               "receiver_semantics": "not_applicable",
-                              "dispatch": "not_established"}
+                              "dispatch": "not_established", "callee_casts": []}
     children = _children(call)
     if not children:
         result["reason"] = "callee_missing"
@@ -59,6 +59,14 @@ def _callee(call: dict[str, Any], declarations: dict[str, list[dict[str, Any]]])
                 current.get("castKind") not in ALLOWED_CALLEE_CASTS):
             result["reason"] = "unsupported_callee_cast"
             return result
+        if current.get("kind") == "ImplicitCastExpr":
+            result["callee_casts"].append({
+                "cast_kind": current.get("castKind"),
+                "source_type": wrapped[0].get("type"),
+                "destination_type": current.get("type"),
+                "range": current.get("range"),
+                "semantic_obligation": "not_discharged",
+            })
         current = wrapped[0]
     if current.get("kind") == "DeclRefExpr":
         referenced = current.get("referencedDecl")
@@ -168,11 +176,13 @@ def discover(root: object, entry_id: str, int_bits: int) -> dict[str, Any]:
                 result["unresolved_calls"].append({"caller_id": function_id,
                     "call_kind": call.get("kind"), "call_range": call.get("range"), "reason": reason,
                     "receiver_ast": callee["receiver_ast"],
+                    "callee_casts": callee["callee_casts"],
                     "receiver_semantics": callee["receiver_semantics"]})
                 continue
             result["call_edges"].append({"caller_id": function_id, "callee_id": target_id,
                                           "call_range": call.get("range"),
                                           "dispatch": callee["dispatch"],
+                                          "callee_casts": callee["callee_casts"],
                                           "receiver_ast": callee["receiver_ast"],
                                           "receiver_semantics": callee["receiver_semantics"]})
             if target_id not in seen_targets:

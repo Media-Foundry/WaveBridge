@@ -177,4 +177,12 @@ WB-03 调用发现已支持声明明确为 static 的精确成员调用。真实
 `make check` 161 项通过，包括真实 Clang static property 和 virtual 拒绝回归。
 本轮未执行 GPU kernel，也未解除外部 intrinsic 或数值语义前提。
 
+WB-03 的 17 条 callee 转换现已从真实 AST 确认为 `BuiltinFnToFnPtr`，
+调用发现器记录其精确声明边及 callee 转换证据，不赋予 builtin 语义。
+重跑 `artifacts/wb03-source-builtins-01/{ast,report}.json` 得到 17 条 builtin
+调用边；原有两个归约候选保持不变。未解析总数仍为21，原因现在明确为20条
+缺唯一函数体和1条缺成员声明，不将外部实现边界伪装成分析成功。
+实现哈希核对一致；`make check` 163项通过，含真实Clang builtin及BitCast拒绝
+回归。没有新GPU执行或完整源码保证。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

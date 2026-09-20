@@ -124,3 +124,8 @@ Clang ID仅对指定AST工件/root有效。`source_program_checked=false` 始终
 时加入调用边。receiver AST 保留且其语义未建立；virtual、缺失成员声明或
 未证明 static 的调用仍为 unresolved。此规则可以接入 HIP 静态属性 getter，
 但不证明属性结果等于线程坐标，也不删除 receiver 或整数转换。
+
+Clang 的 `BuiltinFnToFnPtr` callee 转换可穿透到精确声明引用，和其它允许的
+callee 转换一起保存在 `callee_casts`（类型、范围、未解除义务）。这只补全
+声明关联；没有函数体的编译器 builtin 仍记缺定义，外部语义不因此建立。
+任意指针 BitCast 等其它转换仍不支持。

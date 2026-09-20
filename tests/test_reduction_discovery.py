@@ -120,6 +120,19 @@ class ReductionDiscoveryTests(unittest.TestCase):
         self.assertEqual("invalid_int_bits", discovery.discover({}, "entry", 1)["reason"])
         self.assertEqual("entry_unique_definition_not_found", discovery.discover(root(), "entry", 32)["reason"])
 
+    def test_builtin_conversion_records_evidence_without_external_semantics(self):
+        invocation = call("builtin")
+        invocation["inner"][0]["castKind"] = "BuiltinFnToFnPtr"
+        result = discovery.discover(root(function("entry", [invocation])), "entry", 32)
+        self.assertEqual("builtin", result["call_edges"][0]["callee_id"])
+        self.assertEqual("BuiltinFnToFnPtr", result["call_edges"][0]["callee_casts"][0]["cast_kind"])
+        self.assertEqual("not_established", result["external_call_semantics"])
+        self.assertFalse(result["analysis_complete"])
+        invocation["inner"][0]["castKind"] = "BitCast"
+        unsupported = discovery.discover(root(function("entry", [invocation])), "entry", 32)
+        self.assertFalse(unsupported["call_edges"])
+        self.assertEqual("unsupported_callee_cast", unsupported["unresolved_calls"][0]["reason"])
+
     def test_candidate_budget_preserves_partial_results(self):
         targets = [f"f{i}" for i in range(7)]
         tree = root(function("entry", [call(target) for target in targets],
