@@ -219,3 +219,8 @@ participation继续未建立，不授权GPU部署。
 域协议，并显式声明外部正常返回假设。`conditional-entry-call-check/v1`仅组合
 这些假设下callee body的有限返回链，不证明外部终止、调用点求值或整体到达。
 缺协议或值保持拒绝使组合unknown，不把数值反例误报为不终止反例。
+
+`grid-domain-assumptions/v1`绑定root/kernel/launch、第0配置位置与字段轴协议。
+`conditional-grid-domain-check/v1`从fresh host guard和构造式检查一维正grid域，
+不把必要条件过近似当可达集合。用它推导block-id域还需要外部API语义，不能因
+字段或函数名叫x/group便自动建立该含义。

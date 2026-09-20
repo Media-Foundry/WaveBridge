@@ -252,3 +252,22 @@ getter_returns成功报告的completion记录精确外部叶、实参及有限�
 缺少任何getter契约、body检查不支持或值保持失败，整体unknown并保留局部结果。
 `conditional-entry-call-check/v1`只覆盖callee body；调用点receiver/实参求值、
 循环body有效性和helper可达性仍未建立，participation/source/deploy均不升级。
+
+## Grid 配置域
+
+`verification.grid_configuration.check(site, integer_types, axis_binding, declaration_intervals)`
+检查第0个配置构造式，在显式FieldDecl ID→轴映射下将常量/符号字段归一化为区间。
+只有x全域为正且y/z恒1才checked；域内反例不代表该值实际可达。不按名称猜轴，
+不猜硬件grid上限，也不自动赋予block-id语义。
+
+`grid_domain_check.check(root, kernel_id, launch_id, integer_types, binding,
+int_bits=32, use_host_guard_assumptions=True)`fresh恢复选定launch、构造字段与host
+guard。`grid-domain-assumptions/v1`显式绑定root hash/kernel/launch、
+configuration_position=0及已有launch-axis-assumptions/v1。输出
+`conditional-grid-domain-check/v1`保留必要条件域证据；不证明域可达、实际运行
+配置或设备launch限制，不授权部署。与block-id连接仍需外部API语义协议。
+
+首例采用[HIP 7.1.1 index built-ins协议](https://rocm.docs.amd.com/projects/HIP/en/docs-7.1.1/how-to/hip_cpp_language_extensions.html#threadidx-and-blockidx)，
+配合固定SDK头文件与精确getter AST调用链，把已检查grid.x上界减1作为外部
+group-id叶值域上界。该组合目前在诊断runner中完成，不是通用自动API识别器，
+也不证明外部叶实现或正常返回。来源与文件hash见对应交接。

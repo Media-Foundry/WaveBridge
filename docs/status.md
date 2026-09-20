@@ -2,6 +2,17 @@
 
 更新日期：2026-09-20。
 
+## 最新条件检查：grid域与block-id协议来源
+
+grid_configuration和grid_domain_check从选定launch的第0构造配置、字段轴协议及
+fresh host guard检查一维正grid域；421项CPU测试通过，真实AST得到x[1,8]、y/z1。
+固定SDK头与精确AST追踪确认block getter调用group-id叶(axis0)，HIP7.1.1官方
+Index built-ins协议用于明确的外部语义绑定。诊断runner据grid上界派生[0,7]，
+补齐前缀getter协议后两个body均条件checked，不再靠人工任选上界。
+工件在 `artifacts/wb04-grid-domain-6J9DFi/`；外部实现/normal return、调用点求值、
+内存与参与仍未证明，无GPU作业。该协议组合尚为诊断runner，不宣称通用自动
+block-id识别。见 `.agents/handoffs/wb04-grid-domain-20260920.md`。
+
 ## 最新条件检查：前缀 getter 函数体返回
 
 getter_returns成功报告记录有限返回链的conditional completion；entry_call_check
