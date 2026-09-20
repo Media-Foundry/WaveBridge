@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新检查能力：显式ABI下的launch共享容量
+
+新增独立字节表达式checker与共享容量CLI：从第三配置实参的原始AST检查
+`32 * sizeof(float)`及整数转换，不默认sizeof结果，不把溢出或未知表达式放行。
+在示例显式ABI与恢复结构前提下，真实HIP报告的block256/width32需要8槽（32字节），
+launch表达式为128字节，条件容量checked。运行时block、坐标、单数组偏移0、ABI
+匹配与别名仍是前提，source_program_checked/deployable均false。
+306项CPU测试通过；无新GPU执行。已补上缺失/重复launch ID及存储报告内部一致性
+门控，顶层报告显式列出条件前提。见 `.agents/handoffs/wb04-shared-capacity-20260920.md`。
+
 ## 最新源码能力：共享数组实参与声明容量证据
 
 归约链新增独立shared_storage子报告：按同AST的调用范围、精确callee/形参位置

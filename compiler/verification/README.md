@@ -61,3 +61,27 @@ PYTHONPATH=src python3 -m wavebridge.configuration_check SOURCE_REPORT.json \
 API不核实完整kernel签名，也不自行证明输入域。区间没有被改成单值；指针、
 浮点、调用表达式及缺域保持unknown。即使列数参数checked，其余参数与整核
 仍可能未知，不能用一个标量参数通过替代完整launch或源码等价检查。
+
+## 条件共享容量检查
+
+```bash
+PYTHONPATH=src python -m wavebridge.shared_capacity_check SOURCE_REPORT.json \
+  --abi examples/abi/storage-conditional.json --output NEW_CAPACITY_CHECK.json
+```
+
+`storage-abi-assumptions/v1`显式提供整数ABI及sizeof类型字节表；示例不是设备探测。
+独立`verification.shared_bytes.check`读取launch第三配置实参的原始AST，支持非负
+整数字面量、括号、值保持整数转换、sizeof(type)与乘法。所有中间值须在显式
+类型范围内，缺sizeof依据、动态变量、溢出或窄化保持unknown，绝不猜float=4。
+
+`shared_capacity.check`以同一kernel ID关联结构链和launch，按受限block模型的
+`block_threads / width`计算partial槽位需求。动态shared读取launch字节表达式，
+静态shared读取声明extent；不把动态分配字节数补给不足的静态数组。普通局部
+数组、未建立绑定或不支持的block模型保持unknown。容量不足为rejected，足够
+仅为条件checked；CLI绑定源报告/ABI文件及实现哈希，输出文件不可覆盖。
+
+必须区分显式前提与结论：结构报告忠实于同AST、实际block与坐标匹配、共享数组
+起于偏移0且无其它动态分配、配置第三参数语义、ABI、别名及参与者有效性均为
+外部前提。本checker不重新证明这些前提、不验证AST绑定或硬件分配；始终保留
+source_program_checked=false与deployable=false。缺launch或未解析launch时不能
+全局checked。它不是一个自动部署许可，也不替代block路由或浮点数值检查。

@@ -127,3 +127,15 @@ CLI 的 `--use-host-guard-assumptions` 必须显式开启，输出配置域报�
 不独立核对整个kernel签名。报告区分常量和区间，保存参数/声明ID、位置、转换
 与输入hash。指针、浮点、调用和未知域不支持；其它参数不会因某个参数checked
 而被放行。所有结果都保留 `source_program_checked=false`、`deployable=false`。
+
+## 条件共享内存容量
+
+`shared-byte-expression-check/v1`在显式integer_types与sizeof_bytes表下求有限
+非负字节表达式，逐节点检查整数范围与转换值保持，深度/节点预算超限保持unknown。
+`shared-capacity-check/v1`将该字节数或静态数组声明extent与受限块归约模型需求
+比较：不足为rejected，足够为checked，不支持或前提缺失为unknown。
+
+该checked以前述结构恢复准确、同AST绑定、实际block/坐标符合模型、单数组偏移0、
+无其它动态shared分配及显式ABI匹配为前提，不验证源程序有效性或运行时内存安全。
+CLI `conditional-shared-capacity-check/v1`保存源报告、ABI与实现哈希，所有已报告
+launch均checked且没有未解析launch才可整体checked；不签发部署结论。
