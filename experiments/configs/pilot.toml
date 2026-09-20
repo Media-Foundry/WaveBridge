@@ -1,0 +1,27 @@
+schema_version = "pilot-protocol/v1"
+status = "template_not_executed"
+seed = 20260920
+corpus_registry = "benchmarks/corpus.json"
+split_unit = "code_lineage"
+input_domain_status = "must_be_declared_per_case"
+numeric_contract_status = "must_be_declared_per_case"
+
+[comparison]
+same_target_device = true
+same_backend_for_recovery_ablation = true
+same_tuning_budget = true
+baselines = ["correct_logical32", "manual_parameterized", "closest_applicable_retargeter"]
+
+[timing]
+status = "proposed_defaults_require_workload_review"
+warmup_iterations = 20
+measurement_repetitions = 100
+independent_runs = 5
+method = "device_events_with_explicit_synchronization"
+retain_raw_samples = true
+
+[gates]
+source_validity_required = true
+actual_wave_width_required = true
+numerical_validation_required = true
+unknown_is_accepted = false

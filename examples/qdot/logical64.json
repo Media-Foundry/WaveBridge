@@ -1,0 +1,14 @@
+{
+  "schema_version": "qdot-model/v1",
+  "numeric_contract": "integer_exact_unbounded",
+  "domain": {"rows": 5, "columns": 65},
+  "launch": {"block_threads": 128, "grid_blocks": 3},
+  "kernel": {
+    "cooperation_width": 64,
+    "column_stride": 64,
+    "quantization_group": 32,
+    "reduction_width": 64,
+    "reduction_offsets": [32, 16, 8, 4, 2, 1],
+    "writer_lane": 0
+  }
+}

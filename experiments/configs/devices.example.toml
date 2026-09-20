@@ -1,0 +1,22 @@
+schema_version = "device-protocol/v1"
+status = "requested_platforms_not_probed"
+
+[[devices]]
+label = "mi250"
+architecture = ""
+device_id = ""
+gcd_identity = ""
+rocm_version = ""
+compiler_version = ""
+actual_wave_width = ""
+probe_artifact = ""
+
+[[devices]]
+label = "w7900"
+architecture = ""
+device_id = ""
+gcd_identity = ""
+rocm_version = ""
+compiler_version = ""
+actual_wave_width = ""
+probe_artifact = ""
