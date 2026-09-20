@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新验证：兼容头文件已接入，暴露 host 前端边界
+
+项目隔离安装 CUDA runtime/nvcc 11.8.89、cuRAND 10.3.0.86，并提取 Ubuntu
+libstdc++-11-dev 11.5.0 开发头，未替换系统 SDK 或运行库。实际重试消除了
+此前 texture/宏错误；完整输入仍在 host C++ 对象处理阶段断言，未得到 IR。
+两次仅选择 kernel 的诊断返回 0，但输出均为空 module，不能算转换成功。
+下一步保留计算函数和完整 launch，单独建立有补丁记录的 host adapter，隔离
+文件 IO/容器驱动，继续同例能力检查；不是删除 launch 后宣布适配成功。
+详见 `.agents/handoffs/polygeist-compatible-headers-20260920.md`，G1 仍未通过。
+
 ## 最新验证：Polygeist 构建完成，实际共同输入受环境阻断
 
 固定论文版本的前端构建完成，3296 个任务、退出码 0；随后独立构建

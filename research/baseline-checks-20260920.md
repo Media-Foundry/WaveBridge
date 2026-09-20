@@ -62,7 +62,7 @@ CKTI查询包括正式DOI的abs/full页面、Crossref works API、网页检索�
 | 对象 | 当前可确认 | 同例运行状态 | 下一项实际验收 |
 | --- | --- | --- | --- |
 | 正确logical32基线 | 已有W7900的9形状冻结数值记录；人工CUDA移植已有API记录和计算函数体对照 | HIP既有证据；CUDA仅host/device语法通过 | CUDA代码生成及独立数值核验；不能转用HIP运行记录 |
-| Polygeist论文版本 | 固定源码及LLVM已检出，前端cgeist构建成功 | 两次完整输入前端尝试，环境/头文件错误，未生成IR | 建立兼容CUDA/标准库头环境，重试默认O0路径；再分别检查IR与变换 |
+| Polygeist论文版本 | 固定源码及LLVM已检出，前端cgeist构建成功；CUDA11.8/GCC11头接入 | 完整输入消除前置头错误后在host对象处理断言；仅kernel选择输出空module | 保留计算与launch的显式host适配，继续检查IR与变换；不能归因为子组限制 |
 | Polygeist较新版本 | 本轮没有固定版本或运行 | `unverified` | 不能用旧版的未来失败断言最新方法能力不足 |
 | CKTI | 出版元数据 | `not_executed`；实现入口未定位 | 取得合法全文/实现及版本，再确定共同输入与所需人工修改 |
 | WaveBridge | 受限源码分析、条件模型检查、手工GPU基线 | 无自动源码→候选→GPU闭环 | 不将当前条件模型checked记为完整适配成功 |

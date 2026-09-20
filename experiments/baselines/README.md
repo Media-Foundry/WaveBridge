@@ -82,3 +82,10 @@ PYTHONPATH=src python3 experiments/baselines/polygeist_frontend.py \
 安装检测通过后，遇到 CUDA 12.1 texture 与 GCC 13 `__noinline__` 头文件错误。
 不能忽略这些前置错误，将后续断言归因于 kernel 通信模式。
 两份报告和哈希见 [实际执行交接](../../.agents/handoffs/polygeist-first-execution-20260920.md)。
+
+后续 CUDA 11.8 / GCC 11 开发头环境已实际消除上述头错误，但完整输入在
+host C++ 对象处理时断言。仅选 kernel 的两次退出 0 都是空 module；记录器
+`emitted_unverified_ir` 只代表非空输出文件，必须继续人工或独立 IR 检查，
+不能直接统计为支持案例。固定前端以 mangled name 选择函数，并把 device
+函数标记为 private；局部选择不能替代保留 host launch 的转换检查。
+版本、路径和报告见 [兼容环境交接](../../.agents/handoffs/polygeist-compatible-headers-20260920.md)。
