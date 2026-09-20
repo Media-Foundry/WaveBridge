@@ -258,4 +258,14 @@ WB-03 新增 launch 前置整数守卫恢复。真实HIP重跑工件
 `make check`227项通过，源码/AST/实现hash核对一致，无新GPU执行。
 完整命令见 `.agents/handoffs/wb03-launch-guards-20260920.md`。
 
+WB-04 构造字段checker新增显式闭区间模式，CLI必须启用
+`--use-host-guard-assumptions`，并核对launch ID、报告状态和整数位宽前提。
+复用上一轮真实源码报告，`configuration-interval-check-01.json` 在显式前提
+下检查grid字段域[1,8]/1/1与block常量256/1/1；未启用选项的
+`configuration-default-check-02.json`仍unknown。两个工件均在
+`artifacts/wb03-source-launch-guards-01/`。236项测试通过，输入/实现hash一致，
+含136个小位宽闭区间枚举对照；没有新增源码编译或GPU执行。
+区间/常量明确分开，仍不证明实际launch或GPU等价，部署标记false。
+完整交接见 `.agents/handoffs/wb04-configuration-intervals-20260920.md`。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

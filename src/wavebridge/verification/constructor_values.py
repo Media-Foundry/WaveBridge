@@ -84,17 +84,19 @@ def _leaf(node: object) -> dict[str, Any]:
     return current
 
 
-def _apply_casts(value: int, initial_type: object, casts: object, final_type: object,
-                 abi: dict[str, Any], checks: list[dict[str, Any]]) -> None:
+def _apply_casts(lower: int, upper: int, initial_type: object, casts: object, final_type: object,
+                 abi: dict[str, Any], checks: list[dict[str, Any]], value_kind: str) -> None:
     if not isinstance(casts, list):
         raise _Unknown("cast_evidence_not_list")
     current_name, current_bits, current_signed = _abi_type(initial_type, abi)
-    initial_check = check_interval(value, value, current_bits, current_signed,
+    initial_check = check_interval(lower, upper, current_bits, current_signed,
                                    current_bits, current_signed)
     checks.append({"cast_kind": "initial_type_representability", "source_type": current_name,
                    "target_type": current_name, "range": None, "conversion": initial_check})
     if initial_check["status"] != "checked":
-        raise _Rejected("constant_not_representable_in_initial_type", checks[-1])
+        reason = ("constant_not_representable_in_initial_type" if value_kind == "constant" else
+                  "interval_not_representable_in_initial_type")
+        raise _Rejected(reason, checks[-1])
     for cast in reversed(casts):
         if not isinstance(cast, dict):
             raise _Unknown("unsupported_or_missing_cast_evidence")
@@ -108,7 +110,7 @@ def _apply_casts(value: int, initial_type: object, casts: object, final_type: ob
                                                                "reported": source_name})
         if cast_kind in {"LValueToRValue", "NoOp"} and target_name != source_name:
             raise _Rejected("nonconverting_cast_changes_base_type")
-        conversion = check_interval(value, value, source_bits, source_signed,
+        conversion = check_interval(lower, upper, source_bits, source_signed,
                                     target_bits, target_signed)
         check = {"cast_kind": cast_kind, "source_type": source_name,
                  "target_type": target_name, "range": cast.get("range"),
@@ -125,12 +127,17 @@ def _apply_casts(value: int, initial_type: object, casts: object, final_type: ob
                                                        "expected": expected_name})
 
 
-def check(constructor_report: object, field_report: object,
-          abi: object) -> dict[str, Any]:
+def check(constructor_report: object, field_report: object, abi: object,
+          declaration_intervals: object = None) -> dict[str, Any]:
+    interval_mode = declaration_intervals is not None
     result: dict[str, Any] = {
-        "schema_version": "constructor-values-check/v1", "status": "unknown", "reason": None,
+        "schema_version": ("constructor-values-check/v2" if interval_mode else
+                           "constructor-values-check/v1"),
+        "status": "unknown", "reason": None,
         "fields": [], "conversion_checks": [], "source_program_checked": False,
-        "checked_scope": "explicit_constructor_constants_and_integer_abi_only",
+        "checked_scope": ("explicit_constructor_constants_intervals_and_integer_abi_conditional"
+                          if interval_mode else
+                          "explicit_constructor_constants_and_integer_abi_only"),
         "deployable": False,
         "budget": {"max_fields": MAX_FIELDS, "max_casts": MAX_CASTS,
                    "fields_used": 0, "casts_used": 0},
@@ -138,13 +145,41 @@ def check(constructor_report: object, field_report: object,
                         "declaration-derived constants are accepted as explicit report premises",
                         "the explicit ABI table matches the compilation target"],
     }
+    if interval_mode:
+        result["budget"]["max_intervals"] = MAX_FIELDS
+        result["assumptions"].extend([
+            "each symbolic declaration runtime value lies within its supplied closed interval",
+            "the source guard producing each supplied interval is not verified by this checker",
+        ])
     if not isinstance(constructor_report, dict) or not isinstance(field_report, dict) or not isinstance(abi, dict):
         result["reason"] = "inputs_not_objects"
         return result
     result["input_sha256"] = {
         "constructor_report": _hash(constructor_report), "field_report": _hash(field_report),
         "abi": _hash(abi)}
+    if interval_mode:
+        result["input_sha256"]["declaration_intervals"] = _hash(declaration_intervals)
     try:
+        interval_by_id: dict[str, dict[str, Any]] = {}
+        if interval_mode:
+            if not isinstance(declaration_intervals, list):
+                raise _Unknown("declaration_intervals_not_list")
+            if len(declaration_intervals) > MAX_FIELDS:
+                raise _Unknown("declaration_interval_budget_exceeded")
+            for interval in declaration_intervals:
+                if not isinstance(interval, dict):
+                    raise _Unknown("declaration_interval_not_object")
+                declaration_id = interval.get("declaration_id")
+                lower, upper = interval.get("lower"), interval.get("upper")
+                if not isinstance(declaration_id, str) or not declaration_id:
+                    raise _Unknown("declaration_interval_id_missing")
+                if declaration_id in interval_by_id:
+                    raise _Rejected("declaration_interval_ids_not_unique")
+                if type(lower) is not int or type(upper) is not int or lower > upper:
+                    raise _Unknown("declaration_interval_bounds_invalid")
+                _raw_type(interval.get("type"))
+                interval_by_id[declaration_id] = interval
+            result["budget"]["intervals_used"] = len(interval_by_id)
         if (constructor_report.get("schema_version") != "constructor-arguments/v1" or
                 constructor_report.get("status") != "inspected"):
             raise _Unknown("constructor_report_not_inspected")
@@ -212,49 +247,83 @@ def check(constructor_report: object, field_report: object,
         fields: list[dict[str, Any]] = []
         checks: list[dict[str, Any]] = []
         declaration_premises: list[str] = []
+        interval_premises: list[str] = []
         for mapping in mappings:
             position = mapping["parameter_position"]
             argument = arguments[position]
             constant = argument.get("pre_conversion_constant") if isinstance(argument, dict) else None
-            if argument.get("status") != "evidence" or not isinstance(constant, dict):
-                raise _Unknown("constructor_argument_not_constant")
-            if constant.get("status") != "evaluated":
-                raise _Unknown("constructor_constant_not_evaluated")
-            value = constant.get("value")
-            if type(value) is not int:
-                raise _Unknown("constructor_constant_not_integer")
             leaf = _leaf(argument.get("argument_ast"))
-            if constant.get("source") == "integer_literal":
+            value_kind = "constant"
+            lower: int
+            upper: int
+            field_value: dict[str, Any]
+            if argument.get("status") == "symbolic":
+                if not interval_mode:
+                    raise _Unknown("constructor_argument_not_constant")
+                if constant is not None:
+                    raise _Rejected("symbolic_argument_has_constant_evidence")
+                referenced = leaf.get("referencedDecl")
+                declaration_id = argument.get("declaration_id")
+                if (leaf.get("kind") != "DeclRefExpr" or not isinstance(referenced, dict) or
+                        referenced.get("kind") not in ("VarDecl", "ParmVarDecl") or
+                        not isinstance(declaration_id, str) or not declaration_id or
+                        referenced.get("id") != declaration_id):
+                    raise _Rejected("symbolic_argument_raw_declref_mismatch")
+                interval = interval_by_id.get(declaration_id)
+                if interval is None:
+                    raise _Unknown("symbolic_declaration_interval_missing")
+                if _raw_type(interval.get("type")) != _raw_type(_type_from_leaf(leaf)):
+                    raise _Rejected("symbolic_interval_leaf_type_mismatch")
+                lower, upper = interval["lower"], interval["upper"]
+                value_kind = "interval"
+                if declaration_id not in interval_premises:
+                    interval_premises.append(declaration_id)
+                field_value = {"value_kind": "interval",
+                               "interval": {"lower": lower, "upper": upper},
+                               "declaration_id": declaration_id}
+            elif argument.get("status") != "evidence" or not isinstance(constant, dict):
+                raise _Unknown("constructor_argument_not_constant")
+            elif constant.get("status") != "evaluated":
+                raise _Unknown("constructor_constant_not_evaluated")
+            elif type(constant.get("value")) is not int:
+                raise _Unknown("constructor_constant_not_integer")
+            else:
+                value = constant["value"]
+                lower = upper = value
+                field_value = {"value_kind": "constant", "value": value}
+            if value_kind == "constant" and constant.get("source") == "integer_literal":
                 if leaf.get("kind") != "IntegerLiteral":
                     raise _Rejected("literal_constant_raw_ast_mismatch")
                 try:
                     raw_value = int(str(leaf.get("value")), 0)
                 except (TypeError, ValueError):
                     raise _Rejected("literal_constant_raw_ast_invalid")
-                if raw_value != value:
+                if raw_value != lower:
                     raise _Rejected("literal_constant_value_mismatch")
-            elif constant.get("source") == "signed_int_declaration":
+            elif value_kind == "constant" and constant.get("source") == "signed_int_declaration":
                 referenced = leaf.get("referencedDecl")
                 if (leaf.get("kind") != "DeclRefExpr" or not isinstance(referenced, dict) or
                         not isinstance(referenced.get("id"), str) or not referenced["id"] or
                         referenced["id"] != constant.get("declaration_id")):
                     raise _Rejected("declaration_constant_raw_ast_mismatch")
                 declaration_premises.append(constant["declaration_id"])
-            else:
+            elif value_kind == "constant":
                 raise _Unknown("constant_source_unsupported")
             initial_type = _type_from_leaf(leaf)
             argument_checks: list[dict[str, Any]] = []
-            _apply_casts(value, initial_type, argument.get("casts"), mapping.get("parameter_type"),
-                         abi, argument_checks)
+            _apply_casts(lower, upper, initial_type, argument.get("casts"),
+                         mapping.get("parameter_type"), abi, argument_checks, value_kind)
             field_checks: list[dict[str, Any]] = []
-            _apply_casts(value, mapping.get("parameter_type"), mapping.get("casts"),
-                         mapping.get("field_type"), abi, field_checks)
+            _apply_casts(lower, upper, mapping.get("parameter_type"), mapping.get("casts"),
+                         mapping.get("field_type"), abi, field_checks, value_kind)
             checks.append({"field_id": mapping.get("field_id"), "parameter_position": position,
                            "argument_casts": argument_checks, "field_initializer_casts": field_checks})
             fields.append({"field_id": mapping.get("field_id"), "field_name": mapping.get("field_name"),
-                           "value": value, "parameter_position": position})
+                           "parameter_position": position, **field_value})
         result.update(status="checked", fields=fields, conversion_checks=checks,
                       declaration_constant_premises=declaration_premises)
+        if interval_mode:
+            result["interval_declaration_premises"] = interval_premises
     except _Rejected as error:
         result.update(status="rejected", reason=error.reason)
         if error.detail is not None:

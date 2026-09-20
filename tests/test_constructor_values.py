@@ -18,6 +18,7 @@ def argument(position, value, source="integer_literal", symbolic=False):
             "destination_type": {"desugaredQualType": "unsigned int", "qualType": "Alias"},
             "range": R}
     return {"position": position, "status": "symbolic" if symbolic else "evidence",
+            **({"declaration_id": f"decl{position}"} if symbolic else {}),
             "argument_ast": {"kind": "ImplicitCastExpr", "inner": [leaf]}, "casts": [cast],
             "pre_conversion_constant": None if symbolic else {"status": "evaluated", "value": value,
                 "source": source, **({"declaration_id": f"decl{position}"}
@@ -160,6 +161,125 @@ class ConstructorValueTests(unittest.TestCase):
         field_report["constructor_declaration_id"] = ""
         self.assertEqual("constructor_declaration_id_mismatch",
                          check(report, field_report, ABI)["reason"])
+
+    def test_explicit_symbolic_interval_is_checked_without_fabricating_a_value(self):
+        report = constructor()
+        report["arguments"][0] = argument(0, 0, source="signed_int_declaration", symbolic=True)
+        intervals = [{"declaration_id": "decl0", "lower": 1, "upper": 8,
+                      "type": {"qualType": "const int"}}]
+        result = check(report, fields(), ABI, intervals)
+        self.assertEqual("constructor-values-check/v2", result["schema_version"])
+        self.assertEqual("checked", result["status"])
+        self.assertEqual("interval", result["fields"][0]["value_kind"])
+        self.assertEqual({"lower": 1, "upper": 8}, result["fields"][0]["interval"])
+        self.assertNotIn("value", result["fields"][0])
+        self.assertEqual("constant", result["fields"][1]["value_kind"])
+        self.assertIn("declaration_intervals", result["input_sha256"])
+        self.assertEqual(["decl0"], result["interval_declaration_premises"])
+        self.assertEqual(64, result["budget"]["max_intervals"])
+        self.assertIn("each symbolic declaration runtime value lies within its supplied closed interval",
+                      result["assumptions"])
+        self.assertIn("the source guard producing each supplied interval is not verified by this checker",
+                      result["assumptions"])
+        self.assertFalse(result["source_program_checked"])
+        self.assertFalse(result["deployable"])
+
+        unused = intervals + [{"declaration_id": "unused", "lower": 1, "upper": 1023,
+                               "type": {"qualType": "const int"}}]
+        result = check(report, fields(), ABI, unused)
+        self.assertEqual(["decl0"], result["interval_declaration_premises"])
+
+    def test_v1_assumptions_and_budget_remain_unchanged(self):
+        result = check(constructor(), fields(), ABI)
+        self.assertEqual("constructor-values-check/v1", result["schema_version"])
+        self.assertNotIn("max_intervals", result["budget"])
+        self.assertNotIn("interval_declaration_premises", result)
+        self.assertEqual([
+            "reports faithfully preserve the source AST evidence",
+            "declaration-derived constants are accepted as explicit report premises",
+            "the explicit ABI table matches the compilation target",
+        ], result["assumptions"])
+
+    def test_symbolic_interval_identity_type_and_constant_evidence_are_strict(self):
+        report = constructor()
+        report["arguments"][0] = argument(0, 0, source="signed_int_declaration", symbolic=True)
+        base = [{"declaration_id": "decl0", "lower": 1, "upper": 8,
+                 "type": {"qualType": "const int"}}]
+        wrong = [dict(base[0], declaration_id="other")]
+        self.assertEqual("symbolic_declaration_interval_missing",
+                         check(report, fields(), ABI, wrong)["reason"])
+        wrong = [dict(base[0], type={"qualType": "int"})]
+        self.assertEqual("symbolic_interval_leaf_type_mismatch",
+                         check(report, fields(), ABI, wrong)["reason"])
+        report["arguments"][0]["declaration_id"] = "other"
+        self.assertEqual("symbolic_argument_raw_declref_mismatch",
+                         check(report, fields(), ABI, base)["reason"])
+        report = constructor()
+        report["arguments"][0] = argument(0, 0, source="signed_int_declaration", symbolic=True)
+        report["arguments"][0]["pre_conversion_constant"] = {"status": "evaluated", "value": 1}
+        self.assertEqual("symbolic_argument_has_constant_evidence",
+                         check(report, fields(), ABI, base)["reason"])
+
+    def test_interval_conversion_checks_whole_closed_range(self):
+        report = constructor()
+        report["arguments"][0] = argument(0, 0, source="signed_int_declaration", symbolic=True)
+        negative = [{"declaration_id": "decl0", "lower": -1, "upper": 8,
+                     "type": {"qualType": "const int"}}]
+        self.assertEqual("integer_conversion_not_value_preserving",
+                         check(report, fields(), ABI, negative)["reason"])
+        narrow_abi = {**ABI, "signed char": {"bits": 4, "signed": True}}
+        report["arguments"][0]["casts"][0]["destination_type"] = {"qualType": "signed char"}
+        field_report = fields()
+        mapping = field_report["field_mappings"][0]
+        mapping["parameter_type"] = {"qualType": "signed char"}
+        mapping["field_type"] = {"qualType": "signed char"}
+        mapping["casts"][0]["source_type"] = {"qualType": "signed char"}
+        mapping["casts"][0]["destination_type"] = {"qualType": "signed char"}
+        partial = [{"declaration_id": "decl0", "lower": 0, "upper": 8,
+                    "type": {"qualType": "const int"}}]
+        self.assertEqual("integer_conversion_not_value_preserving",
+                         check(report, field_report, narrow_abi, partial)["reason"])
+
+    def test_interval_input_shape_uniqueness_and_budget_are_gated(self):
+        report = constructor()
+        report["arguments"][0] = argument(0, 0, source="signed_int_declaration", symbolic=True)
+        valid = {"declaration_id": "decl0", "lower": 1, "upper": 8,
+                 "type": {"qualType": "const int"}}
+        self.assertEqual("declaration_intervals_not_list",
+                         check(report, fields(), ABI, {})["reason"])
+        self.assertEqual("declaration_interval_bounds_invalid",
+                         check(report, fields(), ABI, [dict(valid, lower=True)])["reason"])
+        self.assertEqual("declaration_interval_bounds_invalid",
+                         check(report, fields(), ABI, [dict(valid, lower=9)])["reason"])
+        self.assertEqual("declaration_interval_ids_not_unique",
+                         check(report, fields(), ABI, [valid, dict(valid)])["reason"])
+        self.assertEqual("type_evidence_missing",
+                         check(report, fields(), ABI, [dict(valid, type=None)])["reason"])
+        with patch("wavebridge.verification.constructor_values.MAX_FIELDS", 0):
+            result = check(report, fields(), ABI, [valid])
+        self.assertEqual("declaration_interval_budget_exceeded", result["reason"])
+
+    def test_small_signed_narrowing_intervals_match_pointwise_enumeration(self):
+        small_abi = {"int": {"bits": 4, "signed": True},
+                     "unsigned int": {"bits": 4, "signed": False},
+                     "signed char": {"bits": 3, "signed": True}}
+        report = constructor()
+        report["arguments"][0] = argument(0, 0, source="signed_int_declaration", symbolic=True)
+        report["arguments"][0]["casts"][0]["destination_type"] = {"qualType": "signed char"}
+        field_report = fields()
+        mapping = field_report["field_mappings"][0]
+        mapping["parameter_type"] = {"qualType": "signed char"}
+        mapping["field_type"] = {"qualType": "signed char"}
+        mapping["casts"][0]["source_type"] = {"qualType": "signed char"}
+        mapping["casts"][0]["destination_type"] = {"qualType": "signed char"}
+        for lower in range(-8, 8):
+            for upper in range(lower, 8):
+                interval = [{"declaration_id": "decl0", "lower": lower, "upper": upper,
+                             "type": {"qualType": "const int"}}]
+                status = check(report, field_report, small_abi, interval)["status"]
+                expected = "checked" if all(-4 <= value <= 3
+                                             for value in range(lower, upper + 1)) else "rejected"
+                self.assertEqual(expected, status, (lower, upper))
 
 
 if __name__ == "__main__":

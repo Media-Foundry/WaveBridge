@@ -104,3 +104,13 @@ checked以外部声明的值域与类型信息为前提，不自行从类型名�
 变量非只读使用或不支持控制流阻止恢复。详见 `compiler/analysis/README.md`。
 此报告不由独立 checker 签发，始终保留 `checked=false`、`deployable=false`；
 整型位宽和源有效性仍是显式前提。
+
+## 构造字段域检查：`constructor-values-check/v2`
+
+显式声明闭区间可以作为符号构造实参的条件域；checker按精确声明和类型关联
+输入，复用整数区间检查验证整段经过实参与字段初始化转换后仍值保持。
+`value_kind=interval` 不携带单一 `value`。只有显式传入区间表时使用v2；
+默认常量接口仍为v1。区间真实性和源guard语义没有被此checker独立验证。
+
+CLI 的 `--use-host-guard-assumptions` 必须显式开启，输出配置域报告v2并记录
+前提门控和输入/实现哈希。结果不授权部署；详见 `compiler/verification/README.md`。
