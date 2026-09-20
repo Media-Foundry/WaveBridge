@@ -89,3 +89,10 @@ host C++ 对象处理时断言。仅选 kernel 的两次退出 0 都是空 modul
 不能直接统计为支持案例。固定前端以 mangled name 选择函数，并把 device
 函数标记为 private；局部选择不能替代保留 host launch 的转换检查。
 版本、路径和报告见 [兼容环境交接](../../.agents/handoffs/polygeist-compatible-headers-20260920.md)。
+
+记录器现支持显式 `--cuda-lower`，分别记录默认 O0 与 CUDA lowering 路径；
+这不是 `--emit-cuda`，不启用 PTX/cubin 或设备执行，不自动升级验证状态。
+实际 host adapter 必须使用默认 `--function=*`：只选 host 入口的本次输出
+留下无函数体 kernel 声明，不能用它评价计算。全函数选择已得到非空计算体，
+但共享容量和外部 shuffle 仍需检查，见
+[实际 IR 交接](../../.agents/handoffs/polygeist-adapter-ir-20260920.md)。

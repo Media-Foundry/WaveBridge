@@ -2,6 +2,17 @@
 
 更新日期：2026-09-20。
 
+## 最新验证：完整 launch 适配与实际 Polygeist IR
+
+新增有父源码/补丁/协议哈希的人工 host adapter，保留三计算函数、域守卫与
+完整 launch，仅移出 IO/容器/设备管理。使用全函数选择，默认 O0 和
+`--cuda-lower` 均生成包含计算体的 IR；只选 host 入口则遗留 kernel 声明，
+不作为成功案例。lowering 后发现共享 memref 容量为1，但存在索引1～7的
+访问；shuffle 仍为外部 NVVM 调用并伴随未发射 builtin 的警告。
+这不证明正确重定向，也不足以宣布方法级差异；下一步隔离动态共享存储和
+shuffle 的实际处理边界。280 项 CPU 测试通过，无新 GPU 执行。
+详见 `.agents/handoffs/polygeist-adapter-ir-20260920.md`。
+
 ## 最新验证：兼容头文件已接入，暴露 host 前端边界
 
 项目隔离安装 CUDA runtime/nvcc 11.8.89、cuRAND 10.3.0.86，并提取 Ubuntu

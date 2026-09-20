@@ -1,0 +1,77 @@
+{
+  "schema_version": "manual-polygeist-host-adapter/v1",
+  "case_id": "llama-rmsnorm-f32",
+  "status": "source_adapter_not_cuda_gpu_validated",
+  "derivation": "manual_host_only_dependency_removal",
+  "automatic_recovery": false,
+  "parent_cuda_source": {
+    "path": "baseline/rmsnorm_logical32.cu",
+    "sha256": "069811c2d7f40a9df0b2927837f4190ce9b7de9ad35e90e8f68a29bc78a52671"
+  },
+  "adapter_source": {
+    "path": "baseline/rmsnorm_logical32_polygeist_adapter.cu",
+    "sha256": "9bd5e5d8bc9eb175b9b05f200a3db9840da013991d7f0e772197c6e765ece7bf"
+  },
+  "derivation_patch": {
+    "path": "polygeist-adapter.patch",
+    "sha256": "0a09d4b99224d5adc98744d3958367c95c65408a766db36f58d378347e3face2"
+  },
+  "protocol": {
+    "path": "protocol.json",
+    "sha256": "f8706a25e68b2354cc839c5d9a08aee7e0abf1fded236bcdfe1f3d577808dcae",
+    "status": "unchanged"
+  },
+  "license": {
+    "spdx": "MIT",
+    "path": "LICENSE.upstream",
+    "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+  },
+  "upstream": {
+    "repository": "https://github.com/ggml-org/llama.cpp",
+    "revision": "b23efaa2ef147f547ee75cbf0c621d61904de80e"
+  },
+  "entry": {
+    "linkage": "extern_C",
+    "symbol": "wavebridge_launch_rms_norm_f32_logical32",
+    "parameters": ["device_input", "device_output", "nrows", "ncols"]
+  },
+  "preserved": [
+    "verbatim CUDA constants and three computation function bodies",
+    "input-domain guard for nrows and ncols",
+    "grid nrows, block 256, dynamic shared memory 128 bytes, and stream zero",
+    "kernel argument order and epsilon 1.0e-5f",
+    "frozen numeric protocol"
+  ],
+  "removed_to_external_harness": [
+    "file IO and standard-library containers",
+    "device allocation, copies, frees, error checks, and synchronization",
+    "device identity and runtime version measurement",
+    "numeric output comparison"
+  ],
+  "claims": {
+    "frontend_compatibility": "whole_input_default_and_cuda_lower_emitted_unverified_ir",
+    "automatic_recovery": false,
+    "semantic_equivalence": "not_established",
+    "cuda_gpu_execution": "not_run",
+    "cuda_numeric_comparison": "not_run",
+    "deployable": false
+  },
+  "local_frontend_evidence": [
+    {
+      "pipeline": "cgeist_O0_default_passes_not_identity_translation",
+      "report": "artifacts/polygeist-frontend-01247e7_/report.json",
+      "report_sha256": "5f746b2d07812dd88b63fe4580bdd5d8195dc3763bbffbbf5106baa5c9944e41",
+      "ir_sha256": "7a4bf9955897efc44f4111a77f2121d3e86ba5b05004d9369743a8d0b6555196",
+      "artifact_availability": "local_only_not_in_git",
+      "status": "emitted_unverified_ir"
+    },
+    {
+      "pipeline": "cgeist_O0_cuda_lower_passes",
+      "report": "artifacts/polygeist-frontend-x3hip7fu/report.json",
+      "report_sha256": "3e8eeb3e7a742bd34900a5a0d2cd09488ee4cdaa80f8e24798e24b0f3a7717af",
+      "ir_sha256": "8eb94f2244affdc63911ddf6e38051297bd1112c9a5bd06fbaa8f2a48fb2f306",
+      "artifact_availability": "local_only_not_in_git",
+      "status": "emitted_unverified_ir"
+    }
+  ]
+}

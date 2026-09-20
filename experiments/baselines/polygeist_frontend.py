@@ -13,7 +13,9 @@ from wavebridge.frontend import clang_ast
 
 
 def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
-        architecture="sm_70", resource_dir=None, timeout=120.0):
+        architecture="sm_70", resource_dir=None, timeout=120.0, cuda_lower=False):
+    if type(cuda_lower) is not bool:
+        raise ValueError("cuda_lower must be a boolean")
     if (type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0):
         raise ValueError("timeout must be positive and finite")
     if not symbol:
@@ -36,7 +38,9 @@ def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
     report = {
         "schema_version": "polygeist-frontend-attempt/v1",
         "scope": "frontend_ir_emission_only",
-        "pipeline": "cgeist_O0_default_passes_not_identity_translation",
+        "pipeline": ("cgeist_O0_cuda_lower_passes" if cuda_lower else
+                     "cgeist_O0_default_passes_not_identity_translation"),
+        "cuda_lower_requested": cuda_lower,
         "status": "tool_missing",
         "source": {"path": str(source), "sha256": _sha256(source)},
         "runner_sha256": _sha256(Path(__file__)),
@@ -58,6 +62,8 @@ def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
                    "--std=c++17", f"--cuda-path={cuda_path}",
                    f"--cuda-gpu-arch={architecture}"]
         command += [f"-I{path}" for path in include_dirs]
+        if cuda_lower:
+            command.append("--cuda-lower")
         if resource_dir is not None:
             command.append(f"--resource-dir={resource_dir}")
         command += ["-o", str(output)]
@@ -91,12 +97,15 @@ def main():
     parser.add_argument("--symbol", default="*")
     parser.add_argument("--architecture", default="sm_70")
     parser.add_argument("--timeout", type=float, default=120)
+    parser.add_argument("--cuda-lower", action="store_true",
+                        help="request CUDA-to-MLIR lowering, not GPU code generation")
     parser.add_argument("--output-base", type=Path, default=Path("artifacts"))
     args = parser.parse_args()
     try:
         path, report = run(args.source, args.cgeist, args.cuda_path, args.include_dir,
                            args.output_base, symbol=args.symbol, architecture=args.architecture,
-                           resource_dir=args.resource_dir, timeout=args.timeout)
+                           resource_dir=args.resource_dir, timeout=args.timeout,
+                           cuda_lower=args.cuda_lower)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     print(json.dumps({"status": report["status"], "report": str(path)}))

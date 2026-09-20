@@ -26,18 +26,36 @@ class PolygeistFrontendAttemptTests(unittest.TestCase):
         self.tool.write_text("not executed: mocked tool")
         self.output_base = self.directory / "reports"
 
-    def run_attempt(self, *, code=0, status="completed", output=None):
+    def run_attempt(self, *, code=0, status="completed", output=None, cuda_lower=False):
         def invoke(command, timeout, cwd):
             self.assertIn("-S", command)
             self.assertIn("--function=*", command)
             self.assertNotIn("--emit-cuda", command)
+            self.assertEqual(cuda_lower, "--cuda-lower" in command)
             if output is not None:
                 Path(command[-1]).write_text(output)
             return {"command": command, "cwd": str(cwd), "status": status,
                     "returncode": code, "stdout": "raw stdout", "stderr": "raw stderr"}
         with patch.object(RUNNER.shutil, "which", return_value=str(self.tool)), \
                 patch.object(RUNNER, "invoke", side_effect=invoke):
-            return RUNNER.run(self.source, self.tool, self.directory, [], self.output_base)
+            return RUNNER.run(self.source, self.tool, self.directory, [], self.output_base,
+                              cuda_lower=cuda_lower)
+
+    def test_lowering_request_is_recorded_without_promoting_guarantees(self):
+        _, report = self.run_attempt(output="module {}", cuda_lower=True)
+        self.assertTrue(report["cuda_lower_requested"])
+        self.assertEqual("cgeist_O0_cuda_lower_passes", report["pipeline"])
+        self.assertFalse(report["ir_verified"])
+        self.assertFalse(report["deployable"])
+        self.assertFalse(report["source_program_checked"])
+        self.assertEqual("not_run", report["gpu_execution"])
+
+    def test_non_boolean_lowering_is_rejected_before_creating_output(self):
+        for value in (1, "false", None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                RUNNER.run(self.source, self.tool, self.directory, [], self.output_base,
+                           cuda_lower=value)
+        self.assertFalse(self.output_base.exists())
 
     def test_emission_does_not_imply_verification(self):
         path, report = self.run_attempt(output="not even valid MLIR")
