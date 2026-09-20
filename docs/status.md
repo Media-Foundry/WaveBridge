@@ -219,4 +219,14 @@ WB-03 已接入严格行偏移前缀：真实 HIP 工件
 `make check`190项通过；单侧offset外层窄化、错误row/count/target、间接launch
 及不完整配置均有拒绝/未知回归。AST和实现哈希核对一致，无新GPU执行或适配候选。
 
+WB-03 launch 实参已按唯一kernel定义的位置关联4个形参，缺定义/数量不匹配
+时保留unknown。`constructor_arguments` 保存精确构造引用及参数位置、默认来源
+和转换链，转换前常量不作为实际维度值。真实HIP工件
+`artifacts/wb03-source-launch-arguments-01/{ast,report}.json` 的block构造参数为
+转换前256/1/1，首项与归约helper的BLOCK引用同一声明；grid首项symbolic，后两项
+的默认1来自AST内容。AST和实现hash核对一致。
+本机普通Clang将测试构造表示为不带精确constructor ID的CXXTemporaryObjectExpr，
+该路径正确返回unknown；不按类型名补猜。`make check`196项通过。字段映射、
+转换后值、实际grid/block及运行时launch一致性仍未证明，没有新GPU执行。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

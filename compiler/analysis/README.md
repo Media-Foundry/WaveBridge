@@ -164,3 +164,10 @@ external 的函数 ID 和转换证据会被保留，但不会根据名字认定�
 `CUDAKernelCallExpr`，保存配置调用的四个实参和kernel实参AST。它不求dim3
 构造结果、不检查host可达性、不验证launch是否与kernel的分工一致；间接目标
 与不支持配置形状保留unknown。源码入口将二者作为独立证据字段输出。
+
+launch site 的 `parameter_bindings` 按精确 kernel 定义与实参位置关联形参ID，
+保存实参AST，不猜数值；缺唯一函数定义或参数数量不匹配时绑定为unknown。
+前两个配置实参另记录 `configuration_constructor_arguments`，保存显式构造
+目标、参数位置、默认参数来源和转换链。`pre_conversion_constant` 仅是源码
+叶表达式的转换前常量；它不是已证明的dim3字段值或实际grid/block大小。
+不带默认表达式内容的AST节点不得被猜成1。

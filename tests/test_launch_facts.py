@@ -45,6 +45,21 @@ class LaunchFactTests(unittest.TestCase):
         node["inner"] = None
         self.assertEqual(inspect({"inner": [node]}, "kernel")["status"], "unknown")
 
+    def test_formal_parameters_bind_by_exact_definition_and_position(self):
+        definition = {"kind": "FunctionDecl", "id": "kernel", "inner": [
+            {"kind": "ParmVarDecl", "id": "formal", "type": {"qualType": "float *"}},
+            {"kind": "CompoundStmt", "inner": []}]}
+        tree = {"inner": [definition, launch()]}
+        site = inspect(tree, "kernel")["sites"][0]
+        self.assertEqual(site["parameter_binding_status"], "bound_by_position")
+        self.assertEqual(site["parameter_bindings"][0]["parameter_declaration_id"], "formal")
+        tree["inner"][1]["inner"].append(ref("extra"))
+        self.assertEqual(inspect(tree, "kernel")["sites"][0]["parameter_binding_reason"],
+                         "kernel_argument_count_mismatch")
+        tree["inner"].append(definition)
+        self.assertEqual(inspect(tree, "kernel")["sites"][0]["parameter_binding_reason"],
+                         "unique_kernel_definition_not_found")
+
 
 if __name__ == "__main__":
     unittest.main()
