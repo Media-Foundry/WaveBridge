@@ -241,4 +241,13 @@ WB-03 构造字段已按精确声明恢复：真实HIP工件
 checker哈希；full_source_abi_binding仍未建立。`make check`206项通过，
 实现hash核对一致，无新GPU执行或完整适配保证。
 
+WB-04 新增独立构造字段常量检查器及 `wavebridge.configuration_check` 入口，
+将实参转换链、精确构造声明和完整字段位置映射连接到外部整数 ABI 表。
+报告绑定输入字节及实现哈希；缺失配置、symbolic、未知 ABI 保持unknown，
+不值保持的整数转换被拒绝。`source_program_checked=false`、`deployable=false`
+始终保留。真实既有源码报告的block条件字段值为256/1/1，grid含symbolic，
+整体保持unknown；`make check`217项通过，检查器实现hash核对一致。
+具体验收与本地产物见
+`.agents/handoffs/wb04-configuration-20260920.md`；并非实际launch或GPU保证。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

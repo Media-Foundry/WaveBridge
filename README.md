@@ -23,6 +23,10 @@ WB-02 的 [llama.cpp RMSNorm 案例](benchmarks/cases/llama-rmsnorm/README.md) �
 WB-03 新入口 `PYTHONPATH=src python3 -m wavebridge.source --help` 直接从源码采集 AST，
 提取受限列循环的起点、边界和常量步长，不读人工关系模型；见 [源码分析入口](compiler/analysis/README.md)。
 
+条件配置字段检查入口为 `PYTHONPATH=src python3 -m wavebridge.configuration_check --help`，
+在外部整数 ABI 假设下连接构造实参与字段；见 [检查范围与协议](compiler/verification/README.md)。
+其结果不授权 GPU 部署。
+
 最后一条命令故意检查错误候选，返回 `rejected` 和退出码 1。`checked` 返回 0，`unknown` 返回 2，输入或命令错误返回 3。检查报告以 JSON 输出，包含模型哈希、数值语义、适用范围和诊断。
 
 可选安装：`python3 -m pip install --no-build-isolation -e .`，随后使用 `wavebridge demo`。

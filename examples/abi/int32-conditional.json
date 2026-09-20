@@ -1,0 +1,8 @@
+{
+  "schema_version": "integer-abi-assumptions/v1",
+  "scope": "Explicit type assumptions, not an automatically verified target ABI",
+  "types": {
+    "int": {"bits": 32, "signed": true},
+    "unsigned int": {"bits": 32, "signed": false}
+  }
+}
