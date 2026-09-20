@@ -1,0 +1,21 @@
+--- a/lib/polygeist/ExecutionEngine/RocmRuntimeWrappers.cpp
++++ b/lib/polygeist/ExecutionEngine/RocmRuntimeWrappers.cpp
+@@ -14,6 +14,7 @@
+ 
+ #include <cstdio>
+ #include <cstdlib>
++#include <cstring>
+ 
+ #include "hip/hip_runtime.h"
+ 
+@@ -135,7 +136,11 @@
+ 
+ #pragma push_macro("__forceinline__")
+ #define __VECTOR_TYPES_H__
++#define surfaceReference polygeist_cuda_surfaceReference
++#define textureReference polygeist_cuda_textureReference
+ #include <cuda_runtime_api.h>
++#undef textureReference
++#undef surfaceReference
+ #undef __VECTOR_TYPES_H__
+ #pragma pop_macro("__forceinline__")

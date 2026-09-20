@@ -102,3 +102,9 @@ host C++ 对象处理时断言。仅选 kernel 的两次退出 0 都是空 modul
 实际 `--cuda-lower --emit-llvm` 尝试失败在未消除的 conversion cast，未得到
 LLVM IR。不要把该默认host路径或CPUify路径冒充GPU后端对照，详见
 [LLVM路径交接](../../.agents/handoffs/polygeist-llvm-attempt-20260920.md)。
+
+`patches/rocm-wrapper-header-compat.patch` 是对固定上游wrapper的显式环境兼容
+补丁，仅在隔离副本编译诊断过，未自动用于构建脚本。它补cstring并临时重命名
+CUDA与HIP冲突的surface/texture类型，不删CUDA→HIP函数；不保证设备属性
+字段ABI或语义。不能将带补丁构建称为未修改的论文工件，必须保留补丁与版本。
+具体成功和失败见 [wrapper交接](../../.agents/handoffs/polygeist-rocm-wrapper-20260920.md)。

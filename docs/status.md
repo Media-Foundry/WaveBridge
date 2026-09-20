@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新验证：ROCm wrapper 的兼容编译
+
+固定Clang16配现有HIP SDK，原wrapper先因缺CUDA头失败，补齐CUDA11.8后
+因surface/texture全局类型冲突及缺memcpy声明失败。纯HIP诊断可生成bitcode，
+但明确不替代CUDA→HIP能力。隔离副本仅补cstring并临时重命名冲突CUDA类型后，
+完整wrapper生成并重新读取typed-pointer bitcode，保留设备属性适配函数。
+兼容补丁已记录，上游checkout干净；没有建立字段ABI/语义、链接或GPU执行。
+完整后端仍待构建，详见 `.agents/handoffs/polygeist-rocm-wrapper-20260920.md`。
+
 ## 最新诊断：LLVM 输出与 GPU 后端分离
 
 执行记录器新增显式 `--emit-llvm`、输出类型及独立 `.ll` 工件名，不提升保证。
