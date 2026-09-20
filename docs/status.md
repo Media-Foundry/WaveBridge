@@ -199,4 +199,14 @@ WB-03 已连接局部平方和与消费调用：真实源码入口工件
 176项通过；错误下标、非零初值、不同乘数、额外更新、条件消费及副作用实参
 均有拒绝回归。实现哈希核对一致，未生成GPU候选或声明整核正确。
 
+WB-03 后缀关系已连接：`normalization_output` 从局部贡献继续恢复
+`total = consumer(...)`、`scale = external(total/count + epsilon)` 与
+`output[col] = scale * input[col]`。真实 HIP 重跑工件为
+`artifacts/wb03-source-output-01/{ast,report}.json`，consumer 与自动发现的
+块级 helper 相同；读写循环起点、边界声明和步长256对应。记录14处转换，
+包含 IntegralToFloating，转换语义仍未建立；不按外部函数名认定rsqrt。
+AST及实现哈希核对一致；`make check`181项通过。错误列/步长/输入、count
+不对应、额外写入、嵌套scale调用和尾随语句均有拒绝回归。前缀行基址、launch、
+alias、外部接口及浮点关系仍未证明，无新GPU执行或部署候选。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

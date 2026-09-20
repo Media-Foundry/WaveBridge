@@ -4,9 +4,9 @@
 
 研究目标是：从显式使用 shuffle、ballot 和 lane/group 索引的既有 ML kernel 中恢复跨线程计算关系，检查改变协作宽度后的计算对象、运算和输出归属，并据此筛选适配候选。
 
-当前交付是可维护的研究仓库结构，以及独立于 GPU 的整数点积参考路径。源码恢复算法、通用关系 IR、生产 checker、编译后端和性能策略均未完成。新颖性是待验证假设。
+当前交付包括整数点积参考路径、真实 Clang/HIP AST 接入与受限源码结构恢复、独立条件关系检查，以及首例手工 GPU 基线。完整源码关系恢复、通用关系 IR、生产 checker、编译后端和性能策略均未完成。新颖性是待验证假设。
 
-架构采用单仓库、分层库和命令行工具。Python 承担研究编排、协议和参考模型；未来 Clang/LLVM 承担真实源码语义提取。是否引入 MLIR、Triton Layouts 或 Polygeist 扩展点，需经过共同案例实验再作决定。
+架构采用单仓库、分层库和命令行工具。Python 承担研究编排、协议、参考模型与受限 AST 分析；Clang 提供真实源码 AST。是否引入 MLIR、Triton Layouts 或 Polygeist 扩展点，需经过共同案例实验再作决定。
 
 ## 系统分层
 
@@ -14,8 +14,8 @@
 | --- | --- | --- | --- | --- |
 | 源码接入 | `compiler/frontend/`、`src/wavebridge/frontend/` | 源文件、编译命令、launch → 原始语义工件 | 保留源码位置、宏展开、intrinsic 语义和 host/device 关联；不猜测数值容限 | JSON fixture 与真实 Clang AST 采集；launch/调用闭包尚未恢复 |
 | 关系表示 | `compiler/ir/`、`src/wavebridge/ir/` | 原始语义 → 显式关系模型 | 数据索引、运算、路由、参与条件、存储阶段、输出归属、假设、来源 | 仅版本化 qdot 专用模型 |
-| 关系恢复 | `compiler/analysis/`、`src/wavebridge/analysis/` | 原始语义 → 关系模型或拒绝原因 | 支持范围内联合推断；冲突和不确定性必须保留 | AST 结构事实、常量/返回调用链与受限列递推；跨 lane 关系未完成 |
-| 关系检查 | `compiler/verification/`、`src/wavebridge/verification/` | 源/目标、输入域、数值协议 → 检查报告 | 独立于生成器；比较输出计算，保留重复计数和保证范围 | 固定形状无界整数多项式检查 |
+| 关系恢复 | `compiler/analysis/`、`src/wavebridge/analysis/` | 原始语义 → 关系模型或拒绝原因 | 支持范围内联合推断；冲突和不确定性必须保留 | 精确调用发现、列递推、局部平方和与归约结构；外部语义/整核关系未完成 |
+| 关系检查 | `compiler/verification/`、`src/wavebridge/verification/` | 源/目标、输入域、数值协议 → 检查报告 | 独立于生成器；比较输出计算，保留重复计数和保证范围 | qdot 整数模型、条件 XOR/共享 partial 贡献计数与列覆盖；不证明真实源码 |
 | 候选生成 | `compiler/transforms/`、`src/wavebridge/transforms/` | 关系与目标能力 → kernel/launch 候选对 | 数据格式不可随协作宽度修改；候选尚不可信 | qdot 模型 32/64 重新分工 |
 | 决策编排 | `src/wavebridge/pipeline.py` | 候选与检查证据 → 接受、拒绝或验证过的 fallback | 未知不接受；所有调用者遵循同一门槛 | 只接受模型候选，不部署 |
 | 执行与测量 | `runtime/`、`experiments/` | 已检查代码、设备协议 → 原始执行记录 | 能力探测、正确性测试、计时与环境隔离 | 最小设备探测器；通用执行器待实现 |

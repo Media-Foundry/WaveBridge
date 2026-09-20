@@ -140,3 +140,15 @@ float 累加器与列循环，恢复 `const float v=input[i]; acc += v*v`，并�
 报告保存源码范围、列递推、输入参数和消费声明 ID。它只描述该局部片段；
 前置指针定位、完整输入别名、线程起点、consumer 的实际语义及浮点结果尚未
 证明，不能把它与条件列覆盖检查直接合成为完整 kernel 保证。
+
+## 归约结果到输出列
+
+`normalization_output.recover(root, function_id, int_bits)` 在局部贡献恢复基础上，
+检查严格后缀：归约调用结果赋给 total，`scale = external(total/count + epsilon)`，
+随后列循环执行 `output[i] = scale * input[i]`。count 必须对应局部贡献循环的
+边界参数，两循环按起点、边界和步长关系对应，写入与读取下标必须是输出循环
+自身的 induction。错误下标、错步长、额外写入与隐藏控制流不在支持范围内。
+
+external 的函数 ID 和转换证据会被保留，但不会根据名字认定它是 rsqrt。
+整行基址、launch、alias、外部接口和浮点数值关系尚需另外建立；该后缀恢复
+不签发可部署工件，也不声称完整 RMSNorm 正确性。

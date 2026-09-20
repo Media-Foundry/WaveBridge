@@ -11,6 +11,7 @@ from wavebridge.analysis.column_loops import recover
 from wavebridge.analysis.initializer_evidence import inspect as inspect_initializer
 from wavebridge.analysis.reduction_discovery import discover
 from wavebridge.analysis.local_contribution import recover as recover_contribution
+from wavebridge.analysis.normalization_output import recover as recover_output
 
 
 def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=30.0):
@@ -35,7 +36,7 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
                 "analysis/integer_constants.py", "analysis/initializer_evidence.py",
                 "analysis/return_trace.py", "analysis/reduction_discovery.py",
                 "analysis/block_reduction.py", "analysis/xor_reduction.py",
-                "analysis/local_contribution.py")
+                "analysis/local_contribution.py", "analysis/normalization_output.py")
         },
     }
     locations = frontend["function_locations"]
@@ -57,6 +58,8 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
         report["reduction_discovery"] = discover(
             frontend["ast_roots"][0], locations[0]["id"], int_bits)
         report["local_contribution"] = recover_contribution(
+            frontend["ast_roots"][0], locations[0]["id"], int_bits)
+        report["normalization_output"] = recover_output(
             frontend["ast_roots"][0], locations[0]["id"], int_bits)
         report["status"] = "analyzed"
         report["reason"] = None
