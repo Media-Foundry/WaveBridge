@@ -108,3 +108,9 @@ LLVM IR。不要把该默认host路径或CPUify路径冒充GPU后端对照，详
 CUDA与HIP冲突的surface/texture类型，不删CUDA→HIP函数；不保证设备属性
 字段ABI或语义。不能将带补丁构建称为未修改的论文工件，必须保留补丁与版本。
 具体成功和失败见 [wrapper交接](../../.agents/handoffs/polygeist-rocm-wrapper-20260920.md)。
+
+`patches/rocm-wrapper-property-audit.patch` 在上述兼容副本上加入42个已复制
+字段的sizeof/type断言，当前固定头文件下编译通过；不是完整属性ABI或语义
+验证。当前SDK的设备bitcode由LLVM23生成，已实际确认固定LLVM16无法读取
+ocml.bc，不能未经门控接入完整ROCm构建。见
+[后端前提记录](../../.agents/handoffs/polygeist-backend-prerequisites-20260920.md)。

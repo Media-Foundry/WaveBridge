@@ -1,0 +1,19 @@
+--- a/lib/polygeist/ExecutionEngine/RocmRuntimeWrappers.cpp
++++ b/lib/polygeist/ExecutionEngine/RocmRuntimeWrappers.cpp
+@@ -15,6 +15,7 @@
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
++#include <type_traits>
+ 
+ #include "hip/hip_runtime.h"
+ 
+@@ -152,6 +153,8 @@
+   // Reassign all corresponding fields to the hip props, the commented ones dont
+   // exist in hip one-for-one
+ #define __polygeist_assign_field(f)                                            \
++  static_assert(sizeof(cudaProp->f) == sizeof(hipProp.f), #f " size mismatch"); \
++  static_assert(std::is_same<decltype(cudaProp->f), decltype(hipProp.f)>::value, #f " type mismatch"); \
+   memcpy(&(cudaProp->f), &(hipProp.f), sizeof(cudaProp->f))
+   __polygeist_assign_field(name);
+   // __polygeist_assign_field(uuid);

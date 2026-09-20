@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新门控：属性字段审计通过，设备 bitcode 不兼容
+
+隔离编译期审计覆盖wrapper实际复制的42个字段：CUDA11.8与当前HIP头的
+尺寸及C++类型一致；runtime导出其引用的hipGetDevicePropertiesR0600。
+这不证明字段值语义、未映射字段初始化或完整ABI。另一方面，固定Clang16
+实际读取当前LLVM23产出的ocml.bc失败（Unknown attribute kind 106）。
+完整后端不能直接复用这些设备库；下一步准备兼容设备库，再配置独立ROCm
+构建。证据和配置依赖见 `.agents/handoffs/polygeist-backend-prerequisites-20260920.md`。
+
 ## 最新验证：ROCm wrapper 的兼容编译
 
 固定Clang16配现有HIP SDK，原wrapper先因缺CUDA头失败，补齐CUDA11.8后
