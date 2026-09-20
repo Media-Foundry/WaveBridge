@@ -1,5 +1,15 @@
 # 编译器关系检查
 
+## 行偏移的整数部分
+
+`verification.row_offset.check(expression, row_id, count_id, row_interval, count_interval,
+integer_types)`检查完整typed表达式的符号乘积、逐节点整数范围与转换值保持。
+`wavebridge.row_offset_check.check(root, kernel_id, launch_id, integer_types, row_binding,
+thread_binding, int_bits=32, use_host_guard_assumptions=False)`从同AST fresh组合坐标、
+列数域和两处整数偏移；host守卫假设需显式开启。示例ABI为
+`examples/abi/row-offset-conditional.json`，其中long64仍是外部假设。
+两接口均不证明指针加法/内存有效性、参与、浮点正确性或部署；详见协议文档。
+
 计划建立跨执行组织的输出关系检查，包括操作、重复计数、参与条件、存储和写入义务。需要明确源有效性、数值契约、支持子集和模型到代码的一致性边界。
 
 当前包含 Python 无界整数参考 checker、条件列覆盖/归约关系检查和整数转换检查；没有编译器级证明或真实 HIP 等价验证。

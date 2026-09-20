@@ -2,6 +2,18 @@
 
 更新日期：2026-09-20。
 
+## 最新组合门控：两处行偏移的整数关系
+
+row-prefix保留完整offset/update AST；独立row_offset检查符号乘积恰为row*count，
+逐节点核对显式ABI下的整数范围与转换。row_offset_check从同AST fresh组合行坐标、
+线程起点和列数域，不消费生成器自报关系。444项CPU测试通过，Sol实现独立checker
+并只读审查组合；同范围错误乘积、窄化、可能溢出与绑定错配有回归。
+最终真实工件 `artifacts/wb04-row-offset-bLZgDu/final/report.json` 条件checked：
+row[0,7]、count[1,1023]下两处整数偏移均为row*count，范围[0,7161]；src实现hash
+运行前后一致。新ABI示例的long64为外部假设，不是本轮设备测量。未运行GPU，
+指针加法、分配/访问边界、别名、参与和浮点仍未建立；G1/G2/G3不因此整体通过。
+详见 `.agents/handoffs/wb04-row-offset-20260920.md`。
+
 ## 最新组合门控：row初始化式与grid域
 
 row_coordinate_check从同AST fresh恢复grid域、row-prefix及初始化式结果调用，

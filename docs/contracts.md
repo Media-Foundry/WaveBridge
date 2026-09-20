@@ -229,3 +229,18 @@ participation继续未建立，不授权GPU部署。
 `conditional-row-coordinate-check/v1`从同AST恢复row声明与初始化链并核对整数
 值保持，给出条件行坐标域。它仅覆盖初始化式，不证明row*ncols算术、指针范围
 或每次launch的精确row/nrows相关性；不授权部署。
+
+## 行偏移整数关系
+
+`row-offset-check/v1`消费完整表达式、精确row/count声明ID、非负闭区间及显式
+整数ABI。受限乘法表达式规范化为系数和两个变量的幂次，必须恰为`row * count`；
+范围碰巧相同不算关系相同。各节点须可表示，整数转换须全域值保持。乘法可能
+溢出为unknown；符号关系不符或转换不能全域值保持为rejected。这些拒绝描述
+给定条件域/关系，不证明某个错误输入实际可达；报告counterexample为局部诊断。
+支持声明读取、非负字面量、prvalue括号、受限整数转换和乘法；最多128节点、
+深度32。typedef依desugaredQualType查询显式ABI，不按int64_t名字猜位宽。
+
+`conditional-row-offset-check/v1`从同一原始AST fresh检查row、thread和列数域，
+按选定kernel/launch及精确声明ID连接前缀两处完整offset_ast，再独立检查。
+checked只表示两处指针更新的整数RHS关系及无溢出；矩形域可能过近似真实组合。
+它不检查指针加法、分配范围、别名、数据访问、线程参与或浮点结果，不授权部署。

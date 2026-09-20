@@ -31,6 +31,22 @@ def prefixed_fixture():
 
 
 class RowPrefixTests(unittest.TestCase):
+    def test_preserves_complete_offsets_including_matching_outer_casts(self):
+        tree = prefixed_fixture()
+        statements = tree["inner"][-2]["inner"][-1]["inner"]
+        for statement in statements[2:4]:
+            statement["inner"][1] = {
+                "kind": "ImplicitCastExpr", "castKind": "IntegralCast", "range": R,
+                "type": {"qualType": "short"}, "inner": [statement["inner"][1]]}
+        result = recover(tree, "kernel", 32)
+        self.assertEqual("recovered", result["status"])
+        for key, statement in zip(("source_offset", "output_offset"), statements[2:4]):
+            self.assertEqual(statement["inner"][1], result[key]["offset_ast"])
+            self.assertEqual(statement, result[key]["update_ast"])
+            self.assertEqual("short", result[key]["offset_ast"]["type"]["qualType"])
+        self.assertFalse(result["checked"])
+        self.assertEqual("not_established", result["conversion_semantics"])
+
     def test_recovers_exact_prefix_and_preserves_initializers(self):
         result = recover(prefixed_fixture(), "kernel", 32)
         self.assertEqual("recovered", result["status"])

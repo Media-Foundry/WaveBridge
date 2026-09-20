@@ -1,5 +1,9 @@
 # 关系恢复
 
+row-prefix报告的source_offset/output_offset保留完整`offset_ast`及`update_ast`，
+包括乘法外层转换；结构恢复不解除整数转换或指针有效性义务。两侧同样窄化仍
+可以是匹配的结构，必须交由独立整数checker检查，不能将cast signature相同当证明。
+
 块归约报告另保留 `shared_access_asts`：writer/gather的完整谓词及整数下标表达式，
 包含尚未检查的转换。保留AST不等于建立访问语义，需显式坐标和ABI下的独立检查；
 仅凭剥离转换后的lane/group声明引用，不能解除下标或条件的值保持义务。

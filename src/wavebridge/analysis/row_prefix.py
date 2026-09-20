@@ -117,6 +117,7 @@ def _offset(statement: dict[str, Any], pointer_id: str, row_id: str, count_id: s
     all_casts.extend(row_casts)
     all_casts.extend(count_casts)
     return {"range": update.get("range"), "product_range": product.get("range"),
+            "offset_ast": children[1], "update_ast": statement,
             "statement_cast_signature": _cast_signature(statement_casts),
             "row_cast_signature": _cast_signature(row_casts),
             "count_cast_signature": _cast_signature(count_casts),

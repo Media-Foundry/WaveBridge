@@ -1,0 +1,11 @@
+{
+  "schema_version": "storage-abi-assumptions/v1",
+  "scope": "Explicit assumptions for row offsets; not automatically verified target ABI",
+  "integer_types": {
+    "int": {"bits": 32, "signed": true},
+    "unsigned int": {"bits": 32, "signed": false},
+    "long": {"bits": 64, "signed": true},
+    "unsigned long": {"bits": 64, "signed": false}
+  },
+  "sizeof_bytes": {"float": 4}
+}
