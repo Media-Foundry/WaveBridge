@@ -2,6 +2,19 @@
 
 更新日期：2026-09-21。
 
+## 第二仓库源码验证：vLLM RMSNorm首次评估为unknown
+
+冻结04c01e4分析器，固定vLLM v0.6.6/f49777ba源码及Apache-2.0许可，未改kernel
+或分析器。原样生产TU在隔离PyTorch2.5.1头环境及显式CUDA include/配置宏下，
+host/device-only两视图均取得symbol-filtered AST。device视图的float/Half/BFloat16
+三个实例共6个循环均在起点IntegralCast(unsigned threadIdx.x→int)返回
+unsupported_value_wrapper；未到达后续步长/归约/组合检查。模板不是新增案例。
+这是一个不同仓库候选的具体拒绝记录，不是holdout通过或CUB语义结论。
+前四次环境失败保留；无GPU执行。来源、冻结规则和结果见
+`benchmarks/intake/vllm-rmsnorm{,-result}.json`及对应protocol.md。
+依赖绑定已完成最小接入方案审查，但尚未实现；下一步同次AST depfile及driver
+trace绑定，不用另一次预处理输出冒充冻结输入。
+
 ## 引用类型别名与induction存储期修复
 
 在fe844b0同一真实Clang AST上重放，确认using/typedef/嵌套引用别名仍错误

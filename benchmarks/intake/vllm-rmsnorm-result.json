@@ -1,0 +1,48 @@
+{
+  "schema_version": "source-intake-observation/v1",
+  "case_id": "vllm-rmsnorm-v066",
+  "date": "2026-09-21",
+  "analyzer_revision": "04c01e4e7b9ccef40eceab9dd0c54adecbe7493e",
+  "source_modified": false,
+  "analyzer_modified": false,
+  "frontend_status": "collected",
+  "analysis_status": "unknown",
+  "holdout_acceptance": "not_established",
+  "compilation_view": "cuda_device_only_sm80_syntax_only_symbol_filtered_ast",
+  "environment_adaptations": [
+    "isolated PyTorch 2.5.1 CPU wheel headers; no package installed",
+    "existing CUDA 12.1 runtime/nvcc, cuRAND, CCCL and libcudacxx include paths",
+    "C10_CUDA_NO_CMAKE_CONFIGURE_FILE disables missing generated export configuration header via upstream-supported conditional; not an official vLLM build recipe"
+  ],
+  "torch_wheel_sha256": "4856f9d6925121d13c2df07aa7580b767f449dfe71ae5acde9c27535d5da4840",
+  "counts": {
+    "independent_case_candidates": 1,
+    "named_function_template_nodes": 1,
+    "template_body_function_nodes": 1,
+    "concrete_instantiations": 3,
+    "concrete_loops": 6,
+    "recovered_concrete_loops": 0,
+    "unknown_concrete_loops": 6
+  },
+  "instantiations": ["float", "c10::Half", "c10::BFloat16"],
+  "first_refusal": "unsupported_value_wrapper",
+  "first_refusal_detail": "loop initializer is int <- IntegralCast(unsigned int PseudoObjectExpr threadIdx.x), not a supported signed-int declaration reference or literal",
+  "later_obligations": "not_evaluated; do not infer CUB support or failure from the first refusal",
+  "device_report": "artifacts/wb03-vllm-holdout-GqLQJo/attempt-06.json",
+  "device_report_sha256": "f75e566c7443bd4ab69acd5a3e7c5c89af80d75c30f3892d779dfaf81f2a38f7",
+  "host_report": "artifacts/wb03-vllm-holdout-GqLQJo/attempt-05.json",
+  "host_report_sha256": "7eec7590b1cd8c5477d8ccf3c26301a332d62ab7041f4bb70440e2b014c276fe",
+  "failed_attempts": [
+    {"attempt": 1, "category": "dependency_missing", "detail": "crt/host_defines.h"},
+    {"attempt": 2, "category": "dependency_missing", "detail": "curand_mtgp32_kernel.h"},
+    {"attempt": 3, "category": "header_incompatibility", "detail": "installed PyTorch Half/thrust declarations"},
+    {"attempt": 4, "category": "dependency_missing", "detail": "CPU wheel lacks cuda_cmake_macros.h"}
+  ],
+  "scope_limits": [
+    "symbol filtering is not full declaration or include closure",
+    "no source-to-checker composition succeeded; no GPU candidate generated",
+    "no launch execution, numeric validation or performance measurement",
+    "one purposively selected repository-distinct case is not generalization evidence",
+    "raw artifacts are local-only; this index is not a complete public reproduction package"
+  ]
+}

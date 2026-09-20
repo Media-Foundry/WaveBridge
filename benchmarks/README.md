@@ -1,8 +1,14 @@
 # 语料与基线协议
 
-当前真实语料为空。`examples/qdot/` 是接口验证模型，不能作为真实 ML workload 数量计入覆盖统计。
+当前登记一个development案例：llama.cpp RMSNorm手工HIP standalone，已有九个
+确定性输入的设备基线记录及受限源码分析；完整研究验收尚未通过。
+`examples/qdot/` 是接口验证模型，不能作为真实 ML workload 数量计入覆盖统计。
 
-`intake/llama-rmsnorm.json` 固定了一个经源码核对的候选及文件哈希，但独立 reference、数值协议和目标运行尚未完成，因此不计入 `corpus.json` 的有效案例。`intake/` 记录是人工筛选资料，不是自动恢复器的输入或 oracle。
+`corpus.json`区分原始TU、手工HIP及CUDA adapter。llama-rmsnorm的早期intake中
+仍有历史待办字段，当前状态以corpus和带日期证据为准。
+第二仓库vLLM RMSNorm正在按[intake协议](intake/vllm-rmsnorm-protocol.md)进行
+固定分析器评估，尚不算通过holdout。`intake/`记录是人工筛选资料，不是自动
+恢复器的关系输入或oracle。
 
 ## 纳入语料
 

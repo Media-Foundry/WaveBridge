@@ -1,0 +1,30 @@
+{
+  "schema_version": "candidate-intake/v1",
+  "case_id": "vllm-rmsnorm-v066",
+  "status": "source_fixed_before_first_analysis",
+  "repository": "https://github.com/vllm-project/vllm",
+  "revision": "f49777ba62b4926d0f8c100ab06edb03c5c10098",
+  "tag": "v0.6.6",
+  "license": "Apache-2.0",
+  "lineage_id": "vllm-layernorm",
+  "lineage_scope": "repository-distinct from ggml; exhaustive shared-ancestry audit not established",
+  "selection": "purposive second-repository RMSNorm; source screened before selection, no randomized holdout claim",
+  "entry_symbol": "vllm::rms_norm_kernel<float>",
+  "launch_symbol": "rms_norm",
+  "source_path": "csrc/layernorm_kernels.cu",
+  "source_sha256": "57d5d4e2912e0661d57a0eab4a837ea7a8cab794b7e4cf10b7d5f42dd31ef2d8",
+  "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+  "archive_sha256": "5c1902eb24bdf53e7a8aec8f15bb22078f35cdaf29dbd15921a66ac0fcc8180a",
+  "source_modifications": [],
+  "analysis_freeze": "04c01e4",
+  "input_scope": "unmodified production TU; first attempt may use symbol-filtered AST to bound artifact size",
+  "rules": [
+    "do not change the analyzer for this first evaluation",
+    "no manual relation oracle is an analysis input",
+    "record missing dependencies separately from unsupported semantics",
+    "filtered AST is not complete-TU closure or source validity proof",
+    "no numerical, GPU or generalization-success claim from source analysis alone"
+  ],
+  "gpu_validation": "not_run",
+  "holdout_acceptance": "not_established"
+}
