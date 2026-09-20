@@ -129,3 +129,14 @@ Clang 的 `BuiltinFnToFnPtr` callee 转换可穿透到精确声明引用，和�
 callee 转换一起保存在 `callee_casts`（类型、范围、未解除义务）。这只补全
 声明关联；没有函数体的编译器 builtin 仍记缺定义，外部语义不因此建立。
 任意指针 BitCast 等其它转换仍不支持。
+
+## 局部列贡献到消费调用
+
+`local_contribution.recover(root, function_id, int_bits)` 针对顶层相邻的零初值
+float 累加器与列循环，恢复 `const float v=input[i]; acc += v*v`，并关联后续
+直接消费 `acc` 的调用及实参位置。列下标、乘数和累加器均按声明 ID 核对。
+消费前仅允许无初始化的数组声明；条件消费、额外更新或带副作用实参不支持。
+
+报告保存源码范围、列递推、输入参数和消费声明 ID。它只描述该局部片段；
+前置指针定位、完整输入别名、线程起点、consumer 的实际语义及浮点结果尚未
+证明，不能把它与条件列覆盖检查直接合成为完整 kernel 保证。

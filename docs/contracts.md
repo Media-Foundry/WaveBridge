@@ -73,3 +73,16 @@
 barrier可达性或浮点值。缺少barrier前提返回unknown；模型内未写入的partial
 读取、容量不足、缺失或重复贡献返回rejected。不能把model checked升级为
 完整源/目标kernel验证。恢复器与此checker实现依赖分离。
+
+## 相同步长的列覆盖检查
+
+`verification.column_coverage.check(columns, starts, stride, int_bits=32)`
+检查每个给定起点的 `i < columns; i += stride` 非负递推，是否将
+`[0, columns)` 的每列覆盖且仅覆盖一次。相同步长的序列按余数分类；每个
+必需余数必须从最小非负代表开始，两个同余且非空的序列必然重叠。
+只排序最多1024个线程的余数，不按列数展开，时间为 O(T log T)。
+
+位宽、列数、起点和步长必须在支持域内；最后一次有效迭代之后的增量也检查
+signed overflow，发生溢出时返回 unknown。模型内遗漏和重复返回 rejected。
+这里的 checked 仅表示给定递推的列覆盖，不证明源码线程坐标、每次迭代的
+贡献运算、输入别名、输出归属或浮点等价；调用者不能把它升级为源码保证。

@@ -185,4 +185,18 @@ WB-03 的 17 条 callee 转换现已从真实 AST 确认为 `BuiltinFnToFnPtr`�
 实现哈希核对一致；`make check` 163项通过，含真实Clang builtin及BitCast拒绝
 回归。没有新GPU执行或完整源码保证。
 
+WB-03 已连接局部平方和与消费调用：真实源码入口工件
+`artifacts/wb03-source-contribution-01/{ast,report}.json` 恢复零初值累加器、
+`input[col]` 的平方累加与步长256递推；consumer 精确声明 ID 与此前自动
+发现的块级归约 helper 相同。前置线程索引/指针定位只记录范围，明确
+`prefix_scope=not_analyzed`；别名、线程坐标和浮点语义仍未建立。
+
+独立 `verification/column_coverage.py` 按同余序列检查列覆盖/重复度，成本
+不随列数线性展开，并检查最后一次 signed 增量溢出。5625个小域组合与枚举、
+3584个小位宽组合与逐步溢出模拟一致。条件证据
+`conditional-column-coverage.json` 对777/4096/10亿列通过，起点0～255是显式
+外部假设，不冒充恢复出的线程坐标，也不是GPU实测尺寸。本轮 `make check`
+176项通过；错误下标、非零初值、不同乘数、额外更新、条件消费及副作用实参
+均有拒绝回归。实现哈希核对一致，未生成GPU候选或声明整核正确。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。
