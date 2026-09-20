@@ -84,6 +84,24 @@ Kernel JSON 或 oracle。输出目录必须不存在，其中 `ast.json` 与 `re
 原始AST哈希和此次分析实现文件哈希同时记录；不支持的调用种类亦保留未知，
 不从调用计数中静默删除。
 
+`value_link` 子报告（`initializer-value-link/v1`）进一步连接受限初始化式与
+产生结果的调用。支持无参直接free call，以及HIP式静态MS属性getter：恰好一个
+语法属性、一个plain-lvalue OpaqueValueExpr receiver和一个无参CallExpr。
+依据Clang PseudoObjectExpr的结果类型/value-kind不变量，在**全部语义child**中
+要求唯一匹配结果；不按函数/属性名称识别，也不直接选择最后child。属性、语义
+receiver和成员callee的receiver须完整一致，成员目标须exact ID唯一、static且无形参。
+可变参数getter不支持；调用必须为prvalue，Paren类型/值类别必须与子表达式一致。
+外层仅接受Paren/IntegralCast；转换按外到内记录，不删除窄化或宣称值保持。
+非静态getter、额外算术、缺类型、结果歧义、不同receiver或未知cast保持unknown。
+
+该不变量的实现依据是已检视LLVM提交
+`0b9310c6e4416ee48c07edfef81144e22850dfe7`中
+`clang/lib/AST/Expr.cpp`的`PseudoObjectExpr::Create`与
+`clang/include/clang/AST/Expr.h`的语义child说明；**不是对实际HIP编译器内部实现的验证**。
+报告显式保留“生产者满足该不变量”的外部前提，源码入口绑定实际编译器/AST/实现哈希。
+`recovered`只说明条件结构连接，初始化值等价、坐标语义、整核正确性及部署仍未建立。
+`receiver_purity=not_established`也保持不变，不能据此删除receiver求值。
+
 ## XOR 归约 helper
 
 `xor_reduction.recover(root, function_id, shuffle_declaration_id, int_bits)`

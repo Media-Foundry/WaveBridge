@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from wavebridge.analysis.return_trace import trace
+from wavebridge.analysis.initializer_value import link
 
 CALL_KINDS = {"CallExpr", "CXXMemberCallExpr", "CXXOperatorCallExpr", "CUDAKernelCallExpr"}
 SUPPORTED_CALL_KINDS = {"CallExpr", "CXXMemberCallExpr"}
@@ -96,6 +97,7 @@ def inspect(root: object, declaration_id: str) -> dict[str, Any]:
         "reason": None, "origin_candidate": False,
         "value_equivalence": "not_established", "start_semantics": "unknown",
         "checked": False, "deployable": False, "relation_recovery": "incomplete",
+        "value_link": None,
     }
     if not isinstance(root, dict):
         result["reason"] = "root_not_object"
@@ -140,4 +142,5 @@ def inspect(root: object, declaration_id: str) -> dict[str, Any]:
         result["reason"] = "initializer_call_unresolved"
     else:
         result["status"] = "evidence"
+        result["value_link"] = link(root, initializer)
     return result

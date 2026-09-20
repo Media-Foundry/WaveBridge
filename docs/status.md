@@ -2,6 +2,17 @@
 
 更新日期：2026-09-20。
 
+## 最新源码能力：连接属性初始化式与结果调用
+
+新增initializer_value并接入起点证据value_link：在显式Clang结果不变量前提下，
+从全部语义child中唯一识别pseudo-object结果调用；严格核对static getter与
+三处receiver，保留外层整数转换，不依据getter名字识别线程坐标。
+323项CPU测试通过，含真实Clang静态属性改名案例及结构/类型/接收者负例。
+最终真实HIP重跑为 `artifacts/wb03-initializer-value-02/`，起点value_link recovered，
+转换unsigned int→const int保留未解除义务。接收者纯度、外部坐标含义、
+getter返回转换与launch域仍待检查；无GPU运行或部署放行。见
+`.agents/handoffs/wb03-initializer-value-20260920.md`。
+
 ## 最新源码证据：getter完整表达式与歧义门控
 
 return_trace保留每步完整return/callee AST、调用类型、声明种类/static信息与

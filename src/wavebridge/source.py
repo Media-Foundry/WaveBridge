@@ -40,6 +40,7 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
             name: _sha256(Path(__file__).parent / name) for name in (
                 "source.py", "frontend/clang_ast.py", "analysis/column_loops.py",
                 "analysis/integer_constants.py", "analysis/initializer_evidence.py",
+                "analysis/initializer_value.py",
                 "analysis/return_trace.py", "analysis/reduction_discovery.py",
                 "analysis/block_reduction.py", "analysis/xor_reduction.py",
                 "analysis/local_contribution.py", "analysis/normalization_output.py",

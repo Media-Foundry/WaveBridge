@@ -28,6 +28,14 @@ class InitializerEvidenceClangTests(unittest.TestCase):
                 self.assertEqual(evidence["calls"][0]["trace"]["leaf"]["name"],
                                  "external_id")
         self.assertEqual(inspect(root, variables["mutable_value"])["status"], "unknown")
+        static = inspect(root, variables["static_property"])
+        self.assertEqual(static["value_link"]["status"], "recovered", static["value_link"])
+        self.assertEqual(static["value_link"]["call_id"], static["calls"][0]["call_id"])
+        self.assertEqual(static["value_link"]["callee_declaration_id"],
+                         static["calls"][0]["callee_declaration_id"])
+        self.assertFalse(static["checked"])
+        for name in ("original", "static_arithmetic", "with_arithmetic"):
+            self.assertEqual(inspect(root, variables[name])["value_link"]["status"], "unknown")
 
 
 if __name__ == "__main__":

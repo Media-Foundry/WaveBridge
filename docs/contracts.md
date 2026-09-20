@@ -147,3 +147,11 @@ ID→x/y/z映射解释独立构造字段检查结果，并要求(x,y,z)=(block_t
 与仅检查维度乘积不同，轴交换和非一维布局会拒绝。缺轴绑定、常量或ABI为unknown。
 轴/API对应、源报告真实性、源码线程坐标含义及实际执行配置仍为外部前提；
 source_program_checked/deployable始终false，不能用它单独放行候选。
+
+## 初始化结果调用连接：`initializer-value-link/v1`
+
+在输入为真实、单TU、符合Clang pseudo-object结果不变量的AST前提下，连接
+初始化式到结果调用及保留的外层整数转换链。它不是整数转换checker，也不赋予
+外部调用坐标语义。`recovered`不得转换成`checked`或部署许可；数值值保持、
+receiver上下文有效性、外部函数/轴语义和launch域须另行建立。具体支持子集与
+不变量来源见 `compiler/analysis/README.md`。
