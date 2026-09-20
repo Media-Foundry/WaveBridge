@@ -97,3 +97,14 @@ PYTHONPATH=src python3 -m wavebridge.analysis.xor_reduction AST_REPORT.json \
 
 Clang ID仅对指定AST工件/root有效。`source_program_checked=false` 始终保留；
 路由检查的条件保证见 [协议范围](../../docs/contracts.md)，不能当成完整kernel验证。
+
+## 块级共享 partial 阶段
+
+`block_reduction.recover(root, function_id, reduce_id, barrier_id, int_bits)`
+提取有限七语句模式：首次归约、group/lane划分、lane0写partial、barrier、
+按lane读取partial并补零、再次归约返回。width/BLOCK从实际声明求值，所有
+参数/索引/调用按声明ID关联；缺失阶段、错误索引或谓词保持未知。
+
+外部选择reduce/barrier ID不赋予它们语义。group和lane的坐标AST分别保留，
+不能因表达式名字相似认定其值相等；坐标与整数转换范围是独立未证明前提。
+独立 `verification.block_routes.check` 检查条件模型贡献计数，不为源码签发保证。

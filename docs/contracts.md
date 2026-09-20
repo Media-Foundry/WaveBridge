@@ -61,3 +61,15 @@
 浮点加法结果、收敛、mask或物理wave语义的保证。不同stage顺序可有相同贡献计数，
 却不保证浮点结果相同。源码恢复器的外部shuffle声明选择仍需独立语义依据；
 绑定某个函数ID不能自动证明它就是XOR shuffle。所有结果均不可直接部署。
+
+## 共享 partial 的两阶段贡献检查
+
+`verification/block_routes.py` 在上述XOR快照假设下，模拟每组归约、单writer
+写共享partial、barrier之后按lane读取partial（其它lane注入零）、再次组内归约。
+逐输出线程检查是否恰好包含全block每个初始贡献一次；记录缺失或重复反例。
+上限为1024线程、64lane逻辑组和每次16阶段，partial组数不得超过逻辑宽度。
+
+这是条件模型，不证明源码坐标相等、源launch使用的block大小、实际shared容量、
+barrier可达性或浮点值。缺少barrier前提返回unknown；模型内未写入的partial
+读取、容量不足、缺失或重复贡献返回rejected。不能把model checked升级为
+完整源/目标kernel验证。恢复器与此checker实现依赖分离。

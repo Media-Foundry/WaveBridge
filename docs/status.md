@@ -148,4 +148,15 @@ WB-03/04 的首项通信路由证据：真实 HIP `warp_reduce_sum_logical32` he
 （含9项真实Clang测试）。intrinsic语义、参与收敛、浮点值、共享内存第二阶段、
 输出归属和候选源码检查尚未建立，WB-03/04及G2/G3均不能算整体通过。
 
-以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03 关系恢复与 WB-04～08 仍待实施。
+WB-03/04 继续接入共享 partial：真实 HIP 基线的 block helper 已恢复七阶段
+结构，得到 block_threads=256、width=32、writer_lane=0。联合证据保存于
+`artifacts/wb03-block-evidence-01.json`，绑定完整 AST 哈希；独立 block checker
+在声明的坐标、全参与、XOR 和共享可见性前提下，确认 8 个 partial 汇集的
+每个输出包含全部 256 个初始贡献各一次。21 处转换记录保留类型与源码范围，
+`conversion_semantics=not_established`，不能推断 unsigned→int 转换可消除。
+本地 `make check` 151 项通过；新增真实 Clang unsigned-coordinate 回归，
+缺 barrier、错误 shared 下标、遗漏/重复贡献等分别按范围返回 unknown/rejected。
+完整源码仍 `source_program_checked=false`，没有新 GPU 运行、浮点等价或自动候选。
+工件仅保存在本地，不等于已发布复现包。
+
+以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。
