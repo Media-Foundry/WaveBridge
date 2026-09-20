@@ -43,6 +43,7 @@ class PolygeistFrontendAttemptTests(unittest.TestCase):
         path, report = self.run_attempt(output="not even valid MLIR")
         self.assertEqual("emitted_unverified_ir", report["status"])
         self.assertFalse(report["ir_verified"])
+        self.assertEqual("cgeist_O0_default_passes_not_identity_translation", report["pipeline"])
         self.assertFalse(report["deployable"])
         self.assertFalse(report["source_program_checked"])
         self.assertEqual("not_run", report["gpu_execution"])

@@ -52,6 +52,11 @@ Ninja，记录版本、编译器/脚本哈希和完整命令。CMake 4 通过显
 `no_ir_emitted` 和 `emitted_unverified_ir`。最后一种不意味着 MLIR 合法或语义正确。
 头文件传递闭包未完整哈希，报告明确该限制；没有数值或 GPU 保证。
 
+`-O0` 不等于完全不做变换：固定版 driver.cc 在 626 行起无条件安排 CSE、
+canonicalization、Mem2Reg 等 pass，`-O0` 在 664 行附近关闭一部分 inlining。
+报告因此标为默认 O0 pass 路径，而不是 identity translation；是否保留通信
+和 launch 必须检查输出，不能从命令选项直接推断。
+
 待当前 cgeist 构建完成后，先在同一配置构建 `clang-resource-headers`；不要同时
 在同一构建目录启动另一个 Ninja。然后运行（尚待实际执行的命令）：
 
@@ -60,7 +65,7 @@ cmake --build artifacts/toolchains/polygeist-cgo24-frontend-build-02 --target cl
 PYTHONPATH=src python3 experiments/baselines/polygeist_frontend.py \
   benchmarks/cases/llama-rmsnorm/baseline/rmsnorm_logical32.cu \
   --cgeist artifacts/toolchains/polygeist-cgo24-frontend-build-02/bin/cgeist \
-  --resource-dir artifacts/toolchains/polygeist-cgo24-frontend-build-02/lib/clang/16 \
+  --resource-dir artifacts/toolchains/polygeist-cgo24-frontend-build-02/lib/clang/16.0.0 \
   --cuda-path artifacts/toolchains/cuda-view-Zt5WBj \
   --include-dir artifacts/toolchains/cuda-12.1-wheels/nvidia/cuda_nvcc/include \
   --include-dir artifacts/toolchains/curand-10.3.2.56-wheel/nvidia/curand/include \

@@ -36,6 +36,7 @@ def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
     report = {
         "schema_version": "polygeist-frontend-attempt/v1",
         "scope": "frontend_ir_emission_only",
+        "pipeline": "cgeist_O0_default_passes_not_identity_translation",
         "status": "tool_missing",
         "source": {"path": str(source), "sha256": _sha256(source)},
         "runner_sha256": _sha256(Path(__file__)),

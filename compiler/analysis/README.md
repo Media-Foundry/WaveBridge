@@ -208,5 +208,10 @@ mutable/volatile、地址逃逸、不支持的控制流或转换保持unknown。
 `recovered` 不证明 mask、XOR intrinsic、收敛或浮点语义。条件路由模型不建模
 mask，结果中明确 `models_mask=false`；全32 lane在每次调用时活跃且收敛是外部
 前提，不是恢复结论。CLI 对不支持的 mask 不调用路由 checker。
-真实 CUDA 端口可自动发现该 XOR helper，但 block helper 仍未恢复，不能生成
-已验证候选或把同一案例的语言端口算作新谱系。
+真实 CUDA 端口可自动发现该 XOR helper；后续 barrier callee 接入后也能发现
+block helper 的七阶段结构。仍不能生成已验证候选或把同一案例的语言端口算作新谱系。
+
+块级恢复只在无参 barrier 调用目标位置接收 `BuiltinFnToFnPtr`，按精确函数 ID
+绑定，保留原 callee AST、source/destination type、cast kind 与 range。
+参数位置、reduce callee 上的此转换以及 BitCast 不因此被接受。所有坐标、
+转换、reduce/barrier 语义保持 not_established；选择一个声明不证明它真是 barrier。

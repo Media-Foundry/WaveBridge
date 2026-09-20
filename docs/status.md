@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新实现：CUDA 块级归约结构
+
+严格支持 barrier callee 位置的 `BuiltinFnToFnPtr`，保留转换和原 callee AST，
+不放宽普通参数/值表达式。真实源码重跑 `artifacts/wb03-cuda-block-01/` 自动
+发现一个 width32 XOR helper 与一个 block256 七阶段块级归约，精确 reduce
+声明 ID 对应；坐标、barrier、intrinsic 和浮点语义仍未建立，checked/deployable=false。
+273 项测试通过，AST/源码/实现哈希复核一致。Polygeist 同一构建会话仍在运行。
+另修正执行记录：O0 不等于 identity translation；资源头路径核实为 `16.0.0`。
+交接见 `.agents/handoffs/cuda-block-callee-20260920.md`。
+
 ## 最新实现：保留全掩码的 XOR 恢复
 
 四参数 XOR 调用新增受限恢复：只支持 width32、int_bits32、显式 unsigned int

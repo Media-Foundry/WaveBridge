@@ -1,6 +1,10 @@
 import unittest
+from pathlib import Path
+import shutil
+import tempfile
 
 from wavebridge.analysis.block_reduction import recover
+from wavebridge.frontend.clang_ast import collect, _walk
 
 
 R = {"begin": {"offset": 1}, "end": {"offset": 2}}
@@ -125,6 +129,93 @@ class BlockReductionTests(unittest.TestCase):
                               "range": R, "inner": [group["inner"][0]]}
         self.assertEqual("unsupported_cast",
                          recover(root, "helper", "reduce", "barrier", 32)["reason"])
+
+    def test_builtin_conversion_is_accepted_only_for_exact_barrier_callee(self):
+        root = fixture()
+        barrier = root["inner"][-1]["inner"][-1]["inner"][4]
+        original = barrier["inner"][0]
+        barrier["inner"][0] = {"kind": "ImplicitCastExpr", "castKind": "BuiltinFnToFnPtr",
+                                "type": {"qualType": "void (*)()"}, "range": R,
+                                "inner": [original]}
+        result = recover(root, "helper", "reduce", "barrier", 32)
+        self.assertEqual("recovered", result["status"], result)
+        evidence = result["barrier_callee_evidence"]
+        self.assertEqual("barrier", evidence["declaration_id"])
+        self.assertEqual("ImplicitCastExpr", evidence["callee_ast"]["kind"])
+        self.assertEqual("BuiltinFnToFnPtr", evidence["casts"][0]["cast_kind"])
+        self.assertEqual("void (*)()", evidence["casts"][0]["destination_type"])
+        self.assertEqual(R, evidence["casts"][0]["range"])
+        self.assertEqual("not_established", evidence["builtin_conversion_semantics"])
+        self.assertEqual("not_established", result["barrier_semantics"])
+        self.assertFalse(result["checked"])
+        self.assertFalse(result["deployable"])
+
+        root = fixture()
+        first_reduce = root["inner"][-1]["inner"][-1]["inner"][0]["inner"][1]
+        original = first_reduce["inner"][0]
+        first_reduce["inner"][0] = {"kind": "ImplicitCastExpr",
+                                     "castKind": "BuiltinFnToFnPtr", "range": R,
+                                     "inner": [original]}
+        self.assertEqual("unsupported_callee_cast",
+                         recover(root, "helper", "reduce", "barrier", 32)["reason"])
+
+        root = fixture()
+        first_reduce = root["inner"][-1]["inner"][-1]["inner"][0]["inner"][1]
+        first_reduce["inner"][1] = {"kind": "ImplicitCastExpr",
+                                     "castKind": "BuiltinFnToFnPtr", "range": R,
+                                     "inner": [first_reduce["inner"][1]]}
+        self.assertEqual("unsupported_cast",
+                         recover(root, "helper", "reduce", "barrier", 32)["reason"])
+
+    def test_normal_function_barrier_still_recovers_and_bad_callee_casts_or_args_do_not(self):
+        result = recover(fixture(), "helper", "reduce", "barrier", 32)
+        self.assertEqual("recovered", result["status"])
+        self.assertEqual([], result["barrier_callee_evidence"]["casts"])
+        root = fixture()
+        barrier = root["inner"][-1]["inner"][-1]["inner"][4]
+        barrier["inner"][0] = {"kind": "ImplicitCastExpr", "castKind": "BitCast",
+                                "range": R, "inner": [barrier["inner"][0]]}
+        self.assertEqual("unsupported_callee_cast",
+                         recover(root, "helper", "reduce", "barrier", 32)["reason"])
+        root = fixture()
+        root["inner"][-1]["inner"][-1]["inner"][4]["inner"].append(integer(0))
+        self.assertEqual("unexpected_call_shape",
+                         recover(root, "helper", "reduce", "barrier", 32)["reason"])
+
+    @unittest.skipUnless(shutil.which("clang++"), "requires real clang++")
+    def test_real_clang_builtin_callee_conversion_is_retained(self):
+        # Deliberately not a barrier: shape recovery must not assign semantics
+        # to a caller-selected declaration. This fixture is compiled, never run.
+        source = """
+        constexpr int renamed_width = 32;
+        constexpr int renamed_block = 256;
+        float renamed_reduce(float);
+        float arbitrary_block(float state, float *scratch) {
+          state = renamed_reduce(state);
+          const int cluster = 0 / renamed_width;
+          const int lane = 0 % renamed_width;
+          if (lane == 0) scratch[cluster] = state;
+          __builtin_trap();
+          state = lane < (renamed_block / renamed_width) ? scratch[lane] : 0.0f;
+          return renamed_reduce(state);
+        }
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "builtin_barrier.cpp"
+            path.write_text(source)
+            report = collect(path, shutil.which("clang++"), ["-std=c++17"],
+                             "arbitrary_block", full_translation_unit=True)
+        self.assertEqual("collected", report["status"], report.get("execution"))
+        declarations = {node["name"]: node["id"] for node in _walk(report["ast_roots"][0])
+                        if node.get("kind") == "FunctionDecl" and node.get("name") in
+                        ("renamed_reduce", "arbitrary_block", "__builtin_trap")}
+        result = recover(report["ast_roots"][0], declarations["arbitrary_block"],
+                         declarations["renamed_reduce"], declarations["__builtin_trap"], 32)
+        self.assertEqual("recovered", result["status"], result)
+        self.assertEqual("BuiltinFnToFnPtr",
+                         result["barrier_callee_evidence"]["casts"][0]["cast_kind"])
+        self.assertEqual("not_established", result["barrier_semantics"])
+        self.assertFalse(result["checked"])
 
 
 if __name__ == "__main__":

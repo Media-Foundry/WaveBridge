@@ -80,14 +80,50 @@ def _initializer(declaration: dict[str, Any]) -> dict[str, Any]:
     return values[0]
 
 
+def _callee(node: dict[str, Any], target_id: str, casts: list[dict[str, Any]],
+            *, allow_builtin: bool) -> dict[str, Any]:
+    original = node
+    current = node
+    callee_casts: list[dict[str, Any]] = []
+    while current.get("kind") in {"ParenExpr", "ImplicitCastExpr"}:
+        children = _children(current)
+        if len(children) != 1:
+            raise _Unknown("ambiguous_callee_wrapper", current.get("range"))
+        if current.get("kind") == "ImplicitCastExpr":
+            cast_kind = current.get("castKind")
+            allowed = {"FunctionToPointerDecay", "NoOp"}
+            if allow_builtin:
+                allowed.add("BuiltinFnToFnPtr")
+            if cast_kind not in allowed:
+                raise _Unknown("unsupported_callee_cast", current.get("range"))
+            evidence = {"cast_kind": cast_kind, "source_type": _type(children[0]),
+                        "destination_type": _type(current), "range": current.get("range"),
+                        "semantic_obligation": "not_discharged"}
+            casts.append(evidence)
+            callee_casts.append(evidence)
+        current = children[0]
+    referenced = current.get("referencedDecl")
+    if (current.get("kind") != "DeclRefExpr" or not isinstance(referenced, dict) or
+            referenced.get("kind") != "FunctionDecl" or
+            not isinstance(referenced.get("id"), str)):
+        raise _Unknown("callee_not_exact_function_declref", current.get("range"))
+    if referenced["id"] != target_id:
+        raise _Unknown("unexpected_call_target", current.get("range"))
+    return {"declaration_id": referenced["id"], "callee_ast": original,
+            "declref_range": current.get("range"), "casts": callee_casts,
+            "builtin_conversion_semantics": "not_established"}
+
+
 def _call(node: dict[str, Any], target_id: str, argument_ids: list[tuple[str, str]],
-          casts: list[dict[str, Any]]) -> dict[str, Any]:
+          casts: list[dict[str, Any]], *, allow_builtin_callee: bool = False,
+          callee_evidence: dict[str, Any] | None = None) -> dict[str, Any]:
     call = _unwrap(node, casts)
     children = _children(call)
     if call.get("kind") != "CallExpr" or len(children) != len(argument_ids) + 1:
         raise _Unknown("unexpected_call_shape", call.get("range"))
-    if _ref(children[0], "FunctionDecl", casts) != target_id:
-        raise _Unknown("unexpected_call_target", children[0].get("range"))
+    evidence = _callee(children[0], target_id, casts, allow_builtin=allow_builtin_callee)
+    if callee_evidence is not None:
+        callee_evidence.update(evidence)
     for argument, (identifier, kind) in zip(children[1:], argument_ids):
         if _ref(argument, kind, casts) != identifier:
             raise _Unknown("unexpected_call_argument", argument.get("range"))
@@ -114,6 +150,7 @@ def recover(root: object, function_id: str, reduce_id: str, barrier_id: str,
         "width": None, "block_threads": None, "writer_lane": None,
         "stage_sequence": [], "ranges": {}, "call_bindings": {},
         "coordinate_asts": {}, "coordinate_equality": "not_established",
+        "barrier_callee_evidence": None,
         "casts": [], "conversion_semantics": "not_established",
         "reduce_semantics": "not_established", "barrier_semantics": "not_established",
         "coordinate_semantics": "not_established", "checked": False,
@@ -205,7 +242,10 @@ def recover(root: object, function_id: str, reduce_id: str, barrier_id: str,
         if _ref(store_children[1], "ParmVarDecl", body_casts) != value_id:
             raise _Unknown("writer_value_mismatch", store_children[1].get("range"))
 
-        barrier = _call(statements[4], barrier_id, [], body_casts)
+        barrier_callee_evidence: dict[str, Any] = {}
+        barrier = _call(statements[4], barrier_id, [], body_casts,
+                        allow_builtin_callee=True,
+                        callee_evidence=barrier_callee_evidence)
         second_assignment, select_node = _assignment(statements[5], value_id, body_casts)
         select = _unwrap(select_node, body_casts)
         select_children = _children(select)
@@ -258,6 +298,7 @@ def recover(root: object, function_id: str, reduce_id: str, barrier_id: str,
                               "final_reduce": final_reduce.get("range")},
                       call_bindings={"first_reduce": reduce_id, "barrier": barrier_id,
                                      "final_reduce": reduce_id},
+                      barrier_callee_evidence=barrier_callee_evidence,
                       coordinate_asts={"group_coordinate": group_operands[0],
                                        "lane_coordinate": lane_operands[0]},
                       casts=body_casts,
