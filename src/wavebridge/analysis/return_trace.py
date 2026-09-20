@@ -80,18 +80,26 @@ def trace(root: object, declaration_id: str, max_depth: int = 16) -> dict[str, A
     if type(max_depth) is not int or not 1 <= max_depth <= 128:
         result["reason"] = "invalid_max_depth"
         return result
-    declarations = {node["id"]: node for node in _walk(root)
-                    if node.get("kind") in FUNCTION_KINDS and isinstance(node.get("id"), str)}
+    declarations: dict[str, list[dict[str, Any]]] = {}
+    for node in _walk(root):
+        if node.get("kind") in FUNCTION_KINDS and isinstance(node.get("id"), str):
+            declarations.setdefault(node["id"], []).append(node)
     active: set[str] = set()
+
+    def unique_declaration(clang_id: str) -> dict[str, Any]:
+        matches = declarations.get(clang_id, [])
+        if not matches:
+            raise _Unknown("callee_definition_missing")
+        if len(matches) != 1:
+            raise _Unknown("callee_declaration_ambiguous")
+        return matches[0]
 
     def follow(clang_id: str, depth: int) -> None:
         if depth >= max_depth:
             raise _Unknown("max_depth_exceeded")
         if clang_id in active:
             raise _Unknown("call_cycle")
-        function = declarations.get(clang_id)
-        if function is None:
-            raise _Unknown("callee_definition_missing")
+        function = unique_declaration(clang_id)
         return_stmt = _single_return(function)
         if return_stmt is None:
             if depth == 0:
@@ -134,18 +142,22 @@ def trace(root: object, declaration_id: str, max_depth: int = 16) -> dict[str, A
         arguments = call_children[1:]
         step = {
             "declaration_id": clang_id, "name": function.get("name"),
+            "declaration_kind": function.get("kind"),
+            "storage_class": function.get("storageClass"),
+            "signature": _type(function),
             "declaration_range": function.get("range"), "return_range": return_stmt.get("range"),
+            "return_expression_ast": expressions[0],
             "return_casts": casts, "callee_casts": callee_casts,
             "call_kind": call.get("kind"), "call_range": call.get("range"),
+            "call_type": _type(call), "callee_expression_ast": call_children[0],
             "callee_declaration_id": target_id, "callee_name": target_name,
             "arguments_ast": arguments,
             "member_call": member_call,
+            "member_receiver_ast": _children(callee_expr) if member_call else None,
             "receiver_purity": "not_established" if member_call else "not_applicable",
         }
         result["steps"].append(step)
-        target = declarations.get(target_id)
-        if target is None:
-            raise _Unknown("callee_definition_missing", call.get("range"))
+        target = unique_declaration(target_id)
         target_body = _single_return(target)
         if target_body is None:
             result["leaf"] = {

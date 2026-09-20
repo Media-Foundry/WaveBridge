@@ -51,6 +51,11 @@ PYTHONPATH=src python3 -m wavebridge.analysis.declaration_index \
 跟随 MemberExpr 只建立调用证据，不证明 receiver 无副作用，也不证明删除
 记录的窄化转换是合法的。结果不能作为代码改写或部署许可。
 
+v1 的 step 证据另保存完整 return/callee AST、调用结果类型、声明 kind/signature/
+storageClass，以及中间 MemberExpr 的全部 child（不视为已验证的纯 receiver）。
+同一 exact Clang ID 出现多个函数节点时返回 `callee_declaration_ambiguous`，
+不按遍历顺序覆盖。此门控不解析不同 ID 的 C++ 重声明/定义链，也不证明语义实体唯一。
+
 ## 从源码到列递推证据
 
 ```bash

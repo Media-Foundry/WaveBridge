@@ -1,3 +1,4 @@
+import copy
 import unittest
 
 from wavebridge.analysis.return_trace import trace
@@ -34,7 +35,47 @@ class ReturnTraceTests(unittest.TestCase):
         self.assertEqual(result["status"], "external_leaf")
         self.assertEqual(result["leaf"]["name"], "external")
         self.assertEqual(result["steps"][0]["return_casts"][0]["cast_kind"], "IntegralCast")
+        self.assertEqual(result["steps"][0]["return_expression_ast"], cast)
+        self.assertEqual(result["steps"][0]["callee_expression_ast"], call["inner"][0])
         self.assertEqual(result["semantic_interpretation"], "not_established")
+
+    def test_duplicate_start_intermediate_and_leaf_ids_are_unknown(self):
+        getter = function("getter", "getter", direct_call("c", "middle", "middle"))
+        middle = function("middle", "middle", direct_call("c2", "leaf", "leaf"))
+        leaf = function("leaf", "leaf")
+        for duplicate in (getter, middle, leaf):
+            for first in (True, False):
+                with self.subTest(duplicate=duplicate["id"], first=first):
+                    nodes = [getter, middle, leaf]
+                    nodes.insert(0 if first else len(nodes), copy.deepcopy(duplicate))
+                    result = trace(root(*nodes), "getter")
+                    self.assertEqual(result["status"], "unknown")
+                    self.assertEqual(result["reason"], "callee_declaration_ambiguous")
+                    self.assertFalse(result["checked"])
+
+    def test_intermediate_member_receiver_and_static_declaration_are_preserved(self):
+        receiver = {"kind": "DeclRefExpr", "referencedDecl": {"id": "obj", "kind": "VarDecl"}}
+        member = {"kind": "MemberExpr", "referencedMemberDecl": "method", "inner": [receiver]}
+        call = {"kind": "CallExpr", "type": {"qualType": "unsigned int"}, "inner": [member]}
+        method = function("method", "method", direct_call("c2", "leaf", "leaf"))
+        method.update(kind="CXXMethodDecl", storageClass="static")
+        result = trace(root(function("getter", "getter", call), method, function("leaf", "leaf")), "getter")
+        self.assertEqual(result["status"], "external_leaf")
+        self.assertEqual(result["steps"][0]["member_receiver_ast"], [receiver])
+        self.assertEqual(result["steps"][0]["receiver_purity"], "not_established")
+        self.assertEqual(result["steps"][0]["call_type"], "unsigned int")
+        self.assertEqual(result["steps"][1]["storage_class"], "static")
+        self.assertEqual(result["steps"][1]["declaration_kind"], "CXXMethodDecl")
+        self.assertEqual(result["semantic_interpretation"], "not_established")
+
+    def test_conflicting_same_id_body_and_declaration_do_not_depend_on_order(self):
+        getter = function("getter", "getter", direct_call("c", "target", "target"))
+        declaration = function("target", "target")
+        definition = function("target", "target", {"kind": "IntegerLiteral", "value": "9"})
+        for nodes in ((declaration, definition), (definition, declaration)):
+            result = trace(root(getter, *nodes), "getter")
+            self.assertEqual(result["status"], "unknown")
+            self.assertEqual(result["reason"], "callee_declaration_ambiguous")
 
     def test_defined_callee_with_parameters_is_unknown(self):
         getter = function("getter", "getter", direct_call("c", "target", "target"))

@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新源码证据：getter完整表达式与歧义门控
+
+return_trace保留每步完整return/callee AST、调用类型、声明种类/static信息与
+中间成员接收者；重复exact Clang ID不再按遍历顺序覆盖，而是unknown。
+315项CPU测试通过；真实HIP重跑 `artifacts/wb03-getter-trace-01/` 仍可追踪到
+OCKL local-id外部叶节点，完整保留size_t→unsigned int转换。
+这不处理不同ID的重声明关系，也未建立pseudo-object值连接、receiver纯度、
+外部坐标语义或窄化值保持，无新增GPU执行。见
+`.agents/handoffs/wb03-getter-trace-20260920.md`。
+
 ## 最新条件检查：block字段与一维线程模型一致性
 
 新增 `verification/block_configuration.py`，在显式launch/构造/轴字段ID绑定下，
