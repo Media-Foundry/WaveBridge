@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新条件检查：前缀 getter 函数体返回
+
+getter_returns成功报告记录有限返回链的conditional completion；entry_call_check
+按同AST/kernel绑定的显式外部正常返回协议逐项检查前缀getter body。缺少契约时
+保留其它局部结果但整体unknown，值保持失败不误报为不终止。409项CPU测试通过。
+真实工件 `artifacts/wb04-entry-calls-7LiwN4/report.json` 中local-id getter条件checked，
+block-id getter缺协议为unknown，因此整体unknown；未凭函数名补全缺失协议。
+调用点求值、循环体有效性、helper到达和收敛仍未证明，无GPU作业。详见
+`.agents/handoffs/wb04-entry-calls-20260920.md`。
+
 ## 最新条件检查：入口前缀循环的有限迭代次数
 
 列区间checker成功报告增加逐线程最大迭代次数；entry_loop_check从同AST fresh

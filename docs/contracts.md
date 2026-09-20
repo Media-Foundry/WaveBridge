@@ -214,3 +214,8 @@ unknown，局部归约结构仍可独立recovered。未来参与checker必须消
 逐线程有限递推次数上界与最后增量安全性。仍依赖每次循环体正常完成和上游全部
 前提，不能用该条件结论反过来证明线程到达循环。调用正常返回、内存有效性和
 participation继续未建立，不授权GPU部署。
+
+`getter-completion-assumptions/v1`按root hash和kernel ID绑定前缀getter的外部叶
+域协议，并显式声明外部正常返回假设。`conditional-entry-call-check/v1`仅组合
+这些假设下callee body的有限返回链，不证明外部终止、调用点求值或整体到达。
+缺协议或值保持拒绝使组合unknown，不把数值反例误报为不终止反例。

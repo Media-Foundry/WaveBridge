@@ -242,7 +242,15 @@ def check(root: object, start_declaration_id: object, leaf_contract: object,
                 active.remove(declaration_id)
 
         returned = follow(start_declaration_id, 0)
-        result.update(status="checked", return_type=returned[0], return_interval={"lower": lower, "upper": upper})
+        result.update(status="checked", return_type=returned[0],
+                      return_interval={"lower": lower, "upper": upper},
+                      completion={
+                          "status": "conditional",
+                          "external_leaf_declaration_id": leaf_id,
+                          "external_arguments": list(expected_args),
+                          "maximum_call_edges": len(result["call_edges"]),
+                          "premise": "valid calls and the exact external leaf returns normally",
+                      })
     except _Unknown as error:
         result["reason"] = error.reason
     except _Rejected as error:

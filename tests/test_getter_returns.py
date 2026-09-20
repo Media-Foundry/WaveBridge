@@ -128,6 +128,13 @@ class GetterReturnsTests(unittest.TestCase):
         self.assertTrue(all(isinstance(value, str) and len(value) == 64
                             for value in hashes.values()))
         self.assertTrue(result.get("conversion_checks"))
+        self.assertEqual(result["completion"], {
+            "status": "conditional",
+            "external_leaf_declaration_id": "leaf",
+            "external_arguments": [0],
+            "maximum_call_edges": 2,
+            "premise": "valid calls and the exact external leaf returns normally",
+        })
 
     def test_return_narrowing_outside_interval_is_rejected(self):
         root, contract = fixture(upper=256, start_type="unsigned char")
@@ -137,6 +144,7 @@ class GetterReturnsTests(unittest.TestCase):
         self.assertFalse(result["deployable"])
         self.assertTrue(any(item.get("conversion", {}).get("status") == "rejected"
                             for item in result.get("conversion_checks", [])))
+        self.assertNotIn("completion", result)
 
     def test_contract_mismatch_and_bad_structure_are_unknown(self):
         mutations = {}
@@ -174,6 +182,7 @@ class GetterReturnsTests(unittest.TestCase):
             with self.subTest(name=name):
                 result = check(tree, "start", leaf_contract, integer_types)
                 self.assertEqual(result["status"], "unknown", result)
+                self.assertNotIn("completion", result)
                 self.assertFalse(result["source_program_checked"])
                 self.assertFalse(result["deployable"])
 

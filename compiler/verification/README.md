@@ -237,3 +237,18 @@ use_host_guard_assumptions=True)`fresh运行列域检查和归约链恢复，按
 次数，不表示kernel入口可达或所有线程进入helper。上游列域的“线程到达循环”
 前提仍保留，不能循环使用本报告去证明该前提。body_normal_completion保持
 not_established，remaining_call_obligations原样保留，participation未建立。
+
+## 前缀 getter 的条件正常返回
+
+getter_returns成功报告的completion记录精确外部叶、实参及有限调用边数，表示
+受支持的无环单return整数调用链在外部叶正常返回、调用有效的前提下正常返回。
+它没有证明叶函数终止、receiver有效性或调用点初始化表达式完成；其它状态不带
+此结论，也不能从整数值保持失败推出不终止。
+
+`entry_call_check.check(root, kernel_id, int_bits, integer_types, protocol)`fresh恢复
+入口控制义务，再逐项运行getter checker。协议`getter-completion-assumptions/v1`
+须显式提供ast_root_sha256、kernel_declaration_id、external_normal_return_assumed=true
+及getters映射（每个起点声明ID对应getter-leaf-domain/v1）。不按函数名补全协议。
+缺少任何getter契约、body检查不支持或值保持失败，整体unknown并保留局部结果。
+`conditional-entry-call-check/v1`只覆盖callee body；调用点receiver/实参求值、
+循环body有效性和helper可达性仍未建立，participation/source/deploy均不升级。
