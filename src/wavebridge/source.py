@@ -17,6 +17,7 @@ from wavebridge.analysis.launch_facts import inspect as inspect_launch
 from wavebridge.analysis.constructor_arguments import inspect as inspect_constructor
 from wavebridge.analysis.constructor_fields import recover as recover_constructor_fields
 from wavebridge.analysis.launch_guards import recover as recover_launch_guards
+from wavebridge.analysis.reduction_chain import recover as recover_chain
 
 
 def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=30.0):
@@ -44,7 +45,7 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
                 "analysis/local_contribution.py", "analysis/normalization_output.py",
                 "analysis/row_prefix.py", "analysis/launch_facts.py",
                 "analysis/constructor_arguments.py", "analysis/constructor_fields.py",
-                "analysis/launch_guards.py")
+                "analysis/launch_guards.py", "analysis/reduction_chain.py")
         },
     }
     locations = frontend["function_locations"]
@@ -66,6 +67,8 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
         report["reduction_discovery"] = discover(
             frontend["ast_roots"][0], locations[0]["id"], int_bits)
         report["local_contribution"] = recover_contribution(
+            frontend["ast_roots"][0], locations[0]["id"], int_bits)
+        report["reduction_chain"] = recover_chain(
             frontend["ast_roots"][0], locations[0]["id"], int_bits)
         report["normalization_output"] = recover_output(
             frontend["ast_roots"][0], locations[0]["id"], int_bits)

@@ -215,3 +215,16 @@ block helper 的七阶段结构。仍不能生成已验证候选或把同一案�
 绑定，保留原 callee AST、source/destination type、cast kind 与 range。
 参数位置、reduce callee 上的此转换以及 BitCast 不因此被接受。所有坐标、
 转换、reduce/barrier 语义保持 not_established；选择一个声明不证明它真是 barrier。
+
+## 累加器到归约 helper 的结构连接
+
+`reduction_chain.recover(root, function_id, int_bits)` 从同一个AST重新运行局部贡献
+与可达归约发现，不接收调用者填写的关系报告。它要求consumer对应唯一block
+候选、累加器实参位置对应block的float形参、block的reduce目标对应唯一XOR
+候选、两者width一致，且列步长等于block helper声明的线程数。预算未完成、
+定义缺失、歧义及不一致均为unknown，不按函数名或候选顺序猜选。
+
+源码报告新增 `reduction_chain`，保存三段精确声明链接与调用源码范围，继承
+掩码和未解除参与前提，保留未解析调用。`recovered`只描述这条累加器结构链：
+它不连接共享实参的存储对象，不证明容量/别名、坐标相等、实际launch、收敛或
+浮点等价，也不包括完整输出后缀；所有部署/检查标记仍为false。

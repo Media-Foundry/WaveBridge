@@ -2,6 +2,17 @@
 
 更新日期：2026-09-20。
 
+## 最新源码能力：连接累加器与实际归约调用链
+
+新增 `analysis/reduction_chain.py`，从同一AST重新恢复local与可达helper，按精确
+声明及实参位置连接local→block→XOR→shuffle，并核对width及列步长/block线程数。
+预算不完整、缺少唯一目标或常量关系不一致保持unknown，不根据函数名选择。
+真实HIP首例恢复3段链接，width32/block256/offsets16,8,4,2,1；保留21条未解析调用。
+292项CPU测试通过，包括真实Clang改名、参数换序、宽度/步长错误与缺定义/预算负例，
+以及注入重复候选的歧义拒绝测试。Sol只读审查未发现该有限范围内的实质错误接受。
+这仅连接累加器结构；shared实参存储、坐标、launch、intrinsic、收敛与浮点关系
+尚未建立，不能生成已验证GPU候选。见 `.agents/handoffs/wb03-reduction-chain-20260920.md`。
+
 ## 最新实现：正式记录器支持显式优化级别
 
 `polygeist_frontend.py --optimization-level 1` 可复用已有O1编译配方；API严格接受
