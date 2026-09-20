@@ -62,7 +62,7 @@ CKTI查询包括正式DOI的abs/full页面、Crossref works API、网页检索�
 | 对象 | 当前可确认 | 同例运行状态 | 下一项实际验收 |
 | --- | --- | --- | --- |
 | 正确logical32基线 | 已有W7900的9形状冻结数值记录；人工CUDA移植已有API记录和计算函数体对照 | HIP既有证据；CUDA仅host/device语法通过 | CUDA代码生成及独立数值核验；不能转用HIP运行记录 |
-| Polygeist论文版本 | 固定前端及兼容头可用；人工host adapter保留计算和launch | 全函数选择生成默认/lowering IR；完整standalone仍有host对象断言 | 检查共享容量矛盾和外部shuffle；未建立正确重定向或性能 |
+| Polygeist论文版本＋显式环境兼容补丁 | 固定前端与完整ROCm后端已构建；人工host adapter保留计算和launch | MLIR及内嵌HSACO已生成；原输入共享空间4字节，静态shared诊断为128字节；两者仍有未解析shuffle/rsqrt | 查明现有映射入口及所需普通lowering扩展；未建立正确重定向或性能 |
 | Polygeist较新版本 | 本轮没有固定版本或运行 | `unverified` | 不能用旧版的未来失败断言最新方法能力不足 |
 | CKTI | 出版元数据 | `not_executed`；实现入口未定位 | 取得合法全文/实现及版本，再确定共同输入与所需人工修改 |
 | WaveBridge | 受限源码分析、条件模型检查、手工GPU基线 | 无自动源码→候选→GPU闭环 | 不将当前条件模型checked记为完整适配成功 |
@@ -79,3 +79,14 @@ CKTI查询包括正式DOI的abs/full页面、Crossref works API、网页检索�
 断言当成 shuffle/shared/barrier 不支持的结论。没有 MLIR、重定向或 GPU 结果。
 实际命令、原始日志和哈希见
 [交接](../.agents/handoffs/polygeist-first-execution-20260920.md)。
+
+最新实际执行（同日，取代上面的早期运行状态）：完整ROCm后端已构建，
+host adapter两阶段均退出0；生成HSACO并不等于正确代码。绑定工件的ELF检查
+显示gfx1100/wave32元数据、未解析`__nvvm_shfl_sync_bfly_f32`及`__nv_rsqrtf`。
+原动态shared输入只有4字节固定空间，host launch动态空间为0；只改成静态
+shared[32]后固定空间成为128字节，符号缺口仍在。该副本是人工诊断，非自动
+适配、等资源性能对照或独立代码谱系。没有实际GPU加载/执行结果。
+见[首个工件](../.agents/handoffs/polygeist-rocm-first-artifact-20260920.md)及
+[静态共享对照](../.agents/handoffs/polygeist-rocm-static-shared-20260920.md)。
+这些结果限定到已记录版本、兼容补丁及输入；尚未证明需要新的跨lane分析算法，
+也没有排除普通lowering扩展即可完成的可能，因此G1保持未通过。

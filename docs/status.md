@@ -2,6 +2,14 @@
 
 更新日期：2026-09-20。
 
+## 最新对照：静态 shared 修正容量，但未打通后端
+
+固定静态shared[32]诊断副本在同一ROCm工具链两阶段均退出0；GPU MLIR为
+memref<32xf32,3>，HSACO固定共享空间128字节，原输入为4字节。
+两者仍有相同未解析shuffle/rsqrt符号，host动态共享大小仍为0；未执行GPU。
+已同步共同案例能力表，避免保留“Polygeist从未执行”的过时总述。
+详见 `.agents/handoffs/polygeist-rocm-static-shared-20260920.md`。
+
 ## 最新实测：ROCm 构建完成，真实案例产出 HSACO 但未通过部署前提
 
 完整构建3895/3895退出0，原session29377已结束。首个执行因找不到HIP动态库
