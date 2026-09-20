@@ -1,6 +1,24 @@
 {
   "schema_version": "corpus-registry/v1",
-  "status": "empty_no_real_kernels_imported",
-  "cases": [],
+  "status": "one_development_case_with_limited_baseline_validation",
+  "cases": [
+    {
+      "case_id": "llama-rmsnorm-f32",
+      "split": "development",
+      "lineage_id": "ggml-llama-cuda-norm",
+      "repository": "https://github.com/ggml-org/llama.cpp",
+      "revision": "b23efaa2ef147f547ee75cbf0c621d61904de80e",
+      "license": "MIT",
+      "case_path": "cases/llama-rmsnorm",
+      "entry_symbol": "rms_norm_f32<256, false, false>",
+      "protocol": "cases/llama-rmsnorm/protocol.json",
+      "manual_oracle": "cases/llama-rmsnorm/oracle/manual.json",
+      "baseline_status": "sanity_passed_nine_deterministic_shapes",
+      "baseline_evidence": "cases/llama-rmsnorm/evidence.json",
+      "source_recovery": "not_implemented",
+      "validation_scope": "nine deterministic shapes on one verified wave32 target; not full frozen-domain validation",
+      "holdout_status": "not_established"
+    }
+  ],
   "excluded_cases": []
 }

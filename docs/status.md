@@ -13,7 +13,7 @@
 - benchmark 来源/谱系/基线协议，实验配置和证据模板，候选主张及相关工作核实表。
 - Git 主分支约定为 `master`，origin 指向 `Media-Foundry/WaveBridge`；初始化前确认远端为空仓库。
 - WB-01 最小 HIP 设备探测工具：分阶段报告、命令与原始日志、工件哈希、超时与拒绝状态；工具实现不等于硬件门槛通过。
-- WB-02 固定 llama.cpp RMSNorm 候选的上游 SHA、许可证、关键文件哈希及已有 logical32 路径；尚未纳入有效语料。
+- WB-02 固定 llama.cpp RMSNorm 的完整上游快照、MIT 许可、手工特化补丁、独立 reference、冻结数值协议和隔离的人工 oracle；W7900 上完成有限输入的 logical32 基线实测。
 
 ## 尚未完成
 
@@ -21,7 +21,7 @@
 - 通用跨 lane checker、ballot/掩码/共享内存/浮点协议支持。
 - Clang/LLVM 集成、目标代码生成及模型到生成代码的一致性检查。
 - MI250 接入、实际 wave64 验证、正确兼容 fallback 与通用 GPU runner。
-- 真实 kernel 语料、Polygeist/CKTI 共同案例验证、强基线复现。
+- 多谱系真实 kernel 语料、Polygeist/CKTI 共同案例验证、强人工原生基线复现。
 - 性能数据、端到端部署、人工成本数据、创新性结论和论文结果。
 
 ## 验证记录
@@ -59,8 +59,16 @@ WB-01 由一个 GPT-5.6 Sol 子代理实现，主代理负责验收；保留原�
 - 最新报告为 `artifacts/wb01-20260920T074250Z-639474-321f6d/report.json`，状态 `verified`；包含源码、runner、SDK view manifest 和二进制哈希。
 - 本次通过仅覆盖这张 W7900 的普通 wave32 探针。没有验证 MI250、native64 候选、模型到机器码等价或性能收益。
 
-WB-02 当前只完成候选来源核对。独立 reference、冻结输入与数值协议、人工 oracle 隔离和正确 logical32 目标运行仍待完成，`benchmarks/corpus.json` 保持空有效语料。
+WB-02 首例实际执行：
+
+- 案例来自 llama.cpp `b23efaa2ef147f547ee75cbf0c621d61904de80e` 的 `rms_norm_f32<256, false, false>`；保留 logical32 XOR shuffle、共享 partial、barrier、第二次归约与广播。standalone 是有完整补丁记录的手工特化，不是自动恢复结果。
+- 首次编译因 `rsqrtf` 声明缺失失败，报告 `artifacts/wb02-20260920T074914Z-9daaf0/report.json` 保留。随后显式接入同 SDK 的 HIP math 声明及 Clang wrapper 使用的 OCML 入口；没有改为 `1/sqrt` 或放宽数值协议。
+- 同一 W7900、`HIP_VISIBLE_DEVICES=0`，`3×777` 输入全部 2,331 个输出通过；最大绝对误差 `1.1920928955078125e-7`。报告 `artifacts/wb02-20260920T075245Z-3bc452/report.json`。
+- 另测 3 行、列数 `1, 31, 32, 33, 255, 256, 257, 1023` 的 8 个确定性输入，均通过。所有比较使用运行前冻结的 `atol=1e-5`、`rtol=2e-5`，epsilon 为 `1e-5`。
+- 报告绑定源文件、协议、reference、输入/输出、二进制和 WB-01 证据，并核对运行时设备身份。探针波宽不等同于对 RMSNorm 最终机器码的独立波宽验证。
+- 这只证明所测输入的数值通过，不证明整个合法输入域、原上游所有分支、自动源码关系恢复、native64 正确性或性能收益。G1 的先前工作差异仍未建立。
+- WB-02 最终本地 `make check`：71 项 CPU 测试通过；包含来源哈希和证据边界回归。设备原始工件保存在本地 `artifacts/`，Git 中的 `benchmarks/cases/llama-rmsnorm/evidence.json` 仅提供索引与哈希，不是完整公开复现包。
 
 ## 下一项研究任务
 
-使用已通过 WB-01 的 W7900 路径，沿固定候选补齐 WB-02 的独立 reference、协议和 baseline。两项前提明确后，再确定源码恢复的首个支持子集。Polygeist/CKTI 的共同案例能力仍待验证，WB-03～08 尚未展开。
+以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03～08 仍待实施。

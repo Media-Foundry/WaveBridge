@@ -1,0 +1,38 @@
+{
+  "schema_version": "rmsnorm-numeric-protocol/v1",
+  "case_id": "llama-rmsnorm-f32",
+  "frozen_before_device_run": "2026-09-20",
+  "input": {
+    "dtype": "float32",
+    "layout": "contiguous_rows",
+    "ncols": {"minimum": 1, "maximum_exclusive": 1024},
+    "nrows": {"minimum": 1, "maximum": 8},
+    "channels": 1,
+    "samples": 1,
+    "finite_only": true,
+    "absolute_value_maximum": 2.0,
+    "epsilon": {"minimum": 0.000001, "maximum": 0.001}
+  },
+  "launch": {
+    "grid": ["nrows", 1, 1],
+    "block": [256, 1, 1],
+    "dynamic_shared_bytes": 128,
+    "logical_width": 32,
+    "physical_wave_width": "externally_probed_not_assumed"
+  },
+  "operation": "y[row,col] = float32(x[row,col] / sqrt(fsum_j(float64(x[row,j])^2) / ncols + epsilon))",
+  "comparison": {
+    "absolute_tolerance": 0.00001,
+    "relative_tolerance": 0.00002,
+    "rule": "finite(actual) and abs(actual-expected) <= atol + rtol*abs(expected)",
+    "all_elements_required": true
+  },
+  "excluded": [
+    "ncols >= 1024",
+    "non-contiguous strides",
+    "multiple channels or samples",
+    "multiply/add fused variants",
+    "non-finite inputs",
+    "performance claims"
+  ]
+}
