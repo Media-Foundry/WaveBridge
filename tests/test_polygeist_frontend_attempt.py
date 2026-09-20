@@ -26,12 +26,15 @@ class PolygeistFrontendAttemptTests(unittest.TestCase):
         self.tool.write_text("not executed: mocked tool")
         self.output_base = self.directory / "reports"
 
-    def run_attempt(self, *, code=0, status="completed", output=None, cuda_lower=False):
+    def run_attempt(self, *, code=0, status="completed", output=None, cuda_lower=False,
+                    emit_llvm=False):
         def invoke(command, timeout, cwd):
             self.assertIn("-S", command)
             self.assertIn("--function=*", command)
             self.assertNotIn("--emit-cuda", command)
             self.assertEqual(cuda_lower, "--cuda-lower" in command)
+            self.assertEqual(emit_llvm, "--emit-llvm" in command)
+            self.assertEqual(".ll" if emit_llvm else ".mlir", Path(command[-1]).suffix)
             if output is not None:
                 Path(command[-1]).write_text(output)
             return {"command": command, "cwd": str(cwd), "status": status,
@@ -39,7 +42,23 @@ class PolygeistFrontendAttemptTests(unittest.TestCase):
         with patch.object(RUNNER.shutil, "which", return_value=str(self.tool)), \
                 patch.object(RUNNER, "invoke", side_effect=invoke):
             return RUNNER.run(self.source, self.tool, self.directory, [], self.output_base,
-                              cuda_lower=cuda_lower)
+                              cuda_lower=cuda_lower, emit_llvm=emit_llvm)
+
+    def test_llvm_output_is_separate_and_unverified(self):
+        _, report = self.run_attempt(output="not validated LLVM", cuda_lower=True,
+                                     emit_llvm=True)
+        self.assertEqual("llvm_ir", report["requested_output_kind"])
+        self.assertEqual("llvm_ir_emission_only", report["scope"])
+        self.assertFalse(report["ir_verified"])
+        self.assertFalse(report["deployable"])
+        self.assertEqual("not_run", report["gpu_execution"])
+
+    def test_non_boolean_llvm_request_is_rejected_before_creating_output(self):
+        for value in (1, "false", None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                RUNNER.run(self.source, self.tool, self.directory, [], self.output_base,
+                           emit_llvm=value)
+        self.assertFalse(self.output_base.exists())
 
     def test_lowering_request_is_recorded_without_promoting_guarantees(self):
         _, report = self.run_attempt(output="module {}", cuda_lower=True)

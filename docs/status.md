@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新诊断：LLVM 输出与 GPU 后端分离
+
+执行记录器新增显式 `--emit-llvm`、输出类型及独立 `.ll` 工件名，不提升保证。
+静态shared副本实际执行 `--cuda-lower --emit-llvm` 返回255，失败在未消除的
+conversion cast，未输出LLVM IR；不能用这条默认host路径判断完整ROCm后端。
+282项CPU测试通过。下一步建立固定版Clang及ROCm wrapper构建前提，保留已
+构建前端和失败工件；不以CPU化执行代替目标GPU适配。详见
+`.agents/handoffs/polygeist-llvm-attempt-20260920.md`。
+
 ## 最新诊断：动态 shared 与 shuffle 分开追踪
 
 原adapter的独立副本仅将extern动态shared改为32元素定长shared；实际默认及

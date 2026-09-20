@@ -13,7 +13,10 @@ from wavebridge.frontend import clang_ast
 
 
 def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
-        architecture="sm_70", resource_dir=None, timeout=120.0, cuda_lower=False):
+        architecture="sm_70", resource_dir=None, timeout=120.0, cuda_lower=False,
+        emit_llvm=False):
+    if type(emit_llvm) is not bool:
+        raise ValueError("emit_llvm must be a boolean")
     if type(cuda_lower) is not bool:
         raise ValueError("cuda_lower must be a boolean")
     if (type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0):
@@ -34,10 +37,11 @@ def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
     output_base = Path(output_base).resolve()
     output_base.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="polygeist-frontend-", dir=output_base))
-    output = directory / "output.mlir"
+    output = directory / ("output.ll" if emit_llvm else "output.mlir")
     report = {
         "schema_version": "polygeist-frontend-attempt/v1",
-        "scope": "frontend_ir_emission_only",
+        "scope": "llvm_ir_emission_only" if emit_llvm else "frontend_ir_emission_only",
+        "requested_output_kind": "llvm_ir" if emit_llvm else "mlir",
         "pipeline": ("cgeist_O0_cuda_lower_passes" if cuda_lower else
                      "cgeist_O0_default_passes_not_identity_translation"),
         "cuda_lower_requested": cuda_lower,
@@ -64,6 +68,8 @@ def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
         command += [f"-I{path}" for path in include_dirs]
         if cuda_lower:
             command.append("--cuda-lower")
+        if emit_llvm:
+            command.append("--emit-llvm")
         if resource_dir is not None:
             command.append(f"--resource-dir={resource_dir}")
         command += ["-o", str(output)]
@@ -99,13 +105,15 @@ def main():
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--cuda-lower", action="store_true",
                         help="request CUDA-to-MLIR lowering, not GPU code generation")
+    parser.add_argument("--emit-llvm", action="store_true",
+                        help="request textual LLVM IR; does not enable a GPU backend")
     parser.add_argument("--output-base", type=Path, default=Path("artifacts"))
     args = parser.parse_args()
     try:
         path, report = run(args.source, args.cgeist, args.cuda_path, args.include_dir,
                            args.output_base, symbol=args.symbol, architecture=args.architecture,
                            resource_dir=args.resource_dir, timeout=args.timeout,
-                           cuda_lower=args.cuda_lower)
+                           cuda_lower=args.cuda_lower, emit_llvm=args.emit_llvm)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     print(json.dumps({"status": report["status"], "report": str(path)}))

@@ -96,3 +96,9 @@ host C++ 对象处理时断言。仅选 kernel 的两次退出 0 都是空 modul
 留下无函数体 kernel 声明，不能用它评价计算。全函数选择已得到非空计算体，
 但共享容量和外部 shuffle 仍需检查，见
 [实际 IR 交接](../../.agents/handoffs/polygeist-adapter-ir-20260920.md)。
+
+`--emit-llvm` 请求文本 LLVM IR，输出名改为 `output.ll`，报告显式记录
+`requested_output_kind`；它不启用 CUDA/ROCm 后端。静态shared诊断副本的
+实际 `--cuda-lower --emit-llvm` 尝试失败在未消除的 conversion cast，未得到
+LLVM IR。不要把该默认host路径或CPUify路径冒充GPU后端对照，详见
+[LLVM路径交接](../../.agents/handoffs/polygeist-llvm-attempt-20260920.md)。
