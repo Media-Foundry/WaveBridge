@@ -182,3 +182,12 @@ checker。外部`thread-start-assumptions/v1`绑定root hash、kernel、选定la
 起点证据、helper源码恢复、两个getter/坐标转换与该checker连接；外部local-id
 协议、ABI、源码有效性和实际运行配置继续显式保留。结论只覆盖group/lane
 初始化式，不自动解除路由、同步、其它表达式转换或整核数值正确性义务。
+
+## 条件列数域覆盖
+
+`column-coverage-interval/v1`在固定starts/stride与signed递推语义下，将上界的
+索引覆盖和末增量安全性推广到整个闭区间，保留完整upper_check及域内拒绝反例。
+`conditional-column-domain-check/v1`将同AST线程证据与新恢复的launch列数实参、
+host guard必要条件域连接，显式启用host假设后才可能checked。只读形参、直接
+kernel循环与共同起点/步长是支持边界。它检查索引生成次数而非数据贡献次数；
+不证明区间可达性、所有线程参与、内存安全或数值等价，不授权GPU部署。

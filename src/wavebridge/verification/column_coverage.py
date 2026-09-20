@@ -70,3 +70,55 @@ def check(columns, starts, stride, *, int_bits=32):
         return report
     report.update(status="checked", columns_checked=columns, threads_checked=len(starts))
     return report
+
+
+def check_interval(lower, upper, starts, stride, *, int_bits=32):
+    """Lift fixed-column coverage to one closed column-count interval.
+
+    With fixed starts and stride, every thread's contributions for a smaller
+    column count are a prefix of those for ``upper``.  Consequently exact
+    coverage at the upper endpoint establishes exact coverage throughout the
+    interval; the fixed checker also checks the post-body increment at that
+    endpoint, which bounds every smaller execution.
+    """
+    report = {
+        "schema_version": "column-coverage-interval/v1", "status": "unknown",
+        "reason": None, "lower": lower, "upper": upper, "starts": starts,
+        "stride": stride, "int_bits": int_bits, "upper_check": None,
+        "scope": "all_column_counts_in_declared_closed_interval",
+        "source_program_checked": False, "deployable": False,
+        "assumptions": [
+            "starts and stride are fixed for every column count in the interval",
+            "each participating thread uses the supplied start value",
+            "all threads evaluate i < columns and update i += stride",
+            "each iteration contributes exactly once to its column",
+            "signed integer behavior and the post-body increment follow the fixed-column checker",
+        ],
+        "method": "check_upper_endpoint_once_using_prefix_monotonicity",
+    }
+    if (type(lower) is not int or type(upper) is not int or
+            type(int_bits) is not int or not 2 <= int_bits <= 128 or
+            type(stride) is not int or not isinstance(starts, list) or
+            not 1 <= len(starts) <= 1024 or any(type(start) is not int for start in starts)):
+        report["reason"] = "unsupported_input"
+        return report
+    maximum = (1 << (int_bits - 1)) - 1
+    if (not 0 <= lower <= upper <= maximum or not 1 <= stride <= maximum or
+            any(not 0 <= start <= maximum for start in starts)):
+        report["reason"] = "unsupported_signed_domain"
+        return report
+    report["input_sha256"] = hashlib.sha256(json.dumps(
+        {"lower": lower, "upper": upper, "starts": starts,
+         "stride": stride, "int_bits": int_bits},
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    upper_check = check(upper, starts, stride, int_bits=int_bits)
+    report["upper_check"] = upper_check
+    report["status"] = upper_check.get("status", "unknown")
+    report["reason"] = upper_check.get("reason")
+    if report["status"] == "checked":
+        report["interval_checked"] = {"lower": lower, "upper": upper}
+        report["threads_checked"] = upper_check.get("threads_checked")
+    elif report["status"] == "rejected":
+        report["counterexample"] = {
+            "columns": upper, "upper_counterexample": upper_check.get("counterexample")}
+    return report

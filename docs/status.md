@@ -2,6 +2,17 @@
 
 更新日期：2026-09-20。
 
+## 最新组合门控：launch列数域与列索引覆盖
+
+column_domain_check从同AST重新恢复launch实参、host guard必要条件区间与列循环，
+结合已检查线程起点，检查两个循环在整个列数域[1,1023]的索引生成次数和末增量。
+固定starts/stride时只需检查上界，不枚举列数；kernel形参写入/逃逸、非直接循环
+和早退上下文不接受。368项CPU测试通过，含小域穷举交叉验证和组合负例。
+真实工件 `artifacts/wb04-column-domain-Vh20Ku/report.json` 条件checked，运行前后
+实现hash一致，Sol只读审查后明确结论只涉及索引、不是循环体数据贡献。
+前端、外部API/ABI、有效执行及线程参与仍是前提；无GPU作业或部署放行。
+详见 `.agents/handoffs/wb04-column-domain-20260920.md`。
+
 ## 最新组合门控：helper坐标与逐线程索引分解
 
 块归约恢复现保留完整group/lane初始化AST；独立index_partition检查器在显式

@@ -173,3 +173,24 @@ group/lane的两个坐标表达式分别重新建立结果调用连接，并检�
 参与收敛、shared索引访问、同步、shuffle路由或浮点等价。API语义在helper内
 仍成立、源码有效性及实际launch配置继续是前提，不签发source_program_checked
 或deployable。前端恢复仍属于可信基础，不能宣称独立验证了全部编译器。
+
+## 选定 launch 的整个列数域
+
+`column_domain_check.check(root, thread_report, integer_types, binding,
+use_host_guard_assumptions=True)`重用真实线程起点证据并校验同AST/ABI/协议hash。
+从原AST重新恢复列循环、选定launch的形参位置绑定及host提前返回的必要条件域，
+通过kernel_arguments核对列数实参的整数转换，再调用独立区间覆盖checker。
+必须显式启用host guard假设；默认unknown。当前仅支持直接位于kernel body的
+ForStmt、共同const线程起点、常量步长等于线程数，以及只发生读取的列数形参；
+形参赋值/取址/引用逃逸、嵌套或有早退的上下文保持unknown。
+
+`verification.column_coverage.check_interval(lower, upper, starts, stride, int_bits=32)`
+利用固定起点/步长下小列数的迭代序列是上界序列前缀的性质，只检查一次上界，
+不枚举整个列数域。上界的完整覆盖、无重复和末次循环增量无溢出可推广到闭区间；
+上界rejected提供域内反例，溢出或不支持保持unknown。
+
+`conditional-column-domain-check/v1`的checked仅说明每个列索引在模型线程间
+恰生成一次，并非循环体每列恰贡献一次。guard域是必要条件过近似，不证明每个值
+可达，也不替代外部合法输入/数值协议。线程均正常到达循环、有效源码、可信前端
+与外部API/ABI/实际launch仍是前提；不检查数组访问、别名、归约、同步或浮点值。
+source_program_checked/deployable始终false。当前为Python API，不提供部署许可。
