@@ -71,3 +71,10 @@ Kernel JSON 或 oracle。输出目录必须不存在，其中 `ast.json` 与 `re
 别名、调用或复杂控制流保守拒绝。普通 `output[i]` 下标读取不是对 `i` 的写入。
 递推仍以无溢出、合法域、未建立的别名前提为条件；没有证明输入覆盖、launch
 一致性、归约通信或浮点等价，不生成可部署候选。
+
+源码入口还为循环起点声明记录 `start_initializer_evidence`：保留完整初始化
+表达式、其中的调用及getter返回链。特别是 HIP `PseudoObjectExpr` 不会被
+简化为“最后一个child就是值”。找到OCKL调用不等于证明起点值是线程索引；
+报告保留 `value_equivalence=not_established`、`start_semantics=unknown`。
+原始AST哈希和此次分析实现文件哈希同时记录；不支持的调用种类亦保留未知，
+不从调用计数中静默删除。

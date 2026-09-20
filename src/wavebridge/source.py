@@ -8,6 +8,7 @@ from pathlib import Path
 
 from wavebridge.frontend.clang_ast import collect, _sha256
 from wavebridge.analysis.column_loops import recover
+from wavebridge.analysis.initializer_evidence import inspect as inspect_initializer
 
 
 def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=30.0):
@@ -26,6 +27,12 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
         "compiler_sha256": frontend["compiler_sha256"], "command": frontend["command"],
         "int_bits": int_bits, "int_bits_origin": "explicit_external_assumption",
         "checked": False, "deployable": False, "analysis": None,
+        "implementation_sha256": {
+            name: _sha256(Path(__file__).parent / name) for name in (
+                "source.py", "frontend/clang_ast.py", "analysis/column_loops.py",
+                "analysis/integer_constants.py", "analysis/initializer_evidence.py",
+                "analysis/return_trace.py")
+        },
     }
     locations = frontend["function_locations"]
     if frontend["status"] != "collected":
@@ -34,6 +41,14 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
         report["reason"] = "ambiguous_entry_or_compilation_view"
     else:
         report["analysis"] = recover(frontend["ast_roots"][0], locations[0]["id"], int_bits)
+        # These are initializer call observations, not proof of the induction start value.
+        origins = {}
+        for loop in report["analysis"].get("loops", []):
+            start = loop.get("start") or {}
+            declaration_id = start.get("declaration_id")
+            if declaration_id and declaration_id not in origins:
+                origins[declaration_id] = inspect_initializer(frontend["ast_roots"][0], declaration_id)
+        report["start_initializer_evidence"] = origins
         report["status"] = "analyzed"
         report["reason"] = None
     with (directory / "report.json").open("x", encoding="utf-8") as stream:

@@ -129,4 +129,13 @@ WB-02 HIP standalone，采集同次完整 AST 后恢复两个列循环的声明�
 该递推带无溢出、合法输入域和别名等未证明前提；起点尚未自动解释为线程ID，
 数据覆盖、host launch 与collective路由均未检查，不能宣布WB-03或G2完成。
 
+WB-03 源码入口现已连接起点声明的初始化调用证据：两个循环共用的 const
+`tid` 初始化表达式含 HIP 属性 getter，精确调用链到 `__ockl_get_local_id`。
+报告保留完整 `PseudoObjectExpr`、receiver、转换与实参；不选某个child冒充
+初始化结果，值等价和起点语义仍明确未建立。
+本轮 `make check` 130 项通过，含8项真实Clang；MS属性改名/额外算术及
+特殊调用未知回归覆盖这一边界。源码报告新增分析实现文件哈希，无新GPU执行。
+最终完整源码重跑工件在 `artifacts/wb03-source-origins-02/{ast,report}.json`，
+两个step仍为256，共用起点的调用证据为OCKL local id，语义标记仍为unknown。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03 关系恢复与 WB-04～08 仍待实施。
