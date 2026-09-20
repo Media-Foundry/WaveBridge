@@ -2,6 +2,18 @@
 
 更新日期：2026-09-20。
 
+## 最新组合门控：共享写入/收集谓词与整数下标
+
+块归约恢复保留四个完整shared谓词/下标AST；shared_indexing在显式ABI和已建立的
+group/lane关系下逐线程检查谓词，仅检查对应活跃分支的下标与转换值保持。
+shared_index_check先fresh检查同ASThelper坐标，再连接这些表达式；不把结构匹配
+当值保持，也不信旧生成报告。381项CPU测试通过，覆盖错误条件、错误索引、截断、
+缺失/重复绑定及inactive下标不执行。真实HIP工件
+`artifacts/wb04-shared-indexing-vFqOXr/report.json` 条件checked，实现hash前后一致。
+它仅覆盖writer lane0→group槽、gather lane<8→lane槽的整数关系；shared容量/
+指针、存储值、同步/参与和浮点结果仍未证明。无GPU执行。详见
+`.agents/handoffs/wb04-shared-indexing-20260920.md`。
+
 ## 最新组合门控：launch列数域与列索引覆盖
 
 column_domain_check从同AST重新恢复launch实参、host guard必要条件区间与列循环，

@@ -191,3 +191,9 @@ checker。外部`thread-start-assumptions/v1`绑定root hash、kernel、选定la
 host guard必要条件域连接，显式启用host假设后才可能checked。只读形参、直接
 kernel循环与共同起点/步长是支持边界。它检查索引生成次数而非数据贡献次数；
 不证明区间可达性、所有线程参与、内存安全或数值等价，不授权GPU部署。
+
+## 共享阶段整数关系
+
+`conditional-shared-index-check/v1`重新检查同AST的helper坐标，并检查完整写入/
+收集谓词及活跃线程下标表达式；结论只覆盖整数关系，不将数组下标模型升级为
+真实shared读写安全或同步保证。所有坐标、ABI、有效执行与参与条件仍显式保留。

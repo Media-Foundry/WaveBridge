@@ -1,5 +1,9 @@
 # 关系恢复
 
+块归约报告另保留 `shared_access_asts`：writer/gather的完整谓词及整数下标表达式，
+包含尚未检查的转换。保留AST不等于建立访问语义，需显式坐标和ABI下的独立检查；
+仅凭剥离转换后的lane/group声明引用，不能解除下标或条件的值保持义务。
+
 计划联合恢复数据索引、线程分工、collective 和输出归属。存在多种解释时保留冲突，并给出未知或拒绝原因。
 
 当前实现：`src/wavebridge/analysis/source_facts.py` 从已采集的 Clang AST

@@ -84,6 +84,24 @@ class BlockReductionTests(unittest.TestCase):
         self.assertEqual("writer_shared_or_index_mismatch",
                          recover(root, "helper", "reduce", "barrier", 32)["reason"])
 
+    def test_shared_predicates_and_indices_preserve_full_cast_expressions(self):
+        root = fixture()
+        statements = root["inner"][-1]["inner"][-1]["inner"]
+        predicate = statements[3]["inner"][0]
+        predicate["inner"][0] = {"kind": "ImplicitCastExpr", "castKind": "IntegralCast",
+                                  "type": {"qualType": "signed char"},
+                                  "inner": [predicate["inner"][0]]}
+        result = recover(root, "helper", "reduce", "barrier", 32)
+        self.assertEqual(result["status"], "recovered", result)
+        evidence = result["shared_access_asts"]
+        self.assertEqual(evidence["writer_predicate"], predicate)
+        self.assertEqual(evidence["writer_predicate"]["inner"][0]["castKind"], "IntegralCast")
+        self.assertEqual(evidence["writer_index"]["referencedDecl"]["id"], "group")
+        self.assertEqual(evidence["gather_predicate"]["opcode"], "<")
+        self.assertEqual(evidence["gather_index"]["referencedDecl"]["id"], "lane")
+        self.assertEqual(result["conversion_semantics"], "not_established")
+        self.assertFalse(result["checked"])
+
     def test_missing_barrier_order_and_predicate_changes_are_unknown(self):
         root = fixture()
         root["inner"][-1]["inner"][-1]["inner"][4] = {"kind": "NullStmt"}
@@ -216,6 +234,11 @@ class BlockReductionTests(unittest.TestCase):
                          result["barrier_callee_evidence"]["casts"][0]["cast_kind"])
         self.assertEqual("not_established", result["barrier_semantics"])
         self.assertFalse(result["checked"])
+        access = result["shared_access_asts"]
+        self.assertEqual(access["writer_predicate"]["type"]["qualType"], "bool")
+        self.assertEqual(access["writer_index"]["castKind"], "LValueToRValue")
+        self.assertEqual(access["gather_predicate"]["type"]["qualType"], "bool")
+        self.assertEqual(access["gather_index"]["castKind"], "LValueToRValue")
 
 
 if __name__ == "__main__":

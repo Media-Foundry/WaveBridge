@@ -194,3 +194,17 @@ ForStmt、共同const线程起点、常量步长等于线程数，以及只发�
 可达，也不替代外部合法输入/数值协议。线程均正常到达循环、有效源码、可信前端
 与外部API/ABI/实际launch仍是前提；不检查数组访问、别名、归约、同步或浮点值。
 source_program_checked/deployable始终false。当前为Python API，不提供部署许可。
+
+## 共享写入与收集的整数关系
+
+`verification.shared_indexing.check(access_asts, bindings, width, block_threads, integer_types)`
+以已建立的group=t/width、lane=t%width及宽度/block常量含义为条件，逐线程检查
+完整writer/gather谓词与活跃分支下标。目标关系为lane==0写group槽，lane<group数
+读lane槽；inactive分支不执行下标表达式。显式ABI下的整数转换必须值保持，不能
+以剥除转换后的结构相同代替。谓词的bool结果遵循语言逻辑值，不猜测bool存储ABI。
+
+`shared_index_check.check(root, thread_report, integer_types, binding)`先从同AST重新
+运行block_coordinate_check，再将fresh helper中保留的四表达式交给该checker。
+结果`conditional-shared-index-check/v1`仅连接坐标与这些整数关系；不证明shared
+指针/容量/别名、存储值、barrier或shuffle语义、参与收敛及浮点结果。线程到达
+这些阶段及所有上游API/ABI/源码有效性前提仍需成立，不授权GPU部署。
