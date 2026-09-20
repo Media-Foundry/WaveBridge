@@ -2,6 +2,17 @@
 
 更新日期：2026-09-20。
 
+## 最新源码能力：共享数组实参与声明容量证据
+
+归约链新增独立shared_storage子报告：按同AST的调用范围、精确callee/形参位置
+连接直接数组衰减与调用前的局部数组声明，保留原始AST、类型和声明范围。
+真实HIP首例恢复第二实参对应动态shared数组，extent为空、容量要求launch bytes；
+不把width32当作容量。静态extent、普通非shared数组与动态shared分别表达。
+295项CPU测试通过，包括参数换序、容量非32、无界数组、非法cast、错误声明ID和
+extern-shared带声明长度仍不得推断静态分配。Sol审查意见已纳入。
+仍未检查launch字节数、别名或运行时容量，不授权部署。见
+`.agents/handoffs/wb03-shared-binding-20260920.md`。
+
 ## 最新源码能力：连接累加器与实际归约调用链
 
 新增 `analysis/reduction_chain.py`，从同一AST重新恢复local与可达helper，按精确

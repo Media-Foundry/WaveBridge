@@ -10,6 +10,8 @@ from wavebridge.source import run
 from wavebridge.analysis.reduction_chain import recover
 from wavebridge.analysis import reduction_discovery
 from wavebridge.analysis import reduction_chain
+from wavebridge.analysis.shared_storage import recover as recover_storage
+from wavebridge.frontend.clang_ast import _walk
 
 
 @unittest.skipUnless(shutil.which("clang++"), "requires real clang++")
@@ -39,6 +41,9 @@ class ReductionChainTests(unittest.TestCase):
         self.assertEqual(256, chain["block_threads"])
         self.assertEqual(32, chain["width"])
         self.assertEqual(3, len(chain["links"]))
+        self.assertEqual("recovered", chain["shared_storage"]["status"])
+        self.assertEqual(32, chain["shared_storage"]["extent_elements"])
+        self.assertEqual("not_proven_shared", chain["shared_storage"]["storage_kind"])
         self.assertEqual(chain["links"][0]["callee_id"], chain["links"][1]["caller_id"])
         self.assertEqual(chain["links"][1]["callee_id"], chain["links"][2]["caller_id"])
         self.assertFalse(chain["checked"])
@@ -52,6 +57,51 @@ class ReductionChainTests(unittest.TestCase):
         report, _ = self.analyze(source)
         self.assertEqual("recovered", report["reduction_chain"]["status"])
         self.assertEqual(1, report["reduction_chain"]["links"][0]["argument_index"])
+        self.assertEqual(0, report["reduction_chain"]["shared_storage"]["argument_index"])
+
+    def test_array_extents_are_not_assumed_from_width(self):
+        for declaration, extent, status in (("float scratch[2];", 2, "declared_static_extent"),
+                                             ("extern float scratch[];", None, "external_allocation_required")):
+            with self.subTest(declaration=declaration):
+                report, _ = self.analyze(self.source.replace("float scratch[32];", declaration))
+                storage = report["reduction_chain"]["shared_storage"]
+                self.assertEqual("recovered", storage["status"])
+                self.assertEqual(extent, storage["extent_elements"])
+                self.assertEqual(status, storage["capacity_status"])
+                self.assertEqual("not_established", storage["runtime_capacity"])
+                self.assertFalse(storage["checked"])
+
+    def test_array_binding_refuses_casts_and_missing_local_declaration(self):
+        report, root = self.analyze(self.source)
+        chain = report["reduction_chain"]
+        link = chain["links"][0]
+        storage = chain["shared_storage"]
+        call = next(n for n in _walk(root) if n.get("kind") == "CallExpr" and n.get("range") == link["call_range"])
+        argument = call["inner"][storage["argument_index"] + 1]
+        self.assertEqual("ArrayToPointerDecay", argument["castKind"])
+        argument["castKind"] = "BitCast"
+        result = recover_storage(root, chain["function_id"], link["callee_id"], link["call_range"], storage["parameter_id"])
+        self.assertEqual("unsupported_array_conversion", result["reason"])
+        argument["castKind"] = "ArrayToPointerDecay"
+        declaration = next(n for n in _walk(root) if n.get("kind") == "VarDecl" and n.get("id") == storage["array_declaration_id"])
+        declaration["id"] = "different-local-array"
+        result = recover_storage(root, chain["function_id"], link["callee_id"], link["call_range"], storage["parameter_id"])
+        self.assertEqual("preceding_local_array_not_unique", result["reason"])
+
+    def test_external_shared_extent_is_not_static_allocation_evidence(self):
+        report, root = self.analyze(self.source)
+        chain = report["reduction_chain"]
+        link = chain["links"][0]
+        storage = chain["shared_storage"]
+        declaration = next(n for n in _walk(root) if n.get("kind") == "VarDecl" and n.get("id") == storage["array_declaration_id"])
+        # AST mutation tests classification only; not evidence of accepted HIP syntax.
+        declaration["storageClass"] = "extern"
+        declaration.setdefault("inner", []).append({"kind": "CUDASharedAttr"})
+        result = recover_storage(root, chain["function_id"], link["callee_id"], link["call_range"], storage["parameter_id"])
+        self.assertEqual(32, result["extent_elements"])
+        self.assertEqual("shared_dynamic", result["storage_kind"])
+        self.assertEqual("launch_bytes_required", result["capacity_status"])
+        self.assertEqual("invalid_declaration_id", recover_storage(root, chain["function_id"], link["callee_id"], link["call_range"], None)["reason"])
 
     def test_inconsistent_width_and_step_are_not_connected(self):
         variants = [
