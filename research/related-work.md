@@ -1,13 +1,15 @@
 # 相关工作核实清单
 
-以下链接均由用户提案提供。本次仅保留研究线索，未独立核实全文、版本、工具行为或会议状态。所有能力差异仍为待核实。
+以下清单起于用户提案。2026-09-20已定向核实Polygeist论文/归档源码与CKTI
+出版元数据，详见[共同案例核查](baseline-checks-20260920.md)；未执行工具对照，
+所有能力差异仍待核实。其它条目保留原核实状态。
 
 | 工作 | 对照问题 | 核实状态 |
 | --- | --- | --- |
 | [SCALE warp size](https://docs.scale-lang.com/stable/manual/library/warpsize/) | 正确兼容模式的实际开销、native 诊断和适用条件 | user_provided_unverified |
-| Polygeist：Retargeting and Respecializing GPU Workloads for Performance Portability | 显式 shuffle/ballot 下能否保持输出关系并重新分工；需补正式来源/实现版本 | user_provided_unverified |
+| Polygeist：Retargeting and Respecializing GPU Workloads for Performance Portability | 显式shuffle/ballot下能否保持输出关系并重新分工 | paper_and_pinned_source_inspected；同例未执行 |
 | [Triton Linear Layouts](https://arxiv.org/html/2505.23819v1) | 可复用布局表示与我们所需关系恢复的边界 | user_provided_unverified |
-| [CKTI](https://dl.acm.org/doi/10.1145/3797905.3800551) | CUDA 到 Triton IR 的具体子组覆盖；全文/实现访问待核实 | user_provided_unverified |
+| [CKTI](https://dl.acm.org/doi/10.1145/3797905.3800551) | CUDA到Triton IR的具体子组覆盖；全文/实现仍待取得 | publication_metadata_verified；能力unverified |
 | [GPURepair](https://link.springer.com/chapter/10.1007/978-3-030-67067-2_18) | 同步/竞争修复与输出计算关系检查的具体边界 | user_provided_unverified |
 | [Mirage](https://www.usenix.org/conference/osdi25/presentation/wu-mengdi) | 其等价验证范围与本项目跨线程组织检查的联系 | user_provided_unverified |
 | [CASS](https://arxiv.org/html/2505.16968v4) | 转译中的硬编码宽度/intrinsic 支持 | user_provided_unverified |

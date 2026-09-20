@@ -50,3 +50,14 @@ PYTHONPATH=src python3 -m wavebridge.configuration_check SOURCE_REPORT.json \
 即使 grid/block 字段域全部checked，也只说明显式域和 ABI 下的整数值保持，
 不说明实际运行维度、shared容量、线程坐标、host有效性或GPU等价。部署标记
 仍为false。已有v1常量模式的含义不变。
+
+## 单个 kernel 整数实参
+
+`kernel_arguments.check(binding, declaration_intervals, abi)` 接收源码报告中
+一个 `parameter_bindings` 条目和显式域，直接遍历原始实参AST的括号/允许的
+隐式转换，关联声明区间或整数字面量，检查到形参类型的整段值保持。
+
+输出 `kernel-argument-domain-check/v1`；位置绑定的来源可信是显式前提，此
+API不核实完整kernel签名，也不自行证明输入域。区间没有被改成单值；指针、
+浮点、调用表达式及缺域保持unknown。即使列数参数checked，其余参数与整核
+仍可能未知，不能用一个标量参数通过替代完整launch或源码等价检查。

@@ -268,4 +268,15 @@ WB-04 构造字段checker新增显式闭区间模式，CLI必须启用
 区间/常量明确分开，仍不证明实际launch或GPU等价，部署标记false。
 完整交接见 `.agents/handoffs/wb04-configuration-intervals-20260920.md`。
 
+WB-04新增单个kernel标量整数实参域检查。真实报告输出
+`artifacts/wb03-source-launch-guards-01/kernel-argument-domains-01.json`中，
+列数参数按精确形参ID关联区间[1,1023]，条件转换checked；指针和浮点参数
+仍unknown，整体partial。244项测试通过，无新增源码编译或GPU执行。
+
+G1定向核查已锁定Polygeist论文提交 `ba9953a08c9b` 及LLVM子模块，阅读论文
+与固定入口源码；CKTI只核实出版元数据，全文/实现未取得。PATH未发现cgeist
+不等于工具语义不支持；两个方法均未执行共同案例。详见
+`research/baseline-checks-20260920.md`，交接为
+`.agents/handoffs/wb04-kernel-arguments-g1-20260920.md`。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

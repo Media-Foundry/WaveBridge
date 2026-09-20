@@ -114,3 +114,11 @@ checked以外部声明的值域与类型信息为前提，不自行从类型名�
 
 CLI 的 `--use-host-guard-assumptions` 必须显式开启，输出配置域报告v2并记录
 前提门控和输入/实现哈希。结果不授权部署；详见 `compiler/verification/README.md`。
+
+## kernel 实参域：`kernel-argument-domain-check/v1`
+
+单个位置绑定条目、显式声明闭区间和整数ABI是输入。checker直接读取实参AST
+的允许转换链，并验证其到形参类型的值保持；位置绑定正确性仍是外部前提，
+不独立核对整个kernel签名。报告区分常量和区间，保存参数/声明ID、位置、转换
+与输入hash。指针、浮点、调用和未知域不支持；其它参数不会因某个参数checked
+而被放行。所有结果都保留 `source_program_checked=false`、`deployable=false`。
