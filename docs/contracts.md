@@ -139,3 +139,11 @@ CLI 的 `--use-host-guard-assumptions` 必须显式开启，输出配置域报�
 无其它动态shared分配及显式ABI匹配为前提，不验证源程序有效性或运行时内存安全。
 CLI `conditional-shared-capacity-check/v1`保存源报告、ABI与实现哈希，所有已报告
 launch均checked且没有未解析launch才可整体checked；不签发部署结论。
+
+## 显式轴绑定下的block配置
+
+`block-configuration-check/v1`绑定一个launch与恢复链的kernel ID，按显式FieldDecl
+ID→x/y/z映射解释独立构造字段检查结果，并要求(x,y,z)=(block_threads,1,1)。
+与仅检查维度乘积不同，轴交换和非一维布局会拒绝。缺轴绑定、常量或ABI为unknown。
+轴/API对应、源报告真实性、源码线程坐标含义及实际执行配置仍为外部前提；
+source_program_checked/deployable始终false，不能用它单独放行候选。

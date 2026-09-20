@@ -85,3 +85,16 @@ PYTHONPATH=src python -m wavebridge.shared_capacity_check SOURCE_REPORT.json \
 外部前提。本checker不重新证明这些前提、不验证AST绑定或硬件分配；始终保留
 source_program_checked=false与deployable=false。缺launch或未解析launch时不能
 全局checked。它不是一个自动部署许可，也不替代block路由或浮点数值检查。
+
+## block字段与线程模型
+
+`verification.block_configuration.check(chain, site, integer_types, axis_binding)`
+复用独立constructor_values检查器，从site的第二个配置构造报告计算字段值，再与
+`(block_threads, 1, 1)`比较。显式axis_binding必须给出同一launch ID、构造声明ID
+及三个不同FieldDecl ID到x/y/z的对应；不根据名字、参数位置或线程总数推断坐标。
+字段交换为(1,256,1)、多维(16,16,1)即使总数256，也会相对一维模型rejected。
+
+axis_binding使用`launch-axis-assumptions/v1`，是外部API语义假设，不是自动恢复的研究成果；Clang ID只能用于绑定
+的同一AST。API缺映射、不同kernel/launch/构造、ABI不一致或字段值未知时不能通过。
+checked仅说明显式坐标语义下构造字段匹配；仍不证明kernel实际读取了x坐标、host
+执行了该launch或设备采用了该配置。该API尚未自动合并到共享容量CLI或部署判断。

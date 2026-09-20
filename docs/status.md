@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新条件检查：block字段与一维线程模型一致性
+
+新增 `verification/block_configuration.py`，在显式launch/构造/轴字段ID绑定下，
+重用constructor_values检查实际字段值并比较(block_threads,1,1)，不按字段名或
+总线程数猜坐标。字段交换、多维同乘积、错误模型会拒绝；缺绑定或ABI保持unknown。
+真实HIP报告在外部轴假设下得到(256,1,1)与模型一致，312项CPU测试通过。
+轴绑定仍是外部协议，线程坐标与实际执行语义未证明；本API未自动并入容量CLI或
+部署决策。见 `.agents/handoffs/wb04-block-configuration-20260920.md`。
+
 ## 最新检查能力：显式ABI下的launch共享容量
 
 新增独立字节表达式checker与共享容量CLI：从第三配置实参的原始AST检查
