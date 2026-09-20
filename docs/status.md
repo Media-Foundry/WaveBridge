@@ -2,6 +2,17 @@
 
 更新日期：2026-09-20。
 
+## 最新实测：ROCm 构建完成，真实案例产出 HSACO 但未通过部署前提
+
+完整构建3895/3895退出0，原session29377已结束。首个执行因找不到HIP动态库
+退出127；显式设置既有SDK的LD_LIBRARY_PATH后，原host adapter的GPU MLIR
+及LLVM/HSACO路径均退出0。不是只能检查host路径了，但也不是适配正确：
+HSACO仍有未解析`__nvvm_shfl_sync_bfly_f32`和`__nv_rsqrtf`，固定共享空间
+仅4字节，生成host launch的动态共享大小为0。绑定kernel的静态元数据为
+gfx1100/wave32，不能代替实际执行波宽。没有加载或执行该工件。
+完整证据见 `.agents/handoffs/polygeist-rocm-first-artifact-20260920.md`。
+下一步用静态shared诊断副本分离容量问题与未解析通信/数学符号，不宣称G1通过。
+
 ## 最新实测：固定前端遗漏动态共享内存 launch 参数
 
 仅将真实host adapter的动态共享请求由128改为256字节，使用同一固定cgeist
