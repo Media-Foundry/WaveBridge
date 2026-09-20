@@ -2,6 +2,14 @@
 
 更新日期：2026-09-20。
 
+## 最新定位：shuffle 探针的断言来自局部栈地址空间路径
+
+保存序列化前设备LLVM后，独立Clang复现同一BITCAST断言。仅将helper三处
+alloca改到私有AS5并用addrspacecast接回原generic指针，LLVM验证与gfx1100
+汇编生成均通过；汇编保留OCKL定义及ds_bpermute_b32，静态wave32。
+这是人工IR诊断，不是已修复的源码编译链或GPU数值结果。原编译器未改动。
+见 `.agents/handoffs/polygeist-private-alloca-20260920.md`。
+
 ## 最新诊断：受限 OCKL shuffle 探针在指令选择阶段失败
 
 独立副本使用已有__ockl_readuplane_i32与signed lane差表达logical32 XOR，
