@@ -144,3 +144,10 @@ HSACO请求也不代表序列化已经成功。
 CUDA或非generic路径的分支。它不是原论文工件，也不是WaveBridge关系分析算法。
 增量构建及受限shuffle诊断已生成无非空未定义动态符号的HSACO，但未执行GPU。
 原二进制已保存，详见[补丁验收](../../.agents/handoffs/polygeist-alloca-patch-20260920.md)。
+
+`polygeist_harness.cpp`只负责文件I/O、HIP分配/复制、设备身份和同步，调用生成的
+`wavebridge_launch_rms_norm_f32_logical32` C入口，不另写kernel或launch。
+使用既有INPUT OUTPUT NROWS NCOLS格式；数值比较须由冻结reference/protocol独立执行。
+目前仅通过host编译/链接，尚未执行。它本身不是部署门控：链接工件含GPU注册
+constructor，运行前必须由外部核对设备、工件、wave库配置与数值协议。
+当前工件wave32 metadata与wave64库控制常量不一致，暂不部署；不能用链接成功放行。

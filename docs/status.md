@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新部署前核验：host 链接通过，wave 库配置仍不一致
+
+新增外部polygeist_harness.cpp，复用既有I/O与HIP检查，调用生成的host入口；
+没有重写kernel/launch。生成LLVM编译为host对象并成功链接，但未执行。
+独立静态审计确认当前HSACO metadata wave32、__oclc_wavefrontsize64实际为1，
+OCKL产物保留mbcnt_lo+hi。固定LLVM wave32测试允许该组合，不足以替代配置
+一致性与设备验证，因此下一步先修正serializer库常量选择，不运行当前工件。
+见 `.agents/handoffs/polygeist-host-preflight-20260920.md`。
+
 ## 最新实现：最小 ROCm 栈兼容补丁打通诊断源码的代码生成
 
 Sol子代理实现限定ROCm GPU模块/generic alloca的AS5补丁，主代理审查并完成
