@@ -1,6 +1,12 @@
 import unittest
+from pathlib import Path
+import shutil
+import tempfile
+import json
+from unittest.mock import patch
 
-from wavebridge.analysis.xor_reduction import recover
+from wavebridge.analysis.xor_reduction import recover, main
+from wavebridge.frontend.clang_ast import collect, _walk
 
 
 R = {"begin": {"offset": 1}, "end": {"offset": 2}}
@@ -12,6 +18,11 @@ def ref(identifier, kind):
 
 def lit(value):
     return {"kind": "IntegerLiteral", "type": {"qualType": "int"}, "value": str(value), "range": R}
+
+
+def unsigned_lit(value):
+    return {"kind": "IntegerLiteral", "type": {"qualType": "unsigned int"},
+            "value": str(value), "range": R}
 
 
 def fixture(width=32, selected="shuffle", call_target="shuffle"):
@@ -39,6 +50,13 @@ def fixture(width=32, selected="shuffle", call_target="shuffle"):
                                                                "inner": [ref("acc", "ParmVarDecl")]}]}]}
     shuffle = {"id": selected, "kind": "FunctionDecl", "range": R}
     return {"kind": "TranslationUnitDecl", "inner": [width_decl, shuffle, function]}
+
+
+def sync_fixture(width=32, mask=None):
+    root = fixture(width)
+    call = root["inner"][-1]["inner"][-1]["inner"][0]["inner"][4]["inner"][0]["inner"][1]
+    call["inner"].insert(1, unsigned_lit(4294967295) if mask is None else mask)
+    return root
 
 
 class XorReductionTests(unittest.TestCase):
@@ -89,6 +107,90 @@ class XorReductionTests(unittest.TestCase):
         loop["inner"][2]["inner"][0] = {"kind": "ImplicitCastExpr", "castKind": "IntegralCast",
                                                   "inner": [original]}
         self.assertEqual("unsupported_cast", recover(root, "helper", "shuffle")["reason"])
+
+    def test_recovers_explicit_full_logical32_mask_without_dropping_evidence(self):
+        result = recover(sync_fixture(), "helper", "shuffle", int_bits=32)
+        self.assertEqual("recovered", result["status"])
+        self.assertEqual(4, result["shuffle_call_arity"])
+        self.assertEqual(4294967295, result["mask"]["value"])
+        self.assertEqual({"qualType": "unsigned int"}, result["mask"]["type"])
+        self.assertEqual(R, result["mask"]["range"])
+        self.assertEqual("IntegerLiteral", result["mask"]["ast"]["kind"])
+        self.assertFalse(result["conditional_route_check"]["models_mask"])
+        self.assertEqual(2, len(result["conditional_route_check"]["external_preconditions"]))
+        self.assertEqual("not_established", result["external_shuffle_semantics"])
+        self.assertFalse(result["checked"])
+        self.assertFalse(result["deployable"])
+
+    def test_partial_dynamic_wrong_type_width_and_int_bits_masks_are_unknown(self):
+        cases = [
+            (sync_fixture(mask=unsigned_lit(4294967294)), 32,
+             "shuffle_mask_not_supported_full_logical32"),
+            (sync_fixture(mask=ref("dynamic", "VarDecl")), 32,
+             "shuffle_mask_not_explicit_integer_literal"),
+            (sync_fixture(mask=lit(4294967295)), 32, "shuffle_mask_not_unsigned_int"),
+            (sync_fixture(), 64, "shuffle_mask_not_supported_full_logical32"),
+            (sync_fixture(width=64), 32, "four_argument_shuffle_requires_logical_width_32"),
+        ]
+        for root, bits, reason in cases:
+            with self.subTest(reason=reason):
+                result = recover(root, "helper", "shuffle", int_bits=bits)
+                self.assertEqual("unknown", result["status"])
+                self.assertEqual(reason, result["reason"])
+                self.assertIsNone(result["mask"])
+
+    def test_four_argument_order_and_conversions_remain_strict(self):
+        root = sync_fixture()
+        call = root["inner"][-1]["inner"][-1]["inner"][0]["inner"][4]["inner"][0]["inner"][1]
+        call["inner"][2], call["inner"][3] = call["inner"][3], call["inner"][2]
+        self.assertEqual("unexpected_referenced_declaration_kind",
+                         recover(root, "helper", "shuffle")["reason"])
+        root = sync_fixture(mask={"kind": "ImplicitCastExpr", "castKind": "IntegralCast",
+                                  "type": {"qualType": "unsigned int"},
+                                  "inner": [lit(-1)], "range": R})
+        self.assertEqual("shuffle_mask_not_explicit_integer_literal",
+                         recover(root, "helper", "shuffle")["reason"])
+
+    def test_cli_does_not_check_routes_for_unsupported_mask(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ast = Path(directory) / "ast.json"
+            output = Path(directory) / "result.json"
+            ast.write_text(json.dumps({"schema_version": "clang-ast-source/v1",
+                                       "status": "collected", "ast_roots": [
+                                           sync_fixture(mask=unsigned_lit(1))]}))
+            with patch("wavebridge.verification.xor_routes.check") as checker:
+                code = main([str(ast), "--root-index", "0", "--function-id", "helper",
+                             "--shuffle-id", "shuffle", "--int-bits", "32",
+                             "--output", str(output)])
+                checker.assert_not_called()
+            self.assertEqual(2, code)
+            self.assertIsNone(json.loads(output.read_text())["conditional_route_check"])
+
+    @unittest.skipUnless(shutil.which("clang++"), "requires real clang++")
+    def test_real_clang_cpu_declaration_recovers_renamed_four_argument_helper(self):
+        source = """
+        float renamed_exchange(unsigned int, float, int, int);
+        constexpr int renamed_width = 32;
+        float arbitrary_helper(float state) {
+          for (int distance = renamed_width / 2; distance > 0; distance >>= 1)
+            state += renamed_exchange(4294967295u, state, distance, renamed_width);
+          return state;
+        }
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "sync_reduction.cpp"
+            path.write_text(source)
+            report = collect(path, shutil.which("clang++"), ["-std=c++17"],
+                             "arbitrary_helper", full_translation_unit=True)
+        self.assertEqual("collected", report["status"], report.get("execution"))
+        declarations = {node["name"]: node["id"] for node in _walk(report["ast_roots"][0])
+                        if node.get("kind") == "FunctionDecl" and
+                        node.get("name") in ("renamed_exchange", "arbitrary_helper")}
+        result = recover(report["ast_roots"][0], declarations["arbitrary_helper"],
+                         declarations["renamed_exchange"], 32)
+        self.assertEqual("recovered", result["status"], result)
+        self.assertEqual(4294967295, result["mask"]["value"])
+        self.assertEqual([16, 8, 4, 2, 1], result["offsets"])
 
 
 if __name__ == "__main__":

@@ -42,3 +42,30 @@ Ninja，记录版本、编译器/脚本哈希和完整命令。CMake 4 通过显
 
 脚本成功只证明 cgeist 可构建。CPU 回归只验证参数和工件保护，不调用编译器构建
 或访问网络，更不证明同例转换成功。原始日志保存在构建目录，不自动公开或提交。
+
+## 前端尝试记录
+
+`polygeist_frontend.py` 只执行 `-S -O0` 的 MLIR 输出请求，默认 `--function=*`
+保留全输入选择；可显式选择某个 kernel 做诊断，但不能把局部成功当完整 launch
+适配。每次新建独占目录，记录源/工具/runner/调用器哈希、命令、原始诊断及部分
+输出。状态区分 `tool_missing`、`launch_failed`、`timeout`、`tool_failed`、
+`no_ir_emitted` 和 `emitted_unverified_ir`。最后一种不意味着 MLIR 合法或语义正确。
+头文件传递闭包未完整哈希，报告明确该限制；没有数值或 GPU 保证。
+
+待当前 cgeist 构建完成后，先在同一配置构建 `clang-resource-headers`；不要同时
+在同一构建目录启动另一个 Ninja。然后运行（尚待实际执行的命令）：
+
+```bash
+cmake --build artifacts/toolchains/polygeist-cgo24-frontend-build-02 --target clang-resource-headers --parallel 8
+PYTHONPATH=src python3 experiments/baselines/polygeist_frontend.py \
+  benchmarks/cases/llama-rmsnorm/baseline/rmsnorm_logical32.cu \
+  --cgeist artifacts/toolchains/polygeist-cgo24-frontend-build-02/bin/cgeist \
+  --resource-dir artifacts/toolchains/polygeist-cgo24-frontend-build-02/lib/clang/16 \
+  --cuda-path artifacts/toolchains/cuda-view-Zt5WBj \
+  --include-dir artifacts/toolchains/cuda-12.1-wheels/nvidia/cuda_nvcc/include \
+  --include-dir artifacts/toolchains/curand-10.3.2.56-wheel/nvidia/curand/include \
+  --include-dir artifacts/toolchains/libcudacxx-1.9.0/include
+```
+
+不预判这个完整输入能成功；失败后分别定位工具环境、输入语言范围与实际语义
+变换限制。CPU mock 测试只核对记录状态，不计作 cgeist 实验。

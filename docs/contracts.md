@@ -62,6 +62,11 @@
 却不保证浮点结果相同。源码恢复器的外部shuffle声明选择仍需独立语义依据；
 绑定某个函数ID不能自动证明它就是XOR shuffle。所有结果均不可直接部署。
 
+四参数调用的受限恢复额外保留全32位掩码原始 AST 与参与/收敛外部前提。
+当前 checker 本身仍不建模掩码；只有 width32、显式 unsigned int 全掩码的
+受支持结构才能进入相同条件模型，部分或动态 mask 保持 unknown，不能删除
+mask 后套用原保证。原三参数逻辑宽度支持范围不因此改变。
+
 ## 共享 partial 的两阶段贡献检查
 
 `verification/block_routes.py` 在上述XOR快照假设下，模拟每组归约、单writer

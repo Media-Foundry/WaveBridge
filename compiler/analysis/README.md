@@ -196,3 +196,17 @@ mutable/volatile、地址逃逸、不支持的控制流或转换保持unknown。
 不符合该模式的普通 host 错误检查可以保留为 `skipped_guards`，但不能贡献
 区间约束。跳转绕过、嵌套可调用对象等不支持结构则阻止恢复；普通调用的存在
 不会被误判为边界成立的证据，受保护变量仍须通过只读使用审计。
+
+## 显式全掩码四参数 XOR 结构
+
+`xor_reduction.recover` 保留原三参数路径，新增四参数
+`(mask, value, offset, width)` 的受限结构。按精确 callee/变量 ID 关联，不按函数
+名字认定 intrinsic。只接受 `int_bits=32`、width 32、类型为 `unsigned int` 的
+显式字面量 `4294967295`（可有括号）；保存 mask 原 AST、类型、值和源码位置。
+动态/部分/带转换掩码及四参数 width64 返回 unknown，不降级为忽略 mask。
+
+`recovered` 不证明 mask、XOR intrinsic、收敛或浮点语义。条件路由模型不建模
+mask，结果中明确 `models_mask=false`；全32 lane在每次调用时活跃且收敛是外部
+前提，不是恢复结论。CLI 对不支持的 mask 不调用路由 checker。
+真实 CUDA 端口可自动发现该 XOR helper，但 block helper 仍未恢复，不能生成
+已验证候选或把同一案例的语言端口算作新谱系。

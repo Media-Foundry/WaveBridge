@@ -64,6 +64,28 @@ def _literal(node: dict[str, Any], value: int) -> None:
         raise _Unknown("unexpected_integer_literal", current.get("range"))
 
 
+def _full_mask(node: dict[str, Any], int_bits: int) -> dict[str, Any]:
+    """Accept only the explicit CUDA logical32 full-participation mask."""
+    current = node
+    while current.get("kind") == "ParenExpr":
+        children = _children(current)
+        if len(children) != 1:
+            raise _Unknown("ambiguous_mask_wrapper", current.get("range"))
+        current = children[0]
+    if current.get("kind") != "IntegerLiteral":
+        raise _Unknown("shuffle_mask_not_explicit_integer_literal", current.get("range"))
+    if _type(current) != "unsigned int":
+        raise _Unknown("shuffle_mask_not_unsigned_int", current.get("range"))
+    try:
+        value = int(str(current.get("value")), 0)
+    except (TypeError, ValueError):
+        raise _Unknown("invalid_shuffle_mask_literal", current.get("range"))
+    if int_bits != 32 or value != 4294967295:
+        raise _Unknown("shuffle_mask_not_supported_full_logical32", current.get("range"))
+    return {"value": value, "type": current.get("type"), "range": current.get("range"),
+            "ast": node, "interpretation": "explicit_full_logical32_mask_literal"}
+
+
 def _single_child(node: dict[str, Any], reason: str) -> dict[str, Any]:
     children = _children(node)
     if len(children) != 1:
@@ -78,7 +100,12 @@ def recover(root: object, function_id: str, shuffle_declaration_id: str,
         "reason": None, "function_id": function_id,
         "shuffle_declaration_id": shuffle_declaration_id, "int_bits": int_bits,
         "width": None, "offsets": [], "operation": None, "ranges": {},
-        "bindings": {}, "external_shuffle_semantics": "not_established",
+        "bindings": {}, "mask": None, "shuffle_call_arity": None,
+        "external_shuffle_semantics": "not_established",
+        "external_mask_semantics": "not_applicable_until_four_argument_form_recovered",
+        "conditional_route_check": {
+            "models_mask": False, "applicability": "not_established",
+            "external_preconditions": []},
         "shuffle_declaration_selection": "external_input",
         "checked": False, "deployable": False, "relation_recovery": "incomplete",
     }
@@ -175,16 +202,24 @@ def recover(root: object, function_id: str, shuffle_declaration_id: str,
             raise _Unknown("update_uses_other_accumulator", update_operands[0].get("range"))
         call = _unwrap(update_operands[1])
         call_children = _children(call)
-        if call.get("kind") != "CallExpr" or len(call_children) != 4:
-            raise _Unknown("update_not_three_argument_call", call.get("range"))
+        if call.get("kind") != "CallExpr" or len(call_children) not in (4, 5):
+            raise _Unknown("update_not_supported_three_or_four_argument_call", call.get("range"))
         if _ref(call_children[0], "FunctionDecl") != shuffle_declaration_id:
             raise _Unknown("call_not_selected_shuffle", call_children[0].get("range"))
-        if _ref(call_children[1], "ParmVarDecl") != accumulator_id:
-            raise _Unknown("shuffle_value_not_accumulator", call_children[1].get("range"))
-        if _ref(call_children[2], "VarDecl") != offset_id:
-            raise _Unknown("shuffle_offset_mismatch", call_children[2].get("range"))
-        if _ref(call_children[3], "VarDecl") != width_id:
-            raise _Unknown("shuffle_width_mismatch", call_children[3].get("range"))
+        mask = None
+        argument_start = 1
+        if len(call_children) == 5:
+            if width != 32:
+                raise _Unknown("four_argument_shuffle_requires_logical_width_32",
+                               operands[0].get("range"))
+            mask = _full_mask(call_children[1], int_bits)
+            argument_start = 2
+        if _ref(call_children[argument_start], "ParmVarDecl") != accumulator_id:
+            raise _Unknown("shuffle_value_not_accumulator", call_children[argument_start].get("range"))
+        if _ref(call_children[argument_start + 1], "VarDecl") != offset_id:
+            raise _Unknown("shuffle_offset_mismatch", call_children[argument_start + 1].get("range"))
+        if _ref(call_children[argument_start + 2], "VarDecl") != width_id:
+            raise _Unknown("shuffle_width_mismatch", call_children[argument_start + 2].get("range"))
 
         returned = _single_child(statements[1], "return_expression_missing_or_ambiguous")
         if _ref(returned, "ParmVarDecl") != accumulator_id:
@@ -194,6 +229,20 @@ def recover(root: object, function_id: str, shuffle_declaration_id: str,
             offsets.append(current)
             current >>= 1
         result.update(status="recovered", width=width, offsets=offsets, operation="add",
+                      mask=mask, shuffle_call_arity=len(call_children) - 1,
+                      external_mask_semantics=(
+                          "full_mask_active_and_converged_participation_is_external_precondition"
+                          if mask is not None else "implicit_three_argument_form_not_interpreted"),
+                      conditional_route_check={
+                          "models_mask": False,
+                          "applicability": ("applicable_only_under_recorded_full_mask_preconditions"
+                                            if mask is not None else
+                                            "applicable_under_existing_full_group_precondition"),
+                          "external_preconditions": ([
+                              "all_32_lanes_named_by_mask_are_active_at_every_shuffle",
+                              "all_32_lanes_named_by_mask_are_converged_at_every_shuffle"]
+                              if mask is not None else [
+                              "all_logical_group_lanes_participate_at_every_shuffle"])},
                       ranges={"function": function.get("range"), "loop": loop.get("range"),
                               "initializer": division.get("range"), "condition": condition.get("range"),
                               "increment": increment.get("range"), "update": update.get("range"),
@@ -237,6 +286,7 @@ def main(argv=None):
     report = {"schema_version": "source-xor-evidence/v1",
               "ast_report_sha256": _sha256(args.ast_report), "root_index": args.root_index,
               "recovery": recovered, "conditional_route_check": routes,
+              "conditional_route_check_mask_scope": recovered.get("conditional_route_check"),
               "source_program_checked": False, "deployable": False}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x", encoding="utf-8") as stream:

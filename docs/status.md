@@ -2,6 +2,19 @@
 
 更新日期：2026-09-20。
 
+## 最新实现：保留全掩码的 XOR 恢复
+
+四参数 XOR 调用新增受限恢复：只支持 width32、int_bits32、显式 unsigned int
+全掩码；按精确声明绑定实参，保留 mask AST/类型/range。部分、动态、转换掩码
+返回 unknown，不进入路由 checker。全参与和收敛仍是外部前提，不是源码保证。
+真实 CUDA 入口重跑 `artifacts/wb03-cuda-source-mask-01/`，自动发现一个 width32
+XOR helper，offsets `[16,8,4,2,1]`，block 候选仍为空；实现/AST/源码哈希核对一致。
+
+新增 `experiments/baselines/polygeist_frontend.py`，只记录 MLIR 发射尝试，不
+签发 IR 验证或 GPU 结论。270 项测试通过，包括 unsupported mask 不调用 checker
+及 mock 工具状态隔离。Polygeist 编译会话 81182 仍在运行，尚无真实同例转换。
+交接见 `.agents/handoffs/cuda-mask-polygeist-runner-20260920.md`。
+
 ## 最新推进：实际构建与 CUDA 源码分析
 
 LLVM 第二次获取成功，精确检出 `0b9310c6e4416ee48c07edfef81144e22850dfe7`。
