@@ -259,6 +259,16 @@ def run(output_base: Path, timeout: float, hipcc_arg: str | None = None) -> tupl
         report["overall_status"] = "unknown"
         report["reason"] = "tool_missing"
         return finish(report, artifact, 2)
+    compiler_path = Path(shutil.which(hipcc) or hipcc)
+    if compiler_path.is_file():
+        report["artifacts"]["compiler_executable_sha256"] = sha256(compiler_path)
+        view_manifest = compiler_path.parent.parent / "manifest.json"
+        if view_manifest.is_file():
+            # Preserve the caller's explicit SDK view, without treating it as proof.
+            manifest_copy = artifact / "sdk-view-manifest.json"
+            shutil.copyfile(view_manifest, manifest_copy)
+            report["artifacts"]["sdk_view_manifest"] = str(manifest_copy)
+            report["artifacts"]["sdk_view_manifest_sha256"] = sha256(manifest_copy)
     version = invoke([hipcc, "--version"], timeout)
     report["stages"]["toolchain"] = version
     if version["status"] != "completed" or version["returncode"] != 0:

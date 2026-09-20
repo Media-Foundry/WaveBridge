@@ -16,7 +16,7 @@ PYTHONPATH=src python3 -m wavebridge check examples/qdot/source.json examples/qd
 PYTHONPATH=src python3 -m wavebridge check examples/qdot/source.json examples/qdot/wrong_quant64.json
 ```
 
-WB-01 的设备探测入口为 `python3 runtime/probes/probe.py --hipcc /path/to/hipcc`，需要完整 HIP 开发工具链及可用设备，详见 [探测协议](runtime/probes/README.md)。CPU 测试不触发 GPU 执行。当前本机编译尝试失败，尚无成功设备执行证据。
+WB-01 的设备探测入口为 `python3 runtime/probes/probe.py --hipcc /path/to/hipcc`，需要 HIP 开发工具链及可用设备，详见 [探测协议](runtime/probes/README.md)。CPU 测试不触发 GPU 执行。本机 W7900 的普通 wave32 探针已通过编译元数据与运行行为核对；这不代表任意 kernel 已验证。
 
 最后一条命令故意检查错误候选，返回 `rejected` 和退出码 1。`checked` 返回 0，`unknown` 返回 2，输入或命令错误返回 3。检查报告以 JSON 输出，包含模型哈希、数值语义、适用范围和诊断。
 
