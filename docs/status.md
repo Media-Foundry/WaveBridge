@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新独立检查：getter返回链的条件值保持
+
+新增verification/getter_returns，直接从单TU函数AST检查exact调用链、外部叶实参
+与逐级整数转换，不消费return_trace的成功标志。真实HIP getter在显式外部域
+[0,255]与ABI下checked；人为扩大到[0,2^32]时返回窄化rejected，反例2^32。
+331项CPU测试通过，包含真实Clang、窄化反例、缺ABI、契约不匹配及结构/预算负例。
+最终工件 `artifacts/wb04-getter-returns-fVQljU/report-final.json` 实现hash核验一致。
+域真实性、外部坐标语义、初始化链与launch的自动组合尚未完成；无GPU执行，
+不签发源程序或部署保证。见 `.agents/handoffs/wb04-getter-returns-20260920.md`。
+
 ## 最新源码能力：连接属性初始化式与结果调用
 
 新增initializer_value并接入起点证据value_link：在显式Clang结果不变量前提下，

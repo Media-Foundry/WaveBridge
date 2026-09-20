@@ -155,3 +155,11 @@ source_program_checked/deployable始终false，不能用它单独放行候选。
 外部调用坐标语义。`recovered`不得转换成`checked`或部署许可；数值值保持、
 receiver上下文有效性、外部函数/轴语义和launch域须另行建立。具体支持子集与
 不变量来源见 `compiler/analysis/README.md`。
+
+## Getter 返回域检查：`getter-return-domain-check/v1`
+
+显式`getter-leaf-domain/v1`绑定同AST中的外部函数ID、常量实参、返回类型与
+闭区间。checker从原始函数体独立遍历受限getter链，检查逐级整数转换在整个
+声明区间上值保持；不根据函数名认定坐标。返回窄化可rejected；前提不匹配或
+不支持则unknown。checked仅描述该条件值保持性质，不能扩展为外部函数实现、
+线程坐标语义、真实launch或整核等价的保证。详见 `compiler/verification/README.md`。

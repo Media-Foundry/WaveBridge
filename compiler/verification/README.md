@@ -98,3 +98,27 @@ axis_binding使用`launch-axis-assumptions/v1`，是外部API语义假设，不�
 的同一AST。API缺映射、不同kernel/launch/构造、ABI不一致或字段值未知时不能通过。
 checked仅说明显式坐标语义下构造字段匹配；仍不证明kernel实际读取了x坐标、host
 执行了该launch或设备采用了该配置。该API尚未自动合并到共享容量CLI或部署判断。
+
+## getter返回链的条件值保持
+
+`verification.getter_returns.check(root, start_declaration_id, leaf_contract, integer_types)`
+从单TU原始AST独立重建函数链，不读取return_trace的成功标志或生成器自报模型。
+起点可为static方法；内部只支持无形参、非variadic、单return的直接free函数调用，
+返回表达式可带括号/IntegralCast。exact ID重复、算术、多语句、动态成员、递归、
+超过预算或缺ABI均unknown。当前上限100万AST节点、32层调用、32层表达式。
+
+外部协议`getter-leaf-domain/v1`明确给出`declaration_id`、`arguments`（最多4个
+非负常量）、`return_type`（Clang式类型对象）、`lower`、`upper`。叶节点必须是
+无函数体的非variadic FunctionDecl；其参数数/类型与实际调用对应。实参仅支持
+非负整数字面量及括号/IntegralCast，逐级检查值保持后与协议常量匹配。
+**ID与实参对应不意味着该函数是local-id或轴0具有x含义**；协议返回域仍是外部假设。
+
+结果`getter-return-domain-check/v1`按叶到起点顺序检查整个区间内的返回转换。
+支持域内非值保持的返回窄化为rejected；协议实参不匹配或实参转换不支持为unknown，
+不是错误kernel的证明。checked返回原区间及返回类型，保留调用边、转换证据和
+完整root/起点/协议/ABI的规范化SHA256。调用表达式类型与函数声明签名的一致性
+仍依赖忠实、有效Clang AST，不宣称重新验证了编译器类型系统或完整C++签名。
+
+该API不证明外部函数语义、输入区间真实性、初始化表达式/属性receiver纯度、
+launch域或源/目标等价。source_program_checked/deployable始终false。尚无独立CLI，
+也未自动与value_link或block配置检查组合；不能据此放行GPU候选。
