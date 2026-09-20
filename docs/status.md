@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新组合门控：row初始化式与grid域
+
+row_coordinate_check从同AST fresh恢复grid域、row-prefix及初始化式结果调用，
+在显式group-id叶协议下检查getter和row初始化转换。无需手工提供row声明ID或
+上界。428项CPU测试通过，包含getter/初始化窄化、错绑定与非法grid维度回归。
+真实工件 `artifacts/wb04-row-coordinate-0WHtJN/report.json` 条件checked，row域[0,7]，
+src实现hash运行前后一致。区间是跨grid域过近似，不代表每次launch的row/nrows
+相关性；指针偏移、分配范围、调用点有效性和参与仍未证明，无GPU执行。详见
+`.agents/handoffs/wb04-row-coordinate-20260920.md`。
+
 ## 最新条件检查：grid域与block-id协议来源
 
 grid_configuration和grid_domain_check从选定launch的第0构造配置、字段轴协议及

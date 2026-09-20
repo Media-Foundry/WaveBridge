@@ -271,3 +271,18 @@ configuration_position=0及已有launch-axis-assumptions/v1。输出
 配合固定SDK头文件与精确getter AST调用链，把已检查grid.x上界减1作为外部
 group-id叶值域上界。该组合目前在诊断runner中完成，不是通用自动API识别器，
 也不证明外部叶实现或正常返回。来源与文件hash见对应交接。
+
+## 从 grid 域到 row 初始化式
+
+`row_coordinate_check.check(root, kernel_id, launch_id, integer_types, binding,
+int_bits=32, use_host_guard_assumptions=True)`fresh运行grid域和row-prefix恢复，
+从源码row_initializer_evidence取得结果getter，再检查其返回链与初始化转换。
+外部`row-coordinate-assumptions/v1`绑定root hash/kernel/launch，内含grid_binding
+及coordinate（semantics=workgroup_id、axis=0、精确外部叶ID与返回类型）。
+没有人工row声明ID或人工row上界；上界从已检查grid.x域的upper减1得到。
+
+`conditional-row-coordinate-check/v1`的checked只在外部group-id/ABI/实际launch
+语义前提下确认row初始化式等于workgroup x，并输出跨grid域的row_interval。
+值保持失败保留rejected，缺协议/不支持保持unknown。该区间不是每次launch的
+精确行集合，也未保持row与动态nrows的完整相关性；不得直接用它替代逐输入内存
+边界证明。不检查指针偏移、分配大小、别名、参与或FP结果，source/deploy为false。

@@ -224,3 +224,8 @@ participation继续未建立，不授权GPU部署。
 `conditional-grid-domain-check/v1`从fresh host guard和构造式检查一维正grid域，
 不把必要条件过近似当可达集合。用它推导block-id域还需要外部API语义，不能因
 字段或函数名叫x/group便自动建立该含义。
+
+`row-coordinate-assumptions/v1`显式连接group-id叶API、轴0及grid绑定。
+`conditional-row-coordinate-check/v1`从同AST恢复row声明与初始化链并核对整数
+值保持，给出条件行坐标域。它仅覆盖初始化式，不证明row*ncols算术、指针范围
+或每次launch的精确row/nrows相关性；不授权部署。
