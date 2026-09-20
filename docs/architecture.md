@@ -12,7 +12,7 @@
 
 | 层 | 目录 | 输入 → 输出 | 职责和约束 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| 源码接入 | `compiler/frontend/`、`src/wavebridge/frontend/` | 源文件、编译命令、launch → 原始语义工件 | 保留源码位置、宏展开、intrinsic 语义和 host/device 关联；不猜测数值容限 | 仅 JSON fixture 接入 |
+| 源码接入 | `compiler/frontend/`、`src/wavebridge/frontend/` | 源文件、编译命令、launch → 原始语义工件 | 保留源码位置、宏展开、intrinsic 语义和 host/device 关联；不猜测数值容限 | JSON fixture 与真实 Clang AST 采集；launch/调用闭包尚未恢复 |
 | 关系表示 | `compiler/ir/`、`src/wavebridge/ir/` | 原始语义 → 显式关系模型 | 数据索引、运算、路由、参与条件、存储阶段、输出归属、假设、来源 | 仅版本化 qdot 专用模型 |
 | 关系恢复 | `compiler/analysis/`、`src/wavebridge/analysis/` | 原始语义 → 关系模型或拒绝原因 | 支持范围内联合推断；冲突和不确定性必须保留 | 仅展示人工给定关系 |
 | 关系检查 | `compiler/verification/`、`src/wavebridge/verification/` | 源/目标、输入域、数值协议 → 检查报告 | 独立于生成器；比较输出计算，保留重复计数和保证范围 | 固定形状无界整数多项式检查 |
@@ -21,7 +21,7 @@
 | 执行与测量 | `runtime/`、`experiments/` | 已检查代码、设备协议 → 原始执行记录 | 能力探测、正确性测试、计时与环境隔离 | 最小设备探测器；通用执行器待实现 |
 | 研究评估 | `benchmarks/`、`research/` | 原始证据、预先声明的协议 → 主张评估 | 覆盖/拒绝/有效接受/错误放行、强基线、成本和性能分开报告 | 登记模板与阶段门槛 |
 
-`compiler/` 当前只有设计边界说明；`runtime/probes/` 已有可调用的最小 HIP 探测器。尚无通用编译器、HIP 执行库或需要配置的 CMake 工程。探针编译失败、未建立元数据或运行证据不一致，都不能作为目标能力通过的依据。
+`compiler/` 保存设计边界说明；真实 AST 采集入口位于 `src/wavebridge/frontend/clang_ast.py`，尚不恢复协作关系。`runtime/probes/` 已有可调用的最小 HIP 探测器。尚无通用编译器、HIP 执行库或需要配置的 CMake 工程。探针编译失败、未建立元数据或运行证据不一致，都不能作为目标能力通过的依据。
 
 ## 工件流与信任边界
 

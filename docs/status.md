@@ -71,4 +71,14 @@ WB-02 首例实际执行：
 
 ## 下一项研究任务
 
-以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03～08 仍待实施。
+WB-03 已开始源码接入：`frontend/clang_ast.py` 调用真实 Clang，保留多 JSON 根、
+函数位置、命令、工作目录及源码/编译器哈希，并区分失败状态。设备视图需显式
+`--cuda-device-only`；默认 HIP 可能同时输出 host/device，不能混为单一语义。
+本机新入口成功采集 RMSNorm kernel、warp helper、block helper，各一份设备 AST，
+报告位于 `artifacts/wb03-ast-J5vhJF/`。源码 SHA 与 WB-02 实测版本一致。
+这不读取人工 oracle，但尚未建立常量/调用闭包、launch 对应或跨 lane 关系。
+G1/G2 均未因此通过。后续按用户要求直接 commit，不再创建 PR。
+本轮 `make check` 81 项 CPU 测试通过，含多 JSON 根、超时日志、非法超时和
+禁止覆盖源码/已有工件的回归；没有执行新的 GPU 数值或性能实验。
+
+以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03 关系恢复与 WB-04～08 仍待实施。

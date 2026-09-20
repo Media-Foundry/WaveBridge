@@ -1,1 +1,1 @@
-"""Input adapters. Only the explicit JSON fixture adapter is implemented."""
+"""JSON model fixtures and evidence-only Clang AST ingestion adapters."""
