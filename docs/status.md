@@ -91,4 +91,13 @@ WB-03 后续增加 `analysis/source_facts.py`：从真实 AST 提取直接调用
 本轮最终 `make check` 91 项通过，其中 2 项使用本机真实 Clang；没有 Clang
 的环境会显式跳过这 2 项，不能把跳过记为真实编译验证。跨 lane 恢复仍未完成。
 
+WB-03 声明接入继续推进：新增完整 translation-unit 模式及 root-local 声明索引。
+真实 HIP 工件 `artifacts/wb03-tu-hgtXLo/rmsnorm-tu-single.json` 与
+`rmsnorm-index.json` 已生成，确认同次 AST 中 `kLogicalWidth`、`kBlockSize`
+含 initializer，warp helper 含 body；完整 TU 索引仍有 2 个 unresolved 引用。
+这不代表所有声明闭包或线程 getter 语义已建立。
+两次 1.5 GiB 虚拟内存限额下的序列化失败保留为空/部分 JSON 文件，不能消费为
+成功报告；改为流式写出并去除重复 AST stdout 后，同限额运行成功。
+最终本地 `make check` 98 项通过（含 3 项真实 Clang 测试）；未运行新 GPU kernel。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。并行核实 Polygeist/CKTI 对同一案例的能力；尚不能宣布 G1 通过。MI250 接入、WB-03 关系恢复与 WB-04～08 仍待实施。

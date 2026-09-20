@@ -21,9 +21,12 @@ UNSUPPORTED_CALL_KINDS = {"CXXMemberCallExpr", "CXXOperatorCallExpr", "CUDAKerne
 
 
 def _canonical_hash(value: object) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"),
-                         ensure_ascii=False, allow_nan=False).encode()
-    return hashlib.sha256(encoded).hexdigest()
+    digest = hashlib.sha256()
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"),
+                               ensure_ascii=False, allow_nan=False)
+    for chunk in encoder.iterencode(value):
+        digest.update(chunk.encode())
+    return digest.hexdigest()
 
 
 def _node_id(report_hash: str, root_index: int, raw_id: object) -> str | None:

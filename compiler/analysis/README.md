@@ -20,3 +20,12 @@ Clang 内部地址不能用于跨次编译连接。规范化哈希不等于输�
 `threadIdx.x` / `blockIdx.x` 表达成属性 getter 调用，尚不能解释其语义。
 过滤后的 AST 也可能只有常量引用而没有初始化定义。两者都不能靠名称猜测。
 后续需建立声明/调用闭包、控制与存储依赖、launch 对应，再检查跨 lane 关系。
+
+`analysis/declaration_index.py` 进一步按同一 AST root 内的精确 ID 连接声明引用，
+并记录声明是否带 initializer/body；引用 stub 不作为完整声明。
+`previousDecl` 仅记录而不追链，未解析引用保留，索引成功不是闭包完整或语义正确。
+
+```bash
+PYTHONPATH=src python3 -m wavebridge.analysis.declaration_index \
+  artifacts/full-tu.json --output artifacts/new-declaration-index.json
+```
