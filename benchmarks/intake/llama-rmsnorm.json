@@ -1,7 +1,7 @@
 {
   "schema_version": "candidate-intake/v1",
   "case_id": "llama-rmsnorm-f32",
-  "status": "source_reviewed_not_admitted",
+  "status": "development_case_baseline_sanity_passed",
   "review_date": "2026-09-20",
   "repository": "https://github.com/ggml-org/llama.cpp",
   "revision": "b23efaa2ef147f547ee75cbf0c621d61904de80e",
@@ -9,8 +9,13 @@
   "lineage_id": "ggml-llama-cuda-norm",
   "entry_symbol": "rms_norm_f32<256, false, false>",
   "launch_symbol": "rms_norm_f32_cuda",
-  "source_modifications": [],
-  "source_snapshot_imported": false,
+  "source_modifications": [
+    "standalone specialization keeps only block_size=256, do_multiply=false, do_add=false",
+    "contiguous one-channel one-sample launch replaces ggml wrapper and general stride plumbing",
+    "PDL hooks removed; direct HIP runtime launch and binary I/O added",
+    "float SUM helper path copied with logical width fixed at the upstream WARP_SIZE=32"
+  ],
+  "source_snapshot_imported": true,
   "reviewed_files": [
     {
       "path": "LICENSE",
@@ -51,21 +56,32 @@
   },
   "admission_gates": {
     "fixed_source_and_license": "reviewed",
-    "complete_transitive_source_bundle": "pending",
-    "frozen_input_and_numeric_protocol": "pending",
-    "independent_reference": "pending",
-    "logical32_baseline_target_validation": "not_run",
-    "manual_oracle_isolated_from_frontend": "pending",
+    "complete_transitive_source_bundle": "standalone_extraction_complete",
+    "frozen_input_and_numeric_protocol": "frozen_before_run; nine deterministic shapes validated",
+    "independent_reference": "cpu_tests_passed",
+    "logical32_baseline_target_validation": "passed_nine_deterministic_shapes_on_verified_wave32_target",
+    "manual_oracle_isolated_from_frontend": "complete",
     "source_recovery": "not_implemented"
   },
   "common_case_comparisons": {
-    "upstream_hip_logical32": "source_path_identified_not_run",
+    "upstream_hip_logical32": "standalone_sanity_passed_nine_shapes",
     "scale": "not_evaluated",
     "polygeist": "not_evaluated",
     "ckti": "not_evaluated",
     "manual_parameterized": "not_implemented"
   },
-  "research_gap": "unverified; existing logical32 HIP path is a required strong baseline",
+  "target_validation": {
+    "scope": "nine deterministic shapes only; nrows=3, ncols in [1,31,32,33,255,256,257,777,1023], epsilon=1e-5",
+    "evidence_index": "cases/llama-rmsnorm/evidence.json",
+    "artifact_availability": "local_only_not_in_git",
+    "device": "AMD Radeon Pro W7900; gfx1100; PCI 0000:53:00.0",
+    "probe_physical_wave_width": 32,
+    "baseline_machine_code_wave_metadata": "not_independently_extracted",
+    "result": "all outputs for all nine recorded shapes were finite and within frozen tolerance",
+    "max_absolute_error": 1.1920928955078125e-07,
+    "max_relative_error": 1.3554934829906577e-07
+  },
+  "research_gap": "unverified; nine logical32 baseline sanity shapes passed, but full-domain validation, automatic recovery and common-case comparisons remain absent",
   "required_semantics": [
     "template instantiation and helper inlining",
     "XOR shuffle rather than current qdot shuffle-down model",

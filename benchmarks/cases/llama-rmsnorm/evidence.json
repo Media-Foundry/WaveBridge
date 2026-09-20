@@ -1,0 +1,27 @@
+{
+  "schema_version": "rmsnorm-evidence-index/v1",
+  "status": "nine_deterministic_shapes_passed",
+  "common_conditions": {
+    "nrows": 3,
+    "epsilon": 0.00001,
+    "device": "AMD Radeon Pro W7900; gfx1100; PCI 0000:53:00.0",
+    "probe_physical_wave_width": 32,
+    "baseline_machine_code_wave_metadata": "not_independently_extracted",
+    "probe_report_sha256": "f28f65ed939ca68441fe26fb0cc8abdacab8db00d8c95bfc2f0049cf94730177",
+    "source_sha256": "7284151f806d710ff3396b94b62b3ec35d5bef3f44815e1e7837aad66dc85823",
+    "protocol_sha256": "f8706a25e68b2354cc839c5d9a08aee7e0abf1fded236bcdfe1f3d577808dcae"
+  },
+  "reports": [
+    {"ncols": 1, "report": "artifacts/wb02-20260920T075303Z-edcb72/report.json", "sha256": "e951d5ba82e568b8d1c58911d5ee84694fa503949b78fb43a37e93c03ccb5451"},
+    {"ncols": 31, "report": "artifacts/wb02-20260920T075305Z-031bd0/report.json", "sha256": "b7f5432dcee71359ab5816a9d9c9b2c17fd82c521103ef838f07e870e053481b"},
+    {"ncols": 32, "report": "artifacts/wb02-20260920T075306Z-1103df/report.json", "sha256": "bbfcf5b32f239617cd24b6787cd18431a218f119f5aa6a691bcf8c89db63b5b9"},
+    {"ncols": 33, "report": "artifacts/wb02-20260920T075308Z-faac7d/report.json", "sha256": "c351b0c3d8f6b53079157d62b4fe335923b947d42f5064336020d9d0d7ffe783"},
+    {"ncols": 255, "report": "artifacts/wb02-20260920T075309Z-0d0318/report.json", "sha256": "35c04bd0de58768fa0e17ae695e73211084a1e366e3f9669b6c027506c923b29"},
+    {"ncols": 256, "report": "artifacts/wb02-20260920T075311Z-582191/report.json", "sha256": "0eb1ae37840fb08190e2425f8792e2ee3a5ef1e9b352576af05486992e65a006"},
+    {"ncols": 257, "report": "artifacts/wb02-20260920T075312Z-e18a54/report.json", "sha256": "cae69a7e4f498f92beeb497a46dd8e81c461b619b167b56c6a2a38fdd923edb2"},
+    {"ncols": 777, "report": "artifacts/wb02-20260920T075245Z-3bc452/report.json", "sha256": "438e18917e62190aa5cb314ee2e366a6cfe986e1e80fab552e39d5a68750ed2e"},
+    {"ncols": 1023, "report": "artifacts/wb02-20260920T075314Z-54cd3d/report.json", "sha256": "2888750dd406d9d458fa6ef8533c63557e847be6e785b9033fe019158ce95da0"}
+  ],
+  "artifact_availability": "local_only_not_in_git",
+  "scope_limit": "These reports cover nine deterministic shapes, not every input or shape in the frozen domain."
+}

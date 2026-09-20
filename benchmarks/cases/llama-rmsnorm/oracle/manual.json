@@ -1,0 +1,15 @@
+{
+  "schema_version": "manual-relation-oracle/v1",
+  "case_id": "llama-rmsnorm-f32",
+  "provenance": "human transcription from fixed upstream source; not frontend input",
+  "logical_width": 32,
+  "relations": [
+    "thread tid accumulates columns tid + k*256",
+    "each logical32 group performs XOR offsets 16,8,4,2,1",
+    "logical lane 0 writes one partial sum per logical group to shared[warp_id]",
+    "a block barrier precedes shared partial reads",
+    "logical lanes 0..7 read eight partials and the second logical32 reduction broadcasts the total",
+    "every thread writes only its tid + k*256 output columns using the common scale"
+  ],
+  "automatic_recovery_status": "not_implemented"
+}

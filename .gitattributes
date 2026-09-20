@@ -1,0 +1,2 @@
+# Unified diffs encode an empty context line as one space; preserve replayability.
+benchmarks/cases/llama-rmsnorm/standalone.patch whitespace=-blank-at-eol
