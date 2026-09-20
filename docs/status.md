@@ -2,6 +2,19 @@
 
 更新日期：2026-09-20。
 
+## 最新推进：固定 Polygeist 前端构建准备
+
+新增 `experiments/baselines/build_polygeist_frontend.sh`：核对 Polygeist/LLVM
+精确 SHA、拒绝脏源码或已有/源码内构建目录，限并行度，保存工具与命令日志。
+配置只用于 CUDA 输入→MLIR 的前端检查，不启用 GPU runtime/backend，不能据此
+评价完整重定向。Sol 依据固定源码核对这条路径并审查脚本；主代理完成保护修正。
+`make check` 257 项通过，新增六项只验证脚本安全边界，不实际构建 LLVM。
+
+目标 LLVM 提交对象已从子模块远端取得，但第一次检出因 HTTP 408 / promisor
+blob 获取失败退出 128；不能称源码已完整或工具不支持输入。已启动同一子模块的
+第二次获取，日志 `artifacts/polygeist-source-fetch-02.log`，尚未启动 CMake 构建。
+交接见 `.agents/handoffs/polygeist-build-preparation-20260920.md`。
+
 ## 最新验证：CUDA 前端实际接入
 
 固定人工 CUDA 输入在真实 CUDA 头文件下通过 host/device 两侧语法检查并取得
