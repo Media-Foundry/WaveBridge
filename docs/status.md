@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新门控：ROCm 编译阶段与设备副作用分开记录
+
+共同案例记录器新增显式ROCm路径和AMD目标，绑定三份设备库及LLD哈希。
+区分GPU MLIR请求与LLVM/HSACO序列化请求，不凭退出成功升级正确性保证。
+禁止该入口启用cuda-lower，并清理alternatives相关环境、设置设备可见性掩码；
+掩码不等于沙箱，不能保证编译器没有设备API副作用。284项CPU测试通过，
+新增测试是编排mock，不是GPU证据。完整ROCm构建会话29377仍在运行，
+最近观测1572/3895；不启动重复构建。下一步待构建结束后检查真实共同案例。
+详见 `.agents/handoffs/polygeist-rocm-stages-20260920.md`。
+
 ## 最新推进：独立 ROCm 后端已开始真实构建
 
 独立patched Polygeist worktree仅应用已记录的wrapper头兼容和字段断言补丁，

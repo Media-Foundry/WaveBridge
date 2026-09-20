@@ -125,3 +125,15 @@ ocml.bc，不能未经门控接入完整ROCm构建。见
 该构建使用自定义hip::host映射，不是vendor HIP package或论文原环境，
 实际配置和恢复路径见 [构建交接](../../.agents/handoffs/polygeist-rocm-build-start-20260920.md)。
 构建完成前不能使用预期生成路径宣称工具可用，也不能在同一目录启动另一Ninja。
+
+记录器现在接受成对的 `--rocm-path` / `--amd-gpu-arch`，要求设备库和LLD实际
+存在并记录哈希。固定版驱动中，`--emit-rocm -S`只请求GPU MLIR；同时指定
+`--emit-llvm`才进入ROCDL lowering及HSACO序列化路径。两者均不是正确性证明，
+HSACO请求也不代表序列化已经成功。
+
+该入口禁止同时启用`--cuda-lower`，清除两个alternatives相关环境变量，并在
+独占工件目录设置HIP/ROCR/CUDA不可见设备掩码。原因是固定上游的GPU alternatives
+静态选择可能调用HIP设备API；不能笼统地声称编译绝不访问设备。掩码不是安全
+沙箱，报告仅说明未请求设备执行、未独立观测。实际使用前仍需审查输入与输出
+不存在alternatives；不打开`--output-intermediate-gpu`以免污染文本IR。
+目前新增路径仅通过CPU编排测试，完整后端仍在构建，尚无这两阶段的新实测结果。

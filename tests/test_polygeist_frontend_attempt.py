@@ -60,6 +60,59 @@ class PolygeistFrontendAttemptTests(unittest.TestCase):
                            emit_llvm=value)
         self.assertFalse(self.output_base.exists())
 
+    def make_rocm_view(self):
+        view = self.directory / "rocm"
+        for relative in ("amdgcn/bitcode/opencl.bc", "amdgcn/bitcode/ocml.bc",
+                         "amdgcn/bitcode/ockl.bc", "llvm/bin/ld.lld"):
+            path = view / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("mock prerequisite, not executable bitcode")
+        return view
+
+    def test_rocm_stages_bind_paths_and_isolate_working_directory(self):
+        view = self.make_rocm_view()
+        for emit_llvm in (False, True):
+            def invoke(command, timeout, cwd):
+                self.assertIn("--emit-rocm", command)
+                self.assertIn("--amd-gpu-arch=gfx1100", command)
+                self.assertIn(f"--rocm-path={view}", command)
+                self.assertNotIn("--cuda-lower", command)
+                self.assertIn("HIP_VISIBLE_DEVICES=-1", command)
+                self.assertIn("ROCR_VISIBLE_DEVICES=-1", command)
+                self.assertIn("CUDA_VISIBLE_DEVICES=-1", command)
+                self.assertIn("POLYGEIST_GPU_KERNEL_BLOCK_SIZE", command)
+                self.assertIn("POLYGEIST_GPU_ALTERNATIVES_PRINT_INFO", command)
+                self.assertEqual(emit_llvm, "--emit-llvm" in command)
+                self.assertEqual(Path(command[-1]).parent, cwd)
+                Path(command[-1]).write_text("mock IR")
+                return {"status": "completed", "returncode": 0, "command": command}
+            with self.subTest(emit_llvm=emit_llvm), \
+                    patch.object(RUNNER.shutil, "which", return_value=str(self.tool)), \
+                    patch.object(RUNNER, "invoke", side_effect=invoke):
+                _, report = RUNNER.run(self.source, self.tool, self.directory, [],
+                    self.output_base, rocm_path=view, amd_architecture="gfx1100",
+                    emit_llvm=emit_llvm)
+                self.assertEqual(emit_llvm, report["hsaco_serialization_requested"])
+                self.assertEqual(4, len(report["runtime_prerequisites"]))
+                self.assertTrue(report["visibility_mask_is_not_a_sandbox"])
+                self.assertFalse(report["deployable"])
+                self.assertFalse(report["ir_verified"])
+                self.assertEqual("not_requested_not_independently_observed", report["gpu_execution"])
+
+    def test_rocm_unknown_prerequisites_and_unsafe_combinations_reject(self):
+        view = self.make_rocm_view()
+        for kwargs in ({"amd_architecture": "gfx1100"},
+                       {"rocm_path": view},
+                       {"rocm_path": view, "amd_architecture": "auto"},
+                       {"rocm_path": view, "amd_architecture": "gfx1100", "cuda_lower": True}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                RUNNER.run(self.source, self.tool, self.directory, [], self.output_base, **kwargs)
+        (view / "llvm/bin/ld.lld").unlink()
+        with self.assertRaisesRegex(ValueError, "prerequisite missing"):
+            RUNNER.run(self.source, self.tool, self.directory, [], self.output_base,
+                       rocm_path=view, amd_architecture="gfx1100")
+        self.assertFalse(self.output_base.exists())
+
     def test_lowering_request_is_recorded_without_promoting_guarantees(self):
         _, report = self.run_attempt(output="module {}", cuda_lower=True)
         self.assertTrue(report["cuda_lower_requested"])

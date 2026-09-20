@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Record one frontend-only cgeist attempt; emitted IR is not verified IR."""
+"""Record one cgeist IR attempt; emission never implies verified or deployable code."""
 
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 import shutil
 import tempfile
@@ -14,7 +15,19 @@ from wavebridge.frontend import clang_ast
 
 def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
         architecture="sm_70", resource_dir=None, timeout=120.0, cuda_lower=False,
-        emit_llvm=False):
+        emit_llvm=False, rocm_path=None, amd_architecture=None):
+    if rocm_path is None and amd_architecture is not None:
+        raise ValueError("AMD architecture requires an explicit ROCm path")
+    if rocm_path is not None:
+        if cuda_lower is not False:
+            raise ValueError("ROCm attempt forbids cuda_lower and alternatives generation")
+        if not isinstance(amd_architecture, str) or not re.fullmatch(r"gfx[0-9a-f]+", amd_architecture):
+            raise ValueError("ROCm attempt requires an explicit gfx architecture")
+        rocm_path = Path(rocm_path).resolve(strict=True)
+        for relative in ("amdgcn/bitcode/opencl.bc", "amdgcn/bitcode/ocml.bc",
+                         "amdgcn/bitcode/ockl.bc", "llvm/bin/ld.lld"):
+            if not (rocm_path / relative).is_file():
+                raise ValueError(f"ROCm prerequisite missing: {relative}")
     if type(emit_llvm) is not bool:
         raise ValueError("emit_llvm must be a boolean")
     if type(cuda_lower) is not bool:
@@ -58,6 +71,20 @@ def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
         "ir_verified": False, "source_program_checked": False,
         "gpu_execution": "not_run", "deployable": False,
     }
+    if rocm_path is not None:
+        report.update(
+            scope="rocm_compilation_attempt_only",
+            pipeline="cgeist_O0_rocm_llvm" if emit_llvm else "cgeist_O0_rocm_gpu_mlir",
+            gpu_execution="not_requested_not_independently_observed",
+            amd_architecture=amd_architecture, rocm_path=str(rocm_path),
+            alternatives_generation_requested=False,
+            hsaco_serialization_requested=emit_llvm,
+            visibility_mask_is_not_a_sandbox=True,
+            runtime_prerequisites=[
+                {"path": str(rocm_path / relative), "sha256": _sha256(rocm_path / relative)}
+                for relative in ("amdgcn/bitcode/opencl.bc", "amdgcn/bitcode/ocml.bc",
+                                 "amdgcn/bitcode/ockl.bc", "llvm/bin/ld.lld")],
+        )
     executable = shutil.which(str(cgeist))
     if executable is not None:
         executable = Path(executable).resolve()
@@ -70,10 +97,23 @@ def run(source, cgeist, cuda_path, include_dirs, output_base, *, symbol="*",
             command.append("--cuda-lower")
         if emit_llvm:
             command.append("--emit-llvm")
+        if rocm_path is not None:
+            command += ["--emit-rocm", f"--amd-gpu-arch={amd_architecture}",
+                        f"--rocm-path={rocm_path}"]
         if resource_dir is not None:
             command.append(f"--resource-dir={resource_dir}")
         command += ["-o", str(output)]
-        execution = invoke(command, timeout, Path.cwd().resolve())
+        workdir = Path.cwd().resolve()
+        if rocm_path is not None:
+            launcher = shutil.which("env")
+            if launcher is None:
+                raise ValueError("ROCm attempt requires the env launcher")
+            report["launcher"] = {"path": launcher, "sha256": _sha256(Path(launcher))}
+            command = [launcher, "-u", "POLYGEIST_GPU_KERNEL_BLOCK_SIZE", "-u",
+                       "POLYGEIST_GPU_ALTERNATIVES_PRINT_INFO", "HIP_VISIBLE_DEVICES=-1",
+                       "ROCR_VISIBLE_DEVICES=-1", "CUDA_VISIBLE_DEVICES=-1", *command]
+            workdir = directory
+        execution = invoke(command, timeout, workdir)
         report["execution"] = execution
         if output.is_file():
             report["ir"] = {"path": str(output), "sha256": _sha256(output),
@@ -107,13 +147,17 @@ def main():
                         help="request CUDA-to-MLIR lowering, not GPU code generation")
     parser.add_argument("--emit-llvm", action="store_true",
                         help="request textual LLVM IR; does not enable a GPU backend")
+    parser.add_argument("--rocm-path", type=Path,
+                        help="explicit backend view for a ROCm compilation attempt")
+    parser.add_argument("--amd-gpu-arch", dest="amd_architecture")
     parser.add_argument("--output-base", type=Path, default=Path("artifacts"))
     args = parser.parse_args()
     try:
         path, report = run(args.source, args.cgeist, args.cuda_path, args.include_dir,
                            args.output_base, symbol=args.symbol, architecture=args.architecture,
                            resource_dir=args.resource_dir, timeout=args.timeout,
-                           cuda_lower=args.cuda_lower, emit_llvm=args.emit_llvm)
+                           cuda_lower=args.cuda_lower, emit_llvm=args.emit_llvm,
+                           rocm_path=args.rocm_path, amd_architecture=args.amd_architecture)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     print(json.dumps({"status": report["status"], "report": str(path)}))
