@@ -41,6 +41,33 @@ def root_with(loop_node, extra=None, function_id="fn"):
 
 
 class ColumnLoopTests(unittest.TestCase):
+    def test_missing_alias_type_evidence_never_means_value_storage(self):
+        for info in ({"qualType": "Ref", "typeAliasDeclId": "alias"},
+                     {"qualType": "Ref"}, {"qualType": "Ref", "desugaredQualType": "Other"}, {}):
+            declaration = {"kind": "VarDecl", "id": "alias", "type": info,
+                           "init": "c", "inner": [ref("i")]}
+            body = {"kind": "CompoundStmt", "inner": [declaration]}
+            self.assertEqual("unknown", recover(root_with(loop(body=body)), "fn", 32)["status"])
+            target = ref("alias")
+            target["referencedDecl"]["type"] = info
+            body["inner"] = [typed("CompoundAssignOperator", opcode="+=", inner=[target, literal(1)])]
+            self.assertEqual("unknown", recover(root_with(loop(body=body)), "fn", 32)["status"])
+
+    def test_reference_storage_uses_declaration_not_expression_type(self):
+        target = ref("alias")  # expression is int, declaration is a reference alias
+        target["referencedDecl"]["type"] = {"qualType": "Ref", "desugaredQualType": "int &"}
+        for update in (typed("CompoundAssignOperator", opcode="+=", inner=[target, literal(1)]),
+                       typed("UnaryOperator", opcode="++", inner=[target])):
+            body = {"kind": "CompoundStmt", "inner": [update]}
+            self.assertEqual("unknown", recover(root_with(loop(body=body)), "fn", 32)["status"])
+
+    def test_nonautomatic_induction_storage_is_unknown(self):
+        for field, value in (("storageClass", "static"), ("storageClass", "extern"), ("tls", "dynamic")):
+            candidate = loop()
+            candidate["inner"][0]["inner"][0][field] = value
+            report = recover(root_with(candidate), "fn", 32)
+            self.assertEqual("induction_storage_not_automatic", report["loops"][0]["reason"])
+
     def test_complex_storage_targets_and_opaque_effects_fail_closed(self):
         for identifier in ("i", "limit", "seed"):
             for kind in ("CXXStaticCastExpr", "CStyleCastExpr"):

@@ -192,6 +192,11 @@ checker。外部`thread-start-assumptions/v1`绑定root hash、kernel、选定la
 目标和未支持节点（包括汇编）返回unknown。数组写入仍依赖不与受保护标量
 别名的显式前提；这不是任意C++别名分析，也不证明循环体内存访问有效。
 
+声明类型的引用性质取自可信Clang声明的desugaredQualType，缺少别名展开证据
+不得按值存储放行；同一分类用于引用绑定及写入目标。仅支持自动存储期的
+induction，static/thread_local返回unknown。普通值类型别名不等于引用，
+但循环头类型别名的支持范围不随此修复扩大。
+
 `column-coverage-interval/v1`在固定starts/stride与signed递推语义下，将上界的
 索引覆盖和末增量安全性推广到整个闭区间，保留完整upper_check及域内拒绝反例。
 `conditional-column-domain-check/v1`将同AST线程证据与新恢复的launch列数实参、

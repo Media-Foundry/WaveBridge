@@ -80,6 +80,36 @@ def _contains_ref(node: dict[str, Any], declaration_ids: set[str]) -> bool:
     return False
 
 
+def _declaration_is_reference(declaration: dict[str, Any]) -> bool:
+    """Classify declaration types, never the value type of a DeclRefExpr.
+
+    This is intentionally separate from header type matching. Unknown aliases
+    cannot establish that storage is an independent scalar.
+    """
+    info = declaration.get("type")
+    if not isinstance(info, dict):
+        raise _Unknown("declaration_type_unresolved", declaration.get("range"))
+    spelling = info.get("desugaredQualType")
+    if not isinstance(spelling, str) or not spelling.strip():
+        if info.get("typeAliasDeclId") is not None:
+            raise _Unknown("declaration_alias_type_unresolved", declaration.get("range"))
+        spelling = info.get("qualType")
+    if not isinstance(spelling, str) or not spelling.strip():
+        raise _Unknown("declaration_type_unresolved", declaration.get("range"))
+    if "&" in spelling:
+        return True
+    # Restrict non-reference declarations to built-in scalar/pointer/array
+    # spellings. A remaining typedef name (including partially desugared names)
+    # must not be assumed to denote value storage.
+    words = spelling.replace("*", " ").replace("[", " ").replace("]", " ").split()
+    builtins = {"const", "volatile", "restrict", "__restrict", "__restrict__",
+                "signed", "unsigned", "short", "long", "int", "float", "double",
+                "char", "bool", "void", "wchar_t", "char8_t", "char16_t", "char32_t"}
+    if not words or any(word not in builtins and not word.isdecimal() for word in words):
+        raise _Unknown("declaration_type_unresolved", declaration.get("range"))
+    return False
+
+
 def _storage_target(node: dict[str, Any], protected_ids: set[str]) -> None:
     """Accept only direct scalar storage or a simple array element, never guess aliases."""
     current = node
@@ -92,9 +122,9 @@ def _storage_target(node: dict[str, Any], protected_ids: set[str]) -> None:
         referenced = current.get("referencedDecl", {})
         if referenced.get("id") in protected_ids:
             raise _Unknown("protected_variable_may_be_modified", current.get("range"))
-        spelling = referenced.get("type", {}).get("qualType", "")
         if (not isinstance(referenced.get("id"), str) or
-                referenced.get("kind") not in {"VarDecl", "ParmVarDecl"} or "&" in spelling):
+                referenced.get("kind") not in {"VarDecl", "ParmVarDecl"} or
+                _declaration_is_reference(referenced)):
             raise _Unknown("unsupported_storage_target", current.get("range"))
         return
     if current.get("kind") == "ArraySubscriptExpr":
@@ -142,7 +172,7 @@ def _check_body(body: dict[str, Any], protected_ids: set[str]) -> None:
                 if len(children) != 1:
                     raise _Unknown("unsupported_storage_target", node.get("range"))
                 _storage_target(children[0], protected_ids)
-        if kind == "VarDecl" and "&" in (_type(node) or ""):
+        if kind == "VarDecl" and _declaration_is_reference(node):
             if any(_contains_ref(child, protected_ids) for child in _children(node)):
                 raise _Unknown("protected_variable_reference_alias", node.get("range"))
         if kind in {"BinaryOperator", "CompoundAssignOperator"}:
@@ -183,6 +213,9 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> 
         if len(variables) != 1 or not _signed_int(variables[0]):
             raise _Unknown("initializer_not_single_signed_int", init.get("range"))
         induction = variables[0]
+        if (induction.get("storageClass") not in (None, "auto", "register") or
+                induction.get("tls") is not None or induction.get("thread_local") is not None):
+            raise _Unknown("induction_storage_not_automatic", induction.get("range"))
         induction_id = induction.get("id")
         if not isinstance(induction_id, str):
             raise _Unknown("induction_id_missing", induction.get("range"))

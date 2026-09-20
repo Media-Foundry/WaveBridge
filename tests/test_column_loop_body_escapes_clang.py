@@ -53,7 +53,23 @@ class ColumnLoopBodyEscapesClangTests(unittest.TestCase):
                 self.assertEqual(report["status"], "unknown", report)
                 self.assertEqual(report["loops"][0]["status"], "unknown", report)
 
-    def test_cpu_witness_static_cast_variant_writes_only_512_of_768_columns(self):
+    def test_only_automatic_induction_storage_is_supported(self):
+        self.assertEqual(self.recovery("ordinary_index")["status"], "recovered")
+        for name in ("static_induction", "thread_local_induction"):
+            with self.subTest(name=name):
+                report = self.recovery(name)
+                self.assertEqual(report["status"], "unknown", report)
+                self.assertEqual(report["loops"][0]["status"], "unknown", report)
+
+    def test_real_cpp_type_aliases_are_unknown_but_value_alias_is_supported(self):
+        for name in ("using_ref_alias", "typedef_ref_alias", "nested_ref_alias"):
+            with self.subTest(name=name):
+                report = self.recovery(name)
+                self.assertEqual(report["status"], "unknown", report)
+                self.assertEqual(report["loops"][0]["status"], "unknown", report)
+        self.assertEqual(self.recovery("value_alias")["status"], "recovered")
+
+    def test_cpu_witness_cast_and_static_storage_break_expected_coverage(self):
         with tempfile.TemporaryDirectory() as temporary:
             executable = Path(temporary) / "column-body-escape"
             compiled = subprocess.run(

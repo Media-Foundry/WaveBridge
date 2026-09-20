@@ -6,9 +6,10 @@ from wavebridge.analysis.local_contribution import recover
 R = {"begin": {"offset": 1}, "end": {"offset": 2}}
 
 
-def ref(identifier, kind="VarDecl"):
+def ref(identifier, kind="VarDecl", declared_type="int"):
     return {"kind": "DeclRefExpr", "range": R, "type": {"qualType": "int"},
-            "referencedDecl": {"id": identifier, "kind": kind}}
+            "referencedDecl": {"id": identifier, "kind": kind,
+                               "type": {"qualType": declared_type}}}
 
 
 def lit_int(value):
@@ -34,7 +35,8 @@ def fixture(product_right="v", zero="0.0", index="col", extra_loop_statement=Non
     load = {"kind": "ArraySubscriptExpr", "inner": [ref("input", "ParmVarDecl"), ref(index)]}
     value = {"kind": "DeclStmt", "inner": [var("v", "const float", load)]}
     product = {"kind": "BinaryOperator", "opcode": "*", "inner": [ref("v"), ref(product_right)]}
-    update = {"kind": "CompoundAssignOperator", "opcode": "+=", "inner": [ref("sum"), product]}
+    update = {"kind": "CompoundAssignOperator", "opcode": "+=",
+              "inner": [ref("sum", declared_type="float"), product]}
     loop_body = {"kind": "CompoundStmt", "inner": [value, update] + ([extra_loop_statement] if extra_loop_statement else [])}
     loop = {"kind": "ForStmt", "range": R, "inner": [init, {}, condition, increment, loop_body]}
     shared = {"kind": "DeclStmt", "inner": [var("shared", "float[8]")]}

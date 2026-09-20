@@ -2,6 +2,20 @@
 
 更新日期：2026-09-21。
 
+## 引用类型别名与induction存储期修复
+
+在fe844b0同一真实Clang AST上重放，确认using/typedef/嵌套引用别名仍错误
+recovered。现以共享声明类型分类修复引用初始化及写入目标：优先解糖类型，
+缺失/未展开证据unknown，不依赖DeclRefExpr值类型，也不扩大循环头类型支持。
+induction仅支持自动存储期，static/thread_local拒绝。457项CPU测试通过，含
+真实C++与CUDA组合负例、真正using Value=int与只读cast正例；CPU witness确认
+三类别名引用512/768、值别名768/768、static与thread_local各3/768。
+原HIP AST两个循环仍recovered，最终工件在
+`artifacts/wb03-alias-fix-3zAPau/final/report.json`，实现hash前后一致。
+另通过GitHub API核实fe844b0的run35522009044三个job均success；不是本次修复的CI结果。
+未运行GPU，WB-03仍未完整验收。详见
+`.agents/handoffs/wb03-declaration-alias-fix-20260921.md`。
+
 ## WB-03 验收状态与P1修复
 
 WB-03是受限源码分析MVP，部分WB-04条件检查已接通；不是完整研究验收通过。

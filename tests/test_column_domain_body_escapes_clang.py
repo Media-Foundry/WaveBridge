@@ -101,6 +101,27 @@ class ColumnDomainBodyEscapesClangTests(unittest.TestCase):
                 self.assertEqual(result["status"], "unknown", result)
                 self.assertEqual(result["reason"], "column_recovery_incomplete")
 
+    def test_real_composition_rejects_reference_aliases_but_accepts_value_copy(self):
+        aliases = (
+            ("using_ref_columns", "launch_using_ref"),
+            ("typedef_ref_columns", "launch_typedef_ref"),
+            ("nested_ref_columns", "launch_nested_ref"),
+        )
+        for kernel, launcher in aliases:
+            with self.subTest(kernel=kernel):
+                result = self.run_composition(kernel, launcher)
+                self.assertEqual(result["status"], "unknown", result)
+                self.assertEqual(result["reason"], "column_recovery_incomplete")
+        value_copy = self.run_composition("value_alias_columns", "launch_value_alias")
+        self.assertEqual(value_copy["status"], "checked", value_copy)
+        casts = [node for node in _walk(self.functions["static_cast_value_columns"])
+                 if node.get("kind") == "CXXStaticCastExpr"]
+        self.assertEqual(len(casts), 1, casts)
+        self.assertEqual(casts[0].get("type", {}).get("qualType"), "int")
+        cast_copy = self.run_composition("static_cast_value_columns",
+                                         "launch_static_cast_value")
+        self.assertEqual(cast_copy["status"], "checked", cast_copy)
+
 
 if __name__ == "__main__":
     unittest.main()
