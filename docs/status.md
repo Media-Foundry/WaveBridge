@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新实测：固定前端遗漏动态共享内存 launch 参数
+
+仅将真实host adapter的动态共享请求由128改为256字节，使用同一固定cgeist
+及头环境重跑，输出与原IR逐字节一致。CGCall.cc两条CUDA launch构造路径
+均传dynamic shmem=nullptr；原输出也没有该operand。这是固定版本/路径上的
+信息遗漏，不是跨线程分析创新或完整工具不支持的结论。没有执行GPU。
+后端构建仍继续；详细证据见
+`.agents/handoffs/polygeist-launch-bytes-20260920.md`。
+
 ## 最新门控：ROCm 编译阶段与设备副作用分开记录
 
 共同案例记录器新增显式ROCm路径和AMD目标，绑定三份设备库及LLD哈希。
