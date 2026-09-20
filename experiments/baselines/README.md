@@ -158,3 +158,9 @@ constructor，运行前必须由外部核对设备、工件、wave库配置与�
 双目标静态复测已得到 gfx1100 wave32/常量0、gfx90a wave64/常量1；原 host harness
 仍绑定旧工件，不能直接运行。尚无GPU数值验收；详见
 [波宽补丁记录](../../.agents/handoffs/polygeist-wave-patch-20260920.md)。
+
+设备执行后发现O0数值失败，分阶段诊断中局部累加已经错误。相同人工输入改为
+O1后通过本机W7900的9个确定性形状；记录见
+[O1数值验收](../../.agents/handoffs/polygeist-o1-numeric-20260920.md)。
+当前通用 `polygeist_frontend.py` 仍固定O0，本次O1是保留完整命令的独立诊断，
+不要使用旧入口报告或旧harness冒充O1结果。下一步应将优化级别纳入正式记录器。

@@ -1,5 +1,11 @@
 # RMSNorm 共同案例：先前工作核查
 
+后续对照已改变状态：同一人工适配输入与patched Polygeist使用O1后，在本机
+W7900通过原9个确定性形状，冻结容差未变。O0局部累加即错误，不能再把其NaN
+笼统解释为collective不受支持。详细改写成本和边界见
+[O1数值记录](../.agents/handoffs/polygeist-o1-numeric-20260920.md)。
+这使强基线更完整，但不证明其能自动完成native64适配，也不建立我们的研究差异。
+
 最新实测补充：带显式兼容补丁和人工static-shared/OCML/OCKL改写的固定Polygeist
 路径已在本机W7900执行。首个3×1输入的三个输出均为NaN，数值验收未通过；
 只输出归约total的诊断副本也出现NaN。原因尚未定位，不把此本地适配失败直接
