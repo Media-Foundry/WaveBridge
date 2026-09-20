@@ -120,3 +120,8 @@ ocml.bc，不能未经门控接入完整ROCm构建。见
 实际构建、typed-pointer验证与联合链接已通过，见
 [设备库记录](../../.agents/handoffs/polygeist-device-libs-20260920.md)。
 这些库仍需完整后端/目标机器码/实际数值验收，不能凭IR verifier通过宣称GPU正确。
+
+已用独立patched source及独立build启动完整ROCm后端构建，不修改前端缓存。
+该构建使用自定义hip::host映射，不是vendor HIP package或论文原环境，
+实际配置和恢复路径见 [构建交接](../../.agents/handoffs/polygeist-rocm-build-start-20260920.md)。
+构建完成前不能使用预期生成路径宣称工具可用，也不能在同一目录启动另一Ninja。

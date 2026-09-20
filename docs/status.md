@@ -2,6 +2,15 @@
 
 更新日期：2026-09-20。
 
+## 最新推进：独立 ROCm 后端已开始真实构建
+
+独立patched Polygeist worktree仅应用已记录的wrapper头兼容和字段断言补丁，
+配置host/AMDGPU、Clang/LLD/MLIR及ROCm后端成功。使用项目自定义HIP target
+映射和已验证LLVM16设备库；原前端构建/源码不改。实际3895任务构建已启动，
+会话29377，尚未完成，不宣称cgeist ROCm可用。首个配置因主代理误写host
+编译器路径失败，保留于build-01；成功目录为polygeist-rocm-build-02。
+具体路径、命令和继续方式见 `.agents/handoffs/polygeist-rocm-build-start-20260920.md`。
+
 ## 最新门控：LLVM16 设备库可读性已建立
 
 固定ROCm Device Libs 5.3.3提交cc06f706，在隔离副本仅将prepare-builtins的
