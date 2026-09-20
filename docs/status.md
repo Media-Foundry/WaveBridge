@@ -2,6 +2,16 @@
 
 更新日期：2026-09-20。
 
+## 最新设备验收：人工 Polygeist 基线首例出现 NaN，未放行
+
+用户确认继续使用本机 W7900 后，按 run-experiment 流程确认 PCI 0000:53:00.0
+空闲并重链 wave 修正后的 gfx1100 工件。首个3行×1列案例正常执行返回0，但三个
+输出均为NaN，冻结数值协议拒绝；立即停止其余形状，不改容差、不测性能。
+独立诊断副本仅把输出改成归约 total，同样得到NaN；根因仍待定位，不能仅归因
+于rsqrt或据此断言上游方法不支持该模式。此路径含人工API/存储改写和本地编译器
+补丁，不是WaveBridge自动候选。原手写HIP基线的通过记录不变。
+见 `.agents/handoffs/polygeist-first-numeric-failure-20260920.md`。
+
 ## 最新静态验收：设备库波宽与两个目标的 metadata 一致
 
 新增 `rocm-device-wave.patch`，在优化前从实际函数 subtarget 选择设备库波宽

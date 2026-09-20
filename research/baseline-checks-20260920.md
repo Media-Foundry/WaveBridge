@@ -1,5 +1,11 @@
 # RMSNorm 共同案例：先前工作核查
 
+最新实测补充：带显式兼容补丁和人工static-shared/OCML/OCKL改写的固定Polygeist
+路径已在本机W7900执行。首个3×1输入的三个输出均为NaN，数值验收未通过；
+只输出归约total的诊断副本也出现NaN。原因尚未定位，不把此本地适配失败直接
+解释为原论文方法的能力不足，更不据此认定G1通过。详见
+[首次数值失败记录](../.agents/handoffs/polygeist-first-numeric-failure-20260920.md)。
+
 核查日期：2026-09-20；本仓基线 `bb575ef`。使用 research-lit 工作流做定向
 检索，无本地论文库或可用 Zotero/Obsidian；arXiv 脚本缺失，改用站点限定检索，
 未找到这两项工作的额外匹配预印本入口。未保存论文副本或下载完整 benchmark 包。
