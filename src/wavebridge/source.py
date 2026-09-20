@@ -9,6 +9,7 @@ from pathlib import Path
 from wavebridge.frontend.clang_ast import collect, _sha256
 from wavebridge.analysis.column_loops import recover
 from wavebridge.analysis.initializer_evidence import inspect as inspect_initializer
+from wavebridge.analysis.reduction_discovery import discover
 
 
 def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=30.0):
@@ -31,7 +32,8 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
             name: _sha256(Path(__file__).parent / name) for name in (
                 "source.py", "frontend/clang_ast.py", "analysis/column_loops.py",
                 "analysis/integer_constants.py", "analysis/initializer_evidence.py",
-                "analysis/return_trace.py")
+                "analysis/return_trace.py", "analysis/reduction_discovery.py",
+                "analysis/block_reduction.py", "analysis/xor_reduction.py")
         },
     }
     locations = frontend["function_locations"]
@@ -49,6 +51,9 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
             if declaration_id and declaration_id not in origins:
                 origins[declaration_id] = inspect_initializer(frontend["ast_roots"][0], declaration_id)
         report["start_initializer_evidence"] = origins
+        # Reachable structural candidates do not discharge intrinsic or coordinate assumptions.
+        report["reduction_discovery"] = discover(
+            frontend["ast_roots"][0], locations[0]["id"], int_bits)
         report["status"] = "analyzed"
         report["reason"] = None
     with (directory / "report.json").open("x", encoding="utf-8") as stream:

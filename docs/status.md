@@ -159,4 +159,14 @@ WB-03/04 继续接入共享 partial：真实 HIP 基线的 block helper 已恢�
 完整源码仍 `source_program_checked=false`，没有新 GPU 运行、浮点等价或自动候选。
 工件仅保存在本地，不等于已发布复现包。
 
+WB-03 源码入口已接入按精确直接调用发现归约候选，不再要求手填 helper、
+shuffle、barrier 的 AST ID。最终真实 HIP 重跑工件为
+`artifacts/wb03-source-reductions-02/{ast,report}.json`：遍历 9 个有定义的函数，
+3 次结构尝试，发现一个 block256/width32 共享归约及一个 width32 XOR helper，
+offsets 为 `[16,8,4,2,1]`。保留 23 条未解析调用诊断，预算未耗尽但
+`analysis_complete=false`；不自动把候选结构检查升级为源码正确性结论。
+AST 与全部实现文件哈希复核一致；`make check` 158 项通过。真实 Clang 测试
+确认不可达相似 helper 不纳入候选；局部 callable、间接/特殊调用及预算边界
+有独立回归。首轮 `wb03-source-reductions-01` 与编辑并发，保留但不作最终证据。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

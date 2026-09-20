@@ -108,3 +108,14 @@ Clang ID仅对指定AST工件/root有效。`source_program_checked=false` 始终
 外部选择reduce/barrier ID不赋予它们语义。group和lane的坐标AST分别保留，
 不能因表达式名字相似认定其值相等；坐标与整数转换范围是独立未证明前提。
 独立 `verification.block_routes.check` 检查条件模型贡献计数，不为源码签发保证。
+
+## 入口可达的归约候选发现
+
+源码入口同时输出 `reduction_discovery`：从唯一入口沿直接调用的精确声明 ID
+寻找可达 helper，再尝试上述受限结构恢复。不按函数名识别算子，不要求用户
+填写 helper、shuffle 或 barrier ID，不把不可达的相似函数计入候选。
+
+这只是调用与结构候选发现，不是 intrinsic 语义识别或完整调用图证明。间接、
+特殊调用、缺少定义和预算耗尽必须保留诊断；发现部分候选不能掩盖未遍历部分。
+候选中的外部语义、坐标、转换及收敛义务不自动解除，源码入口也不自动将其
+提交给条件路由 checker 后签发“源码通过”。旧的显式 ID 接口仍可用于诊断。
