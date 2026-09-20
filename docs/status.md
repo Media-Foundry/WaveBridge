@@ -209,4 +209,14 @@ AST及实现哈希核对一致；`make check`181项通过。错误列/步长/输
 不对应、额外写入、嵌套scale调用和尾随语句均有拒绝回归。前缀行基址、launch、
 alias、外部接口及浮点关系仍未证明，无新GPU执行或部署候选。
 
+WB-03 已接入严格行偏移前缀：真实 HIP 工件
+`artifacts/wb03-source-prefix-launch-01/{ast,report}.json` 中输入/输出指针更新
+引用同一row/count，完整offset外层及row/count转换链对应，记录10处转换。
+列起点与前缀start声明关联，row/start各保留一条getter调用证据；不把getter
+结果自动解释为block/thread坐标，也不从long类型拼写断言整数位宽。
+`launch_facts` 同时记录同root精确kernel引用的一个launch，保存4个配置实参
+及4个kernel实参AST；dim3值、host可达性和kernel/launch数值一致性未验证。
+`make check`190项通过；单侧offset外层窄化、错误row/count/target、间接launch
+及不完整配置均有拒绝/未知回归。AST和实现哈希核对一致，无新GPU执行或适配候选。
+
 以首例明确源码恢复的最小支持子集：XOR shuffle、共享内存归约与广播、规则列遍历；先建立源码位置到关系的对应，不扩通用 IR 或调优平台。Polygeist/CKTI 对同一案例的能力仍待核实；尚不能宣布 G1 通过。MI250 接入、WB-03 完整关系恢复与 WB-04～08 仍待实施。

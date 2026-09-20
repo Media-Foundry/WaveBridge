@@ -152,3 +152,15 @@ float 累加器与列循环，恢复 `const float v=input[i]; acc += v*v`，并�
 external 的函数 ID 和转换证据会被保留，但不会根据名字认定它是 rsqrt。
 整行基址、launch、alias、外部接口和浮点数值关系尚需另外建立；该后缀恢复
 不签发可部署工件，也不声称完整 RMSNorm 正确性。
+
+## 行偏移前缀与 launch 结构
+
+`row_prefix.recover` 核对严格四语句前缀：row/start声明，以及输入、输出参数
+分别加上同一 `cast(row)*count`。两侧声明引用、乘积类型及完整转换结构需要
+对应；不根据 `long` 拼写认定位宽。初始化表达式与getter调用证据原样保留，
+行/线程坐标含义、指针范围及转换安全性仍未建立。
+
+`launch_facts.inspect(root, kernel_id)` 收集同AST root中精确引用目标kernel的
+`CUDAKernelCallExpr`，保存配置调用的四个实参和kernel实参AST。它不求dim3
+构造结果、不检查host可达性、不验证launch是否与kernel的分工一致；间接目标
+与不支持配置形状保留unknown。源码入口将二者作为独立证据字段输出。
