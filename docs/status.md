@@ -2,6 +2,21 @@
 
 更新日期：2026-09-22。
 
+## 完整 vLLM TU 声明绑定与 unsigned 条件递推
+
+固定 c1cafce 恢复实现，用原样 vLLM TU、旧 include/工具链及环境宏重采集完整
+device AST，不拼接编译实例。5456 个依赖已观察；三种具体实例的六个循环均能
+观察 coordinate header，消除了旧过滤 AST 缺 getter 声明的障碍。父循环仍
+unknown，launch/坐标/ABI/body 未建立；不是新 holdout 成功。约5.3GiB AST 本地
+保留，索引见 `benchmarks/intake/vllm-rmsnorm-development-full.json`。
+
+现有 column_coverage 新增独立 unsigned compound 条件检查：显式同位宽
+int/unsigned int、起点0..B-1和步长B下，检查初值、加法、赋回和末次增量，再复用
+覆盖算法。超范围保持unknown；未接源码组合门控，不升级上述vLLM循环状态。
+491项CPU测试及demo通过，含小位宽逐步模拟对照；无GPU执行。下一步将同TU
+精确getter/receiver、实际launch和ABI连接到该检查，不能由header观察自签通过。
+见 `.agents/handoffs/wb04-unsigned-columns-20260922.md`。
+
 ## 直接坐标 header 观察与下游拒绝回归
 
 column_loops 保留完整起点/增量 AST，新增受限 coordinate_header_observation：

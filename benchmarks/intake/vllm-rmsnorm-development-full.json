@@ -1,0 +1,40 @@
+{
+  "schema_version": "source-intake-observation/v1",
+  "case_id": "vllm-rmsnorm-v066",
+  "date": "2026-09-22",
+  "evaluation_role": "development_followup_not_new_holdout",
+  "analyzer_revision": "c1cafce6fd42988ad3f8557d80fdf891d0b7a6b4",
+  "source_modified": false,
+  "source_sha256": "57d5d4e2912e0661d57a0eab4a837ea7a8cab794b7e4cf10b7d5f42dd31ef2d8",
+  "compilation_view": "full_original_vllm_TU_cuda_device_only_sm80_with_recorded_environment_adaptations",
+  "environment": "same explicit include paths, isolated torch251 headers and C10_CUDA_NO_CMAKE_CONFIGURE_FILE as frozen attempt-06; no source edits or new downloads",
+  "runner": "artifacts/wb03-vllm-full-ERL83Q/collect.py",
+  "command": "PYTHONPATH=src python3 artifacts/wb03-vllm-full-ERL83Q/collect.py",
+  "runner_behavior": "assert prior artifact/source hashes; reuse prior compiler arguments without AST filter; require same-invocation cc1 dependencies; request separate driver trace; analyze all three concrete named instantiations in one AST root",
+  "report": "artifacts/wb03-vllm-full-ERL83Q/report.json",
+  "report_sha256": "36e16c587339aeb3e3311ae4fa37d83368fb4a4cd8042aec0b341502d85046b7",
+  "ast_report_sha256": "5b612a12a1955a3db65467d16fb69c9df7501f29d828403cae0a38b8995afa4f",
+  "frontend_status": "collected",
+  "dependency_status": "observed",
+  "dependency_files": 5456,
+  "toolchain_trace_status": "observed",
+  "implementation_hashes_stable": true,
+  "counts": {
+    "concrete_instantiations": 3,
+    "concrete_loops": 6,
+    "coordinate_headers_observed": 6,
+    "recovered_loops": 0
+  },
+  "analysis_status": "unknown",
+  "source_program_checked": false,
+  "deployable": false,
+  "gpu_executed": false,
+  "scope_limits": [
+    "full declaration visibility permits getter binding but does not establish CUDA coordinate semantics",
+    "launch dimension, ABI, induction/body preservation and compound conversion composition remain unproved",
+    "new conditional unsigned recurrence checker is not yet connected to this source",
+    "no source-to-source candidate, numerical test, performance evidence or independent holdout success",
+    "raw AST is approximately 5.3 GiB and local-only; index is not a full reproduction bundle",
+    "original frozen holdout refusal remains recorded separately and is not overwritten"
+  ]
+}

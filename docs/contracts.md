@@ -101,6 +101,20 @@ checked以外部声明的值域与类型信息为前提，不自行从类型名�
 不检查表达式求值、浮点转换、指针或完整源程序。编译器预定义宏记录与实际
 源码/目标配置的绑定仍需单独核对，不能以一次空TU宏探测替代全部前提。
 
+### 条件 unsigned compound 列递推
+
+`verification.column_coverage.check_unsigned_compound_interval` 只处理外部给定的
+相同位宽 signed/unsigned int、固定正 block 宽度 B、起点 `0..B-1`、步长 B 和
+非负 signed 列数区间。它必须检查 unsigned 起点到 int、int 到 unsigned 的
+转换、unsigned 加法及赋回 int 的值保持，包括最后一次有效迭代后的增量。
+只有这些条件成立，才能将机器递推对应到既有无溢出的列覆盖模型；不是断言
+源程序实际执行 signed 加法。超出支持位宽/范围或可能发生 wrap/赋回改变保持
+unknown，不依据语言版本猜测超范围 signed 转换结果。
+
+检查不验证 AST、getter、launch 或循环体，不从 `blockDim.x` 名字推断 B。
+checked 只描述该条件递推及覆盖模型，不能据此将源码 unknown 升为 recovered，
+也不能作为候选部署许可。实际源码表达式与这些外部参数的连接需另行检查。
+
 ## host 守卫区间：`launch-guards/v1`
 
 受限 AST 分析输出 `intervals`、`guards` 与 `skipped_guards`，按精确声明 ID
