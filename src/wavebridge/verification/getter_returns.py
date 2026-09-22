@@ -202,8 +202,10 @@ def check(root: object, start_declaration_id: object, leaf_contract: object,
                 if not parts:
                     raise _Unknown("callee_missing")
                 callee = parts[0]
+                callee_cast_kind = None
                 if callee.get("kind") == "ImplicitCastExpr":
-                    if (callee.get("castKind") != "FunctionToPointerDecay" or
+                    callee_cast_kind = callee.get("castKind")
+                    if (callee_cast_kind not in {"FunctionToPointerDecay", "BuiltinFnToFnPtr"} or
                             len(_children(callee)) != 1):
                         raise _Unknown("unsupported_callee_cast")
                     callee = _children(callee)[0]
@@ -216,8 +218,32 @@ def check(root: object, start_declaration_id: object, leaf_contract: object,
                 target = unique(target_id)
                 if target.get("kind") != "FunctionDecl":
                     raise _Unknown("callee_declaration_kind_mismatch")
+                if callee_cast_kind == "BuiltinFnToFnPtr":
+                    # Clang uses this representation only for a builtin at the
+                    # direct call site. Keep this deliberately narrower than
+                    # ordinary function decay: the real coordinate leaves are
+                    # zero-argument functions with one of these exact forms.
+                    target_type = target.get("type")
+                    referenced_type = ref.get("type")
+                    signature = target_type.get("qualType") if isinstance(target_type, dict) else None
+                    if signature == f"{leaf_type[0]} ()":
+                        pointer_signature = f"{leaf_type[0]} (*)()"
+                    elif signature == f"{leaf_type[0]} () noexcept":
+                        pointer_signature = f"{leaf_type[0]} (*)() noexcept"
+                    else:
+                        raise _Unknown("builtin_leaf_signature_unsupported")
+                    if (target_id != leaf_id or expected_args != [] or parts[1:] or
+                            parts[0].get("valueCategory") != "prvalue" or
+                            callee.get("type") != {"qualType": "<builtin fn type>"} or
+                            callee.get("valueCategory") != "prvalue" or
+                            referenced_type != target_type or
+                            parts[0].get("type") != {"qualType": pointer_signature} or
+                            not any(child.get("kind") == "BuiltinAttr"
+                                    for child in _children(target))):
+                        raise _Unknown("builtin_leaf_evidence_mismatch")
                 result["call_edges"].append({"caller": declaration_id, "callee": target_id,
-                                             "range": expr.get("range")})
+                                             "range": expr.get("range"),
+                                             "cast_kind": callee_cast_kind})
                 if target_id == leaf_id:
                     target_children = _children(target)
                     parameters = [c for c in target_children if c.get("kind") == "ParmVarDecl"]

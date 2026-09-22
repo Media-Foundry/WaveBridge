@@ -178,6 +178,16 @@ receiver上下文有效性、外部函数/轴语义和launch域须另行建立�
 不支持则unknown。checked仅描述该条件值保持性质，不能扩展为外部函数实现、
 线程坐标语义、真实launch或整核等价的保证。详见 `compiler/verification/README.md`。
 
+对 `BuiltinFnToFnPtr` 仅支持直接 `CallExpr` callee 位置的零参外部叶：
+单个 prvalue `<builtin fn type>` DeclRefExpr 精确指向唯一 FunctionDecl，
+必须与叶协议 ID 相同，带 BuiltinAttr，声明/ref/cast 的零参整数函数签名一致
+（`R ()` 或 `R () noexcept` 对应指针类型）。其它 callee、嵌套求值、指针
+间接调用及有参 builtin 仍 unknown；普通函数的既有 literal 实参支持不变。
+BuiltinAttr 只核对 AST 表示，不证明该叶无写或其坐标含义。返回值转换仍须
+通过值域检查，无写结论仍要求单独 effect 协议。此转换的调用位置约束依据
+[LLVM 17 定义](https://github.com/llvm/llvm-project/blob/llvmorg-17.0.6/clang/include/clang/AST/OperationKinds.def#L320-L322)，
+并以真实 CUDA device-only AST 回归；不把源码 builtin 身份升级为机器码保证。
+
 ## 条件线程起点组合
 
 `initializer-domain-check/v1`检查可信value_link及getter证据的ID/ABI/类型连接，

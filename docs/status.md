@@ -2,6 +2,18 @@
 
 更新日期：2026-09-22。
 
+## 精确 builtin callee 支持与完整 TU 条件检查
+
+getter_returns 已支持直接调用位置的零参 BuiltinFnToFnPtr：核对唯一外部叶ID、
+BuiltinAttr、prvalue形状及精确函数/指针签名，不按名字赋予语义。返回域转换、
+无写和正常返回协议仍独立要求。509项CPU测试、49项Clang专项及demo通过。
+
+固定完整vLLM TU、400万预算、原显式非负int域和ABI/effect协议下，blockIdx.x
+getter现在得到条件checked；检查实现前后hash一致。仅解除该wrapper的值保持/
+条件无写义务，不包括receiver求值、实际launch域、循环体或整核，原vLLM整体
+仍unknown。未运行GPU，未新增holdout成功。原始报告及边界见
+`.agents/handoffs/wb04-builtin-callee-20260922.md`。
+
 ## 完整 TU getter 预算与下一处拒绝
 
 固定 vLLM 完整 AST 实测 3,705,324 个节点，目标 getter/leaf 各唯一，超过默认

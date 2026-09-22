@@ -78,7 +78,90 @@ def fixture(*, upper=255, start_type="unsigned int", leaf_argument=0):
     return root, contract
 
 
+def builtin_fixture():
+    root, contract = fixture()
+    leaf = root["inner"][-1]
+    leaf["inner"] = [{"kind": "BuiltinAttr", "isImplicit": True}]
+    leaf["type"] = {"qualType": "unsigned long ()"}
+    contract["arguments"] = []
+    call_expression = root["inner"][1]["inner"][-1]["inner"][0]["inner"][0]["inner"][0]
+    call_expression["inner"] = call_expression["inner"][:1]
+    cast = call_expression["inner"][0]
+    reference = cast["inner"][0]
+    cast.update(castKind="BuiltinFnToFnPtr",
+                type={"qualType": "unsigned long (*)()"}, valueCategory="prvalue")
+    reference.update(type={"qualType": "<builtin fn type>"}, valueCategory="prvalue")
+    reference["referencedDecl"]["type"] = copy.deepcopy(leaf["type"])
+    return root, contract
+
+
+def builtin_cast(root):
+    return root["inner"][1]["inner"][-1]["inner"][0]["inner"][0]["inner"][0]["inner"][0]
+
+
 class GetterReturnsTests(unittest.TestCase):
+    def test_exact_zero_argument_builtin_leaf_cast_is_checked(self):
+        root, contract = builtin_fixture()
+        result = check(root, "start", contract, ABI)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["call_edges"][0]["cast_kind"], "FunctionToPointerDecay")
+        self.assertEqual(result["call_edges"][1]["cast_kind"], "BuiltinFnToFnPtr")
+
+    def test_builtin_cast_requires_exact_leaf_shape_signature_and_attribute(self):
+        cases = {}
+        root, contract = builtin_fixture()
+        root["inner"][-1]["inner"] = []
+        cases["missing_builtin_attribute"] = (root, contract)
+        root, contract = builtin_fixture()
+        builtin_cast(root)["inner"][0]["referencedDecl"]["id"] = "other"
+        cases["wrong_reference_id"] = (root, contract)
+        root, contract = builtin_fixture()
+        cast = root["inner"][0]["inner"][-1]["inner"][0]["inner"][0]["inner"][0]
+        cast["castKind"] = "BuiltinFnToFnPtr"
+        cast["type"] = {"qualType": "unsigned int (*)()"}
+        child = cast["inner"][0]
+        child.update(type={"qualType": "<builtin fn type>"}, valueCategory="prvalue")
+        child["referencedDecl"]["type"] = copy.deepcopy(root["inner"][1]["type"])
+        root["inner"][1]["inner"].insert(0, {"kind": "BuiltinAttr"})
+        cases["builtin_internal_nonleaf"] = (root, contract)
+        root, contract = builtin_fixture()
+        cast = builtin_cast(root)
+        cast["type"] = {"qualType": "unsigned long (*)() noexcept"}
+        cases["pointer_signature_mismatch"] = (root, contract)
+        root, contract = builtin_fixture()
+        builtin_cast(root)["valueCategory"] = "lvalue"
+        cases["cast_not_prvalue"] = (root, contract)
+        root, contract = builtin_fixture()
+        builtin_cast(root)["inner"][0]["type"] = {"qualType": "unsigned long ()"}
+        cases["declref_not_builtin_type"] = (root, contract)
+        root, contract = builtin_fixture()
+        builtin_cast(root)["inner"][0]["valueCategory"] = "lvalue"
+        cases["declref_not_prvalue"] = (root, contract)
+        root, contract = builtin_fixture()
+        leaf = root["inner"][-1]
+        leaf["type"] = {"qualType": "unsigned long () noexcept"}
+        cast = builtin_cast(root)
+        cast["inner"][0]["referencedDecl"]["type"] = copy.deepcopy(leaf["type"])
+        cast["type"] = {"qualType": "unsigned long (*)() noexcept"}
+        self.assertEqual(check(root, "start", contract, ABI)["status"], "checked")
+        root, contract = builtin_fixture()
+        cast = builtin_cast(root)
+        reference = cast["inner"][0]
+        cast["inner"] = [{"kind": "ParenExpr", "inner": [reference],
+                          "type": {"qualType": "<builtin fn type>"},
+                          "valueCategory": "prvalue"}]
+        cases["nested_callee"] = (root, contract)
+        root, contract = builtin_fixture()
+        cast = builtin_cast(root)
+        cast["inner"] = [{"kind": "CallExpr", "inner": [],
+                          "type": {"qualType": "<builtin fn type>"},
+                          "valueCategory": "prvalue"}]
+        cases["effectful_callee"] = (root, contract)
+        for name, pair in cases.items():
+            with self.subTest(name=name):
+                result = check(pair[0], "start", pair[1], ABI)
+                self.assertEqual(result["status"], "unknown", result)
+
     def test_explicit_node_budget_boundaries_and_invalid_limits(self):
         root, contract = fixture()
         def nodes(node):
@@ -195,7 +278,7 @@ class GetterReturnsTests(unittest.TestCase):
         root = copy.deepcopy(root)
         leaf_call = root["inner"][1]["inner"][-1]["inner"][0]["inner"][0]["inner"][0]
         leaf_call["inner"][0]["castKind"] = "BuiltinFnToFnPtr"
-        mutations["builtin_callee_cast_still_unsupported"] = (root, contract, ABI)
+        mutations["builtin_callee_cast_without_builtin_evidence"] = (root, contract, ABI)
         root, contract = fixture()
         mutations["missing_abi"] = (root, contract, {"int": ABI["int"]})
         for name, (tree, leaf_contract, integer_types) in mutations.items():
