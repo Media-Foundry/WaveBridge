@@ -79,7 +79,7 @@ class CoordinateHeaderObservationTests(unittest.TestCase):
                          "block-getter")
         self.assertIsNone(item["step"])
         self.assertFalse(item["header_recurrence_observed"])
-        self.assertEqual(item["body_preserves_induction"], "not_established")
+        self.assertEqual(item["body_preserves_induction"], "established_in_supported_effect_subset")
         self.assertFalse(observation["recurrence_checked"])
         self.assertFalse(observation["launch_configuration_bound"])
         self.assertFalse(observation["integer_abi_checked"])

@@ -9,8 +9,12 @@
 无参 getter 与 receiver，不按 threadIdx/blockDim 名字赋予语义。
 
 即使子报告 `observed`，循环和总恢复仍 `unknown`，数值 step 为空，
-header_recurrence_observed 为 false，body 保持性不建立。循环体改 induction 也
-可能具有相同 header 观察，绝不能据此放行。未知 getter、额外 cast/算术及不支持
+header_recurrence_observed 为 false。body 保持性通过原受限副作用检查单独建立：
+保护 induction、边界及两个 receiver 声明；失败保存 body_effect_reason。
+循环体改 induction 也可能具有相同 header 观察，但 body 保持性不得建立。
+即使 body 检查成功，也以有效源程序和 memory_no_alias 为前提，不证明 body 正常
+完成、分支一致、数据贡献、receiver purity 或参与，绝不能据此放行。
+未知 getter、额外 cast/算术及不支持
 的 computation type 不获得该观察。旧 signed 常量递推路径保持不变。
 
 坐标语义、实际 launch/block 宽度、显式 ABI、起点转换、unsigned 加法及赋回 int

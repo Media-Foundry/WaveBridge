@@ -274,6 +274,7 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> 
         "header_recurrence_observed": False,
         "body_preserves_induction": "not_established",
         "body_preserves_bound": "not_established",
+        "body_effect_reason": None,
         "condition_ast": None, "assumptions": {
             "signed_recurrence_overflow": "external_precondition_unproven",
             "iteration_domain": "external_precondition_unproven",
@@ -306,6 +307,20 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> 
         item["increment_ast"] = increment
         item["coordinate_header_observation"] = _coordinate_header(
             root, induction, initializer, condition, increment)
+        coordinate = item["coordinate_header_observation"]
+        if coordinate["status"] == "observed":
+            protected = {induction_id, coordinate["bound_parameter_id"]}
+            for key in ("start_value_link", "step_value_link"):
+                protected.add(coordinate[key]["pseudo_object"]["receiver_declaration_id"])
+            try:
+                # This only establishes the supported body's non-modification
+                # premise. Coordinate values, conversions and recurrence remain
+                # unknown and must not be inferred from these two flags.
+                _check_body(body, protected)
+                item.update(body_preserves_induction="established_in_supported_effect_subset",
+                            body_preserves_bound="established_in_supported_effect_subset")
+            except _Unknown as error:
+                item["body_effect_reason"] = error.reason
         start_expr = _unwrap_value(initializer)
         if start_expr.get("kind") == "IntegerLiteral" and _signed_int(start_expr):
             try:

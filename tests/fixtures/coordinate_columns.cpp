@@ -29,3 +29,27 @@ void arithmetic_step(int* output, int count) {
        col += block_coordinates.renamed_step + 1)
     output[col] += 1;
 }
+using HiddenReference = int&;
+void reference_body(int* output, int count) {
+  for (int col = local_coordinates.renamed_start; col < count;
+       col += block_coordinates.renamed_step) {
+    output[col] += 1;
+    HiddenReference alias = col;
+    alias += 256;
+  }
+}
+void changed_bound(int* output, int count) {
+  for (int col = local_coordinates.renamed_start; col < count;
+       col += block_coordinates.renamed_step) {
+    output[col] += 1;
+    --count;
+  }
+}
+extern void opaque_effect();
+void called_body(int* output, int count) {
+  for (int col = local_coordinates.renamed_start; col < count;
+       col += block_coordinates.renamed_step) {
+    output[col] += 1;
+    opaque_effect();
+  }
+}

@@ -27,8 +27,9 @@ class CoordinateColumnsClangTests(unittest.TestCase):
         cls.functions = {n["name"]: n["id"] for n in _walk(cls.root)
                          if n.get("kind") == "FunctionDecl"}
 
-    def test_observation_never_establishes_recurrence_or_body_preservation(self):
-        for name in ("coordinate_columns", "changed_body", "extra_cast", "arithmetic_step"):
+    def test_body_preservation_is_checked_separately_without_establishing_recurrence(self):
+        for name in ("coordinate_columns", "changed_body", "extra_cast", "arithmetic_step",
+                     "reference_body", "changed_bound", "called_body"):
             with self.subTest(name=name):
                 result = recover(self.root, self.functions[name], 32)
                 self.assertEqual("unknown", result["status"])
@@ -37,15 +38,25 @@ class CoordinateColumnsClangTests(unittest.TestCase):
                 self.assertIsNotNone(loop["increment_ast"])
                 self.assertIsNone(loop["step"])
                 self.assertFalse(loop["header_recurrence_observed"])
-                self.assertEqual("not_established", loop["body_preserves_induction"])
-                self.assertEqual("not_established", loop["body_preserves_bound"])
+                body_status = ("established_in_supported_effect_subset" if name == "coordinate_columns"
+                               else "not_established")
+                self.assertEqual(body_status, loop["body_preserves_induction"])
+                self.assertEqual(body_status, loop["body_preserves_bound"])
+                if name == "changed_body":
+                    self.assertEqual("protected_variable_may_be_modified", loop["body_effect_reason"])
+                if name == "reference_body":
+                    self.assertEqual("protected_variable_reference_alias", loop["body_effect_reason"])
+                if name == "changed_bound":
+                    self.assertEqual("protected_variable_may_be_modified", loop["body_effect_reason"])
+                if name == "called_body":
+                    self.assertEqual("call_in_body", loop["body_effect_reason"])
                 observation = loop["coordinate_header_observation"]
-                expected = "observed" if name in ("coordinate_columns", "changed_body") else "unknown"
+                expected = "unknown" if name in ("extra_cast", "arithmetic_step") else "observed"
                 self.assertEqual(expected, observation["status"], observation)
 
     def test_unmocked_column_gate_does_not_consume_observed_header(self):
         abi = {"int": {"bits": 32, "signed": True}}
-        for name in ("coordinate_columns", "changed_body"):
+        for name in ("coordinate_columns", "changed_body", "reference_body", "changed_bound", "called_body"):
             kernel = self.functions[name]
             binding = {"schema_version": "thread-start-assumptions/v1",
                        "ast_root_sha256": _hash(self.root), "kernel_declaration_id": kernel,

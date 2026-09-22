@@ -2,6 +2,21 @@
 
 更新日期：2026-09-22。
 
+## 直接坐标循环的独立 body 保持检查
+
+coordinate header observed 后现调用原副作用白名单，保护 induction、边界和
+两个精确 receiver 声明；不放宽任何调用/未知节点。安全小例建立两个条件 body
+保持标志；改变量、隐藏引用、改边界或不透明调用保留 not_established，并记录
+body_effect_reason。父循环仍 unknown、step 为空、header 标志 false；下游组合
+仍拒绝。491项CPU测试通过，新增变体纳入既有真实Clang参数化测试。
+
+重放完整 vLLM TU：float两循环因 unsupported_body_effect、Half/BFloat16四循环
+因 call_in_body 未建立 body 保持性。launch分析每个具体实例得到同一launch ID的
+四次AST出现，不是四次实际launch；当前唯一性门控不能直接消费。原源码block
+配置为std::min(hidden_size,1024)，尚未自动检查该构造。下一步需明确这些源码
+障碍，不能把名称当API或将重复AST出现当独立执行。本轮无GPU，详见
+`.agents/handoffs/wb03-coordinate-body-20260922.md`。
+
 ## 完整 vLLM TU 声明绑定与 unsigned 条件递推
 
 固定 c1cafce 恢复实现，用原样 vLLM TU、旧 include/工具链及环境宏重采集完整
