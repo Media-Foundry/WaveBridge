@@ -33,6 +33,20 @@ typedef struct Manual {
   Manual(const Manual& source) : x(source.x), y(source.y) {}
 } Manual;
 void manual_copy() { Manual source; Manual target(source); }
+typedef struct ParameterAttribute {
+  unsigned x;
+  ParameterAttribute() : x(3) {}
+  ParameterAttribute(const ParameterAttribute& source __attribute__((unused))) : x(source.x) {}
+} ParameterAttribute;
+void parameter_attribute_copy() { ParameterAttribute source; ParameterAttribute target(source); }
+#ifdef WAVEBRIDGE_CUDA_COPY
+typedef struct CudaAnnotated {
+  unsigned x;
+  __attribute__((host, device)) CudaAnnotated() : x(3) {}
+  __attribute__((host, device)) CudaAnnotated(const CudaAnnotated& source) : x(source.x) {}
+} CudaAnnotated;
+void cuda_annotated_copy() { CudaAnnotated source; CudaAnnotated target(source); }
+#endif
 typedef struct Swapped {
   unsigned x, y;
   Swapped() : x(3), y(5) {}

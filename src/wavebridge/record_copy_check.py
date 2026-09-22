@@ -44,6 +44,65 @@ def _raw_type(node: dict[str, Any]) -> str:
     return value
 
 
+def _local_effects(record, declaration, parameter, fields, mappings):
+    """Classify AST-role accesses, not aliasing or lifetime-wide preservation."""
+    result = {
+        "schema_version": "record-copy-local-effects/v1",
+        "status": "unknown", "reason": "declaration_effect_subset_unsupported",
+        "scope": "selected_constructor_argument_binding_initializers_and_body_only",
+        "source_parameter_accesses": "not_established",
+        "destination_accesses": "not_established",
+        "additional_address_publication": "not_established",
+        "field_ids": [],
+        "source_program_checked": False, "deployable": False,
+        "assumptions": [
+            "the parent value check and its input hashes bind this local classification",
+            "the AST faithfully describes a valid source program under the declared integer ABI",
+            "source fields are initialized and readable through the live evaluated argument",
+            "the selected constructor returns normally",
+        ],
+        "source_destination_nonoverlap": "not_established",
+        "concurrent_or_prior_alias_effects": "not_established",
+        "surrounding_cleanup_and_destructor_effects": "not_established",
+        "source_object_preservation": "not_established",
+        "target_allocation_and_lifetime": "not_established",
+        "interpretation": "accesses_by_AST_source_parameter_and_destination_roles_not_dynamic_storage_disjointness",
+    }
+    # Record attributes can affect layout/semantics; do not interpret them by
+    # spelling or inherit the value checker's broader attribute tolerance.
+    if any(str(child.get("kind", "")).endswith("Attr") for child in _children(record)):
+        return result
+    if any(declaration.get(flag) is True for flag in (
+            "isDeleted", "explicitlyDeleted", "isInvalid", "isInvalidDecl", "isVariadic")):
+        return result
+    if any(parameter.get(flag) is True for flag in (
+            "isParameterPack", "isPackExpansion", "isInvalid", "isInvalidDecl")):
+        return result
+    if any(field.get(flag) is True for field in fields for flag in ("isInvalid", "isInvalidDecl")):
+        return result
+    for child in _children(declaration):
+        if child.get("kind") in {"ParmVarDecl", "CXXCtorInitializer", "CompoundStmt"}:
+            continue  # exact count and full expressions were checked above
+        if child.get("kind") not in {"CUDAHostAttr", "CUDADeviceAttr"} or _children(child):
+            return result
+    if (_children(parameter) or parameter.get("init") is not None or
+            parameter.get("hasInheritedDefaultArg") is True or
+            parameter.get("hasDefaultArg") is True or
+            parameter.get("hasUninstantiatedDefaultArg") is True or
+            parameter.get("hasUnparsedDefaultArg") is True or
+            any(_children(field) or field.get("hasInClassInitializer") is True
+                for field in fields)):
+        return result
+    result.update(
+        status="checked", reason=None,
+        source_parameter_accesses="direct_integer_field_reads_only",
+        destination_accesses="direct_field_initializations_only",
+        additional_address_publication="not_observed_beyond_selected_const_reference_binding",
+        field_ids=[mapping["target_field_id"] for mapping in mappings],
+    )
+    return result
+
+
 def check(root: object, expression_id: object, integer_types: object,
           *, max_ast_nodes: int | None = None) -> dict[str, Any]:
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
@@ -55,6 +114,7 @@ def check(root: object, expression_id: object, integer_types: object,
         "source_declaration_binding": "lexical_declref_only",
         "source_object_identity": "not_established",
         "constructor_arguments": None, "field_mappings": [],
+        "local_copy_effects": {"status": "unknown", "reason": "copy_value_relation_not_checked"},
         "scope": "evaluated_copy_argument_per_field_integer_value_equality_at_direct_construction",
         "source_program_checked": False, "deployable": False,
         "source_object_preservation": "not_established",
@@ -297,6 +357,8 @@ def check(root: object, expression_id: object, integer_types: object,
         if target_ids != set(field_ids):
             raise _Rejected("copy_fields_not_exactly_covered")
         result.update(status="checked", field_mappings=mappings)
+        result["local_copy_effects"] = _local_effects(
+            record, declaration, parameter, fields, mappings)
     except _Rejected as error:
         result.update(status="rejected", reason=error.reason)
         if error.detail is not None:

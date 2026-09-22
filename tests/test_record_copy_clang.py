@@ -58,6 +58,89 @@ class RecordCopyClangTests(unittest.TestCase):
         self.assertEqual(result["launch_semantics"], "not_established")
         self.assertNotIn("fields", result)  # No fabricated construction-time numeric values.
 
+    def test_local_effects_are_separate_from_history_and_aliases(self):
+        for name in ("implicit_copy", "manual_copy", "parameter_copy", "changed_before_copy",
+                     "captured_copy", "reference_captured_copy"):
+            with self.subTest(name=name):
+                result = self.run_check(name)
+                effects = result["local_copy_effects"]
+                self.assertEqual(effects["status"], "checked", result)
+                self.assertFalse(effects["source_program_checked"])
+                self.assertFalse(effects["deployable"])
+                self.assertEqual(effects["source_parameter_accesses"], "direct_integer_field_reads_only")
+                self.assertEqual(effects["field_ids"],
+                                 [m["target_field_id"] for m in result["field_mappings"]])
+                for key in ("source_object_preservation", "source_destination_nonoverlap",
+                            "concurrent_or_prior_alias_effects", "surrounding_cleanup_and_destructor_effects"):
+                    self.assertEqual(effects[key], "not_established")
+
+    def test_unmodeled_declaration_effects_do_not_inherit_value_success(self):
+        # Synthetic mutations of a real AST test the metadata boundary, not
+        # compilability or demonstrated runtime effects of invented attributes.
+        for mutation in ("constructor", "field", "parameter", "parameter_default",
+                         "record", "attribute_child", "field_initializer_flag"):
+            root = copy.deepcopy(self.root)
+            expression_id, _ = self.inputs(root=root)
+            original = check(root, expression_id, ABI)
+            ctor = next(n for n in _walk(root) if n.get("id") == original["constructor_declaration_id"])
+            record = next(n for n in _walk(root) if n.get("id") == original["record_declaration_id"])
+            param = next(n for n in ctor["inner"] if n.get("kind") == "ParmVarDecl")
+            field = next(n for n in record["inner"] if n.get("kind") == "FieldDecl")
+            if mutation == "parameter_default":
+                param["init"] = "c"
+            elif mutation == "field_initializer_flag":
+                field["hasInClassInitializer"] = True
+            else:
+                node = {"constructor": ctor, "field": field, "parameter": param,
+                        "record": record, "attribute_child": ctor}[mutation]
+                attribute = {"kind": "UnmodeledEffectAttr"}
+                if mutation == "attribute_child":
+                    attribute = {"kind": "CUDAHostAttr", "inner": [{"kind": "CallExpr"}]}
+                node.setdefault("inner", []).append(attribute)
+            with self.subTest(mutation=mutation):
+                result = check(root, expression_id, ABI)
+                self.assertEqual(result["status"], "checked", result)
+                self.assertEqual(result["local_copy_effects"]["status"], "unknown")
+
+    def test_value_failures_never_establish_local_effects(self):
+        for name in ("swapped_copy", "writing_copy", "volatile_copy", "pointer_copy"):
+            with self.subTest(name=name):
+                self.assertEqual(self.run_check(name)["local_copy_effects"]["status"], "unknown")
+
+    def test_real_parameter_attribute_is_outside_effect_subset(self):
+        result = self.run_check("parameter_attribute_copy")
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["local_copy_effects"]["status"], "unknown")
+
+    def test_real_cuda_execution_attributes_are_supported_without_children(self):
+        collected = collect(Path(__file__).parent / "fixtures/record_copy.cpp",
+                            shutil.which("clang++"),
+                            ["-std=c++17", "-x", "cuda", "--cuda-host-only", "-nocudainc",
+                             "-nocudalib", "-DWAVEBRIDGE_CUDA_COPY"], "cuda_annotated_copy",
+                            full_translation_unit=True, dependency_binding="required")
+        self.assertEqual(collected["status"], "collected", collected)
+        root = collected["ast_roots"][0]
+        result = self.run_check("cuda_annotated_copy", root)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["local_copy_effects"]["status"], "checked")
+        ctor = next(n for n in _walk(root) if n.get("id") == result["constructor_declaration_id"])
+        self.assertEqual({n["kind"] for n in ctor["inner"] if n["kind"].endswith("Attr")},
+                         {"CUDAHostAttr", "CUDADeviceAttr"})
+
+    def test_deleted_invalid_and_default_flags_do_not_get_effect_success(self):
+        for flag in ("isDeleted", "explicitlyDeleted", "isInvalid", "isInvalidDecl", "isVariadic",
+                     "hasDefaultArg", "hasUninstantiatedDefaultArg", "hasUnparsedDefaultArg",
+                     "hasInheritedDefaultArg", "isParameterPack", "isPackExpansion"):
+            root = copy.deepcopy(self.root)
+            expression_id, _ = self.inputs(root=root)
+            original = check(root, expression_id, ABI)
+            ctor = next(n for n in _walk(root) if n.get("id") == original["constructor_declaration_id"])
+            node = (next(n for n in ctor["inner"] if n.get("kind") == "ParmVarDecl")
+                    if flag.startswith("has") or flag in {"isParameterPack", "isPackExpansion"} else ctor)
+            node[flag] = True
+            with self.subTest(flag=flag):
+                self.assertEqual(check(root, expression_id, ABI)["local_copy_effects"]["status"], "unknown")
+
     def test_bad_or_unsupported_copies_never_check(self):
         for name in ("alias_copy", "swapped_copy", "writing_copy", "bitfield_copy",
                      "volatile_copy", "union_copy", "pointer_copy", "polymorphic_copy"):
