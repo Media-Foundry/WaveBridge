@@ -2,6 +2,16 @@
 
 更新日期：2026-09-23。
 
+## 可选哈希成本路径
+
+共用 `integer_selection._hash` 的检查器新增显式
+`WAVEBRIDGE_JSON_HASH_MODE=one-shot`，默认仍为streaming。两者canonical摘要
+一致；非法模式拒绝，内存不足不静默切换。未引入缓存或放宽语义门控。
+两种模式各自638项CPU测试与demo通过，匹配Clang插件已启用；包含完整正/负例
+报告一致性与2048个确定性嵌套JSON摘要对照。one-shot需额外完整字符串/字节
+缓冲区，非全仓统一开关；没有完整TU新模式加速比或GPU性能结论。
+详见 `.agents/handoffs/wb04-hash-modes-20260923.md`。
+
 ## 整函数显式源对象引用闭合
 
 新增 `verification/object_use_closure.py`，fresh 组合初始化、直接/捕获复制和
@@ -13,8 +23,10 @@
 628项CPU、161项Clang专项及demo通过。真实回归还修复了lambda重复body仅省略
 位置line字段导致的误拒绝；不忽略offset、ID或语义冲突。闭合检查不建立历史
 值保持、先前别名、未跟踪内存效果或一般调用纯度，整核和部署仍为false。
-固定 vLLM 完整 TU 的全组合重放已启动，尚无终态结果，不能记为通过；见
-`.agents/handoffs/wb04-object-use-closure-20260923.md` 的确切进程和工件记录。
+固定 vLLM 完整 TU 的全组合重放已完成：退出码0、条件checked，耗时1445.24秒，
+77个实现文件前后哈希一致。实际纳入7个显式引用、4次捕获、3次复制和4个lambda；
+外部输入域、ABI与capture lifetime/activation假设仍保留，整核和部署标记false。
+见 `.agents/handoffs/wb04-object-use-closure-20260923.md` 的工件与范围记录。
 
 等待期间另做固定完整AST的成本诊断：一次性canonical JSON序列化14.84秒、
 UTF-8与SHA-256约2.01秒，摘要与既有流式root hash完全一致。未修改checker、

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from typing import Any
 
 from wavebridge.verification.integer_conversion import check_interval
@@ -35,6 +36,18 @@ class _Rejected(Exception):
 
 
 def _hash(value: object) -> str:
+    """Hash identical canonical bytes with an explicit memory/cost tradeoff.
+
+    One-shot allocates the full serialized string and UTF-8 buffer.  It is
+    opt-in and allocation failures are never silently retried in another mode.
+    """
+    mode = os.environ.get("WAVEBRIDGE_JSON_HASH_MODE", "streaming")
+    if mode == "one-shot":
+        return hashlib.sha256(json.dumps(
+            value, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode()).hexdigest()
+    if mode != "streaming":
+        raise ValueError("WAVEBRIDGE_JSON_HASH_MODE must be streaming or one-shot")
     digest = hashlib.sha256()
     encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), allow_nan=False)
     for chunk in encoder.iterencode(value):

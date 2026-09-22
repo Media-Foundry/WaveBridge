@@ -51,7 +51,14 @@ make demo
 `artifacts/wb-object-use-closure-N4Xis6/{check-tests,clang-tests,demo}.log`。
 插件与AOCC Clang17匹配，新增native测试实际运行，不把未加载插件的skip记为通过。
 
-## 完整 TU 后台任务：尚无终态结论
+## 完整 TU 后台任务：已收取终态
+
+原任务正常退出0，结果为条件 `checked`；耗时1445.242809秒，77个Python实现
+文件前后哈希一致。计数为7个显式源引用、4次捕获、0次普通复制、3次捕获复制、
+4个lambda。`source_program_checked=false`、`deployable=false`，未运行GPU。
+报告 `artifacts/wb-object-use-closure-N4Xis6/report.json` SHA-256：
+`d1bf2f0d86b4c90d02c7e782775e7fce588ec630fb4fbb4b25e40d596403a084`。
+以下启动记录保留供追溯；原进程已结束，不应再重启该输出目录的脚本。
 
 ```bash
 PYTHONPATH=src python3 artifacts/wb-object-use-closure-N4Xis6/check.py \
@@ -59,7 +66,7 @@ PYTHONPATH=src python3 artifacts/wb-object-use-closure-N4Xis6/check.py \
 ```
 
 实际启动的exec session为`40778`；Python PID `426259`，父shell PID `426256`。
-必须先检查这些句柄/进程和日志，不能因观察超时就重启。测试/文档和commit不会
+运行期间先检查这些句柄/进程和日志，未因观察超时重启。测试/文档和commit不会
 改变冻结的`src/wavebridge`实现；运行前后会核对全部Python实现哈希。
 
 输入为固定完整 `artifacts/wb-vllm-cleanup-native-a1pI0L/ast.json`，SHA-256
@@ -69,9 +76,9 @@ PYTHONPATH=src python3 artifacts/wb-object-use-closure-N4Xis6/check.py \
 提供显式外部hidden_size∈[1,4096]、整数ABI及capture lifetime/activation假设；
 不提供任何预先成功的子报告。checker内部独立恢复集合并重新运行全部子检查。
 
-完整重放包含多次完整AST hash/scan，可能持续较久；终态结果应保存为同目录
+完整重放包含多次完整AST hash/scan；终态结果已保存为同目录
 `report.json`。没有结果文件或只有进程运行不代表checked。没有重采集、GPU、
-性能或整核证明。下一步先收取此任务的实际终态和范围，再推进初始化至复制
+性能或整核证明。实际终态与范围见本节开头，下一步推进初始化至复制
 之间的有限路径保持；当前显式集合闭合本身不能替代那项保证。
 
 ## 等待期间的独立成本诊断（不修改正式运行）

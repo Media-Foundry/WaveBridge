@@ -510,3 +510,16 @@ initialization_selection_domains, capture_protocols, *, max_ast_nodes=None)`
 纯度或未跟踪内存效果。没有显式源引用的不透明调用可以存在，其效果仍未知。
 初始化字段域不能因此直接搬到复制点或 launch。失败时保留已经运行的子报告，
 不接通部署门控；默认资源上限仍是各次 fresh 扫描的节点数而不是总耗时。
+
+## 可选 canonical JSON 哈希路径
+
+共用 `verification.integer_selection._hash` 的检查器默认保持流式编码。
+显式设置 `WAVEBRIDGE_JSON_HASH_MODE=one-shot` 可改用一次性 `json.dumps`；
+`streaming` 也可显式设置。其他值（含空字符串）产生错误，不静默回退。
+两种路径使用相同排序、紧凑分隔符、ASCII转义与禁止NaN规则，模式不改变摘要。
+它不是缓存，也不接受调用者预先计算的成功结论；其他独立哈希实现不受此选项影响。
+
+one-shot会分配完整字符串与UTF-8字节缓冲区，仅适用于已评估内存预算的运行。
+`MemoryError`不自动回退。实验记录应单独保存所用模式；固定工件上的编码耗时
+不能当成完整checker或GPU加速比。未知模式在部分上层被转为unknown，在其他
+入口可能直接抛错；均不签发通过，当前不承诺统一的错误接口。

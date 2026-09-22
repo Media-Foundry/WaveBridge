@@ -3,6 +3,7 @@ import copy
 import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.frontend.native_captures import collect
@@ -81,6 +82,17 @@ class ObjectUseClosureClangTests(unittest.TestCase):
             with self.subTest(name=name):
                 report = self.run_check(name)
                 self.assertEqual(report["status"], "unknown", report)
+
+    def test_hash_modes_preserve_complete_checker_reports(self):
+        for name in ("plain_copy", "three_branches", "direct_write"):
+            with self.subTest(name=name):
+                with patch.dict(os.environ, {"WAVEBRIDGE_JSON_HASH_MODE": "streaming"}):
+                    streaming = self.run_check(name)
+                with patch.dict(os.environ, {"WAVEBRIDGE_JSON_HASH_MODE": "one-shot"}):
+                    one_shot = self.run_check(name)
+                self.assertEqual(streaming["status"],
+                                 "unknown" if name == "direct_write" else "checked")
+                self.assertEqual(streaming, one_shot)
 
     def test_capture_kind_and_closure_escape_boundaries(self):
         for name in ("by_value_capture", "named_closure", "passed_closure", "init_capture_alias"):
