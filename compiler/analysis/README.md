@@ -347,6 +347,12 @@ ElaboratedType（可省略）到 RecordType 的精确 CXXRecordDecl ID。完整 
 中必须只有一个直接构造声明与表达式的 `ctorType` 完全一致；构造声明 ID
 也须在完整 TU 中唯一。没有类型 ID 锚点时不按类名或全局签名猜测。
 
+类型比较优先使用 desugaredQualType；仅该键不存在时使用 qualType，仍须与已
+精确绑定的 RecordType 拼写一致。Clang 18 在展开前后打印拼写相同时省略该键，
+见 [createQualType 实现](https://github.com/llvm/llvm-project/blob/llvmorg-18.1.8/clang/lib/AST/JSONNodeDumper.cpp#L287-L301)。
+这不是“所有缺少解糖证据的 alias 都安全”：alias→record 的精确 ID 链仍必需，
+不同拼写、缺 ID、显式空或 null 的展开值继续 unknown。
+
 这依赖 Clang JSON AST 的明确不变量：`ctorType` 来自已选构造函数的
 `getConstructor()->getType()`，见
 [LLVM 17 JSONNodeDumper](https://github.com/llvm/llvm-project/blob/llvmorg-17.0.6/clang/lib/AST/JSONNodeDumper.cpp#L1283-L1285)。

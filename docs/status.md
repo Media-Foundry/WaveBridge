@@ -2,6 +2,15 @@
 
 更新日期：2026-09-22。
 
+## Clang 类型打印差异的 CI 修复
+
+8b0117d 的远端 run35741316610 三任务失败：Clang 18 省略同拼写
+desugaredQualType，direct constructor 将它误判为类型不匹配。现仅在键缺失时
+回退 qualType，仍要求精确 alias→record ID 和 RecordType 拼写相等；不是按名称
+推测类型。新增同拼写省略正例及缺锚点/不同拼写/空值负例。
+本地 532 项测试、65 项 Clang 专项和 demo 通过；ROCm Clang 23 下 6 项定向
+测试通过。远端修复验收另见交接，未新增 GPU 或 launch 域结果。
+
 ## 命名 launch 配置的直接构造身份
 
 constructor_arguments 新增 alias→精确 record ID→唯一选定 ctorType 的直接

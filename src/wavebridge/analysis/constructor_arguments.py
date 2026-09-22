@@ -87,7 +87,10 @@ def _direct_constructor(root, expression, budget):
             reference.get("kind") != "CXXRecordDecl" or
             not isinstance(reference.get("id"), str) or not reference["id"]):
         raise _Unknown("direct_constructor_alias_not_exact_record")
-    actual_type = info.get("desugaredQualType")
+    # Upstream Clang omits desugaredQualType when its printed spelling equals
+    # qualType. The exact alias -> record ID anchor above remains mandatory;
+    # this fallback does not resolve an alias by its name.
+    actual_type = info.get("desugaredQualType", info.get("qualType"))
     if (not isinstance(actual_type, str) or not actual_type or
             actual_type != (_type(record_type) or {}).get("qualType")):
         raise _Unknown("direct_constructor_record_type_mismatch")

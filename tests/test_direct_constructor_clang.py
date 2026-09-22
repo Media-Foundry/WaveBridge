@@ -97,6 +97,28 @@ class DirectConstructorClangTests(unittest.TestCase):
         for budget in (1, 0, True, 10_000_001):
             self.assertEqual(inspect(self.root, expression, 32, max_ast_nodes=budget)["status"], "unknown")
 
+    def test_equal_desugared_spelling_may_be_omitted_but_identity_still_required(self):
+        expression = copy.deepcopy(self.expressions()[0])
+        # Emulate omission only when the two printed spellings are equal.
+        # Some versions retain a distinct "struct Shape" desugared spelling.
+        expanded = expression["type"].pop("desugaredQualType", None)
+        if expanded is not None:
+            expression["type"]["qualType"] = expanded
+        result = inspect(self.root, expression, 32)
+        self.assertEqual(result["status"], "inspected", result)
+        self.assertEqual(result["constructor_identity"]["alias_declaration_id"],
+                         expression["type"]["typeAliasDeclId"])
+        for mutation in ("missing_anchor", "different_spelling", "empty_expansion", "null_expansion"):
+            changed = copy.deepcopy(expression)
+            if mutation == "missing_anchor":
+                del changed["type"]["typeAliasDeclId"]
+            elif mutation == "different_spelling":
+                changed["type"]["qualType"] = "unrelated::Shape"
+            else:
+                changed["type"]["desugaredQualType"] = "" if mutation == "empty_expansion" else None
+            with self.subTest(mutation=mutation):
+                self.assertEqual(inspect(self.root, changed, 32)["status"], "unknown")
+
     def test_record_and_declaration_ambiguity_cannot_select_a_constructor(self):
         for mutation in ("duplicate_alias", "duplicate_record", "duplicate_ctor_id",
                          "same_signature", "template", "inherited"):
