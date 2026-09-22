@@ -337,3 +337,25 @@ launch字节数，普通无界extern数组要求外部分配依据，普通局�
 launch容量依据，普通extern仍要求外部分配依据。声明extent与分配来源独立记录。
 即使声明元素数不足也只报告真实extent，不签发容量通过；容量检查、别名分析和
 属性的目标语义仍是后续义务。完整原始实参AST、数组声明位置和类型均保留。
+
+## 直接构造表达式的受限身份关联
+
+`constructor_arguments.inspect(..., max_ast_nodes=None)` 保留原
+`CXXFunctionalCastExpr.conversionFunc` 入口，额外接受一类直接 `CXXConstructExpr`：
+表达式的 `typeAliasDeclId` 必须在同 TU 唯一关联到 alias 声明，再沿单层
+ElaboratedType（可省略）到 RecordType 的精确 CXXRecordDecl ID。完整 record
+中必须只有一个直接构造声明与表达式的 `ctorType` 完全一致；构造声明 ID
+也须在完整 TU 中唯一。没有类型 ID 锚点时不按类名或全局签名猜测。
+
+这依赖 Clang JSON AST 的明确不变量：`ctorType` 来自已选构造函数的
+`getConstructor()->getType()`，见
+[LLVM 17 JSONNodeDumper](https://github.com/llvm/llvm-project/blob/llvmorg-17.0.6/clang/lib/AST/JSONNodeDumper.cpp#L1283-L1285)。
+有基类、模板成员或 using 选择路径的 record 暂不支持；非 complete 构造、
+复杂 alias 链、重复 ID、多个同签名候选均 unknown。扫描预算默认每次 100 万，
+可显式提高至最多 1000 万；不是总内存/时间限制，旧显式引用路径不增加扫描。
+
+报告 `constructor_identity.mode` 区分原始 conversionFunc 引用与上述推导关联；
+后者的 `constructor_reference` 是关联结果，不能称为 AST 原有 conversionFunc。
+仅构造身份关联不证明字段值、复制/移动语义或变量到 launch 时保持不变。
+实参中的未知调用与缺失默认实参 AST 继续阻断检查；不会把 std::min 的名字当作
+语义契约，也不会把命名 dim3 对象的复制直接替换为其声明时字段值。

@@ -2,6 +2,19 @@
 
 更新日期：2026-09-22。
 
+## 命名 launch 配置的直接构造身份
+
+constructor_arguments 新增 alias→精确 record ID→唯一选定 ctorType 的直接
+CXXConstructExpr 入口，不按 dim3 名称猜测；原 conversionFunc 路径保留。
+531 项 CPU 测试、64 项 Clang 专项与 demo 通过，覆盖同名不同 namespace、
+标量字段检查、copy 保持 unknown、缺默认来源、未知调用和身份/预算负例。
+
+完整 vLLM TU 重放已精确关联 launch 的 block copy 与声明时三 uint 构造，
+三个实现文件前后 hash 一致。copy 字段语义仍 unknown；原构造的 min 调用和
+缺默认实参来源仍阻断值检查，没有实际 launch 域通过。另已定位按引用捕获和
+hidden_size 的 long→int 转换；后续必须逐项连接，不将声明时值视为 launch 时值。
+未运行 GPU，详见 `.agents/handoffs/wb03-direct-constructor-20260922.md`。
+
 ## 坐标循环体的条件保持组合
 
 新增 column_body 独立入口：完整 TU 精确定位函数/直接循环，fresh 观察 header

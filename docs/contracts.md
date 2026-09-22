@@ -134,6 +134,12 @@ checked 只描述该条件递推及覆盖模型，不能据此将源码 unknown 
 CLI 的 `--use-host-guard-assumptions` 必须显式开启，输出配置域报告v2并记录
 前提门控和输入/实现哈希。结果不授权部署；详见 `compiler/verification/README.md`。
 
+构造实参恢复额外支持精确 alias→record ID 锚定且 record 内选定 ctorType 唯一
+的直接构造；`constructor_identity.mode` 必须区分它与 AST 原有 conversionFunc
+引用。此身份关联不建立复制/移动语义、命名对象值保持、默认实参来源或动态
+调用值域。现有字段 checker 的条件保证不因此扩大；支持边界见
+`compiler/analysis/README.md`。
+
 ## kernel 实参域：`kernel-argument-domain-check/v1`
 
 单个位置绑定条目、显式声明闭区间和整数ABI是输入。checker直接读取实参AST
