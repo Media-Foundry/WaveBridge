@@ -52,6 +52,20 @@ const char *captureKindName(LambdaCaptureKind Kind) {
 
 class CaptureVisitor : public RecursiveASTVisitor<CaptureVisitor> {
 public:
+  bool VisitExprWithCleanups(ExprWithCleanups *Expression) {
+    if (!Expression || !SeenExpressionCleanups.insert(Expression).second)
+      return true;
+    llvm::json::Object Item;
+    Item["expression_id"] = pointerID(Expression);
+    Item["subexpression_id"] = pointerID(Expression->getSubExpr());
+    Item["num_objects"] =
+        static_cast<int64_t>(Expression->getNumObjects());
+    Item["cleanups_have_side_effects"] =
+        Expression->cleanupsHaveSideEffects();
+    ExpressionCleanups.push_back(std::move(Item));
+    return true;
+  }
+
   bool TraverseLambdaExpr(LambdaExpr *Expression) {
     if (!Expression)
       return true;
@@ -146,11 +160,16 @@ public:
   }
 
   llvm::json::Array takeCaptures() { return std::move(Captures); }
+  llvm::json::Array takeExpressionCleanups() {
+    return std::move(ExpressionCleanups);
+  }
 
 private:
   std::vector<const LambdaExpr *> LambdaStack;
   llvm::DenseSet<const LambdaExpr *> SeenLambdas;
+  llvm::DenseSet<const ExprWithCleanups *> SeenExpressionCleanups;
   llvm::json::Array Captures;
+  llvm::json::Array ExpressionCleanups;
 };
 
 class CaptureConsumer : public ASTConsumer {
@@ -161,7 +180,11 @@ public:
 
     llvm::outs() << "{\"schema_version\":\"clang-native-captures/v1\","
                     "\"capture_coverage\":\"visited_lambda_initializers_and_"
-                    "bodies_not_exhaustive\",\"source_program_checked\":false,"
+                    "bodies_not_exhaustive\","
+                    "\"cleanup_coverage\":\"visited_expressions_not_exhaustive\","
+                    "\"cleanup_object_count_semantics\":\"clang_cleanup_objects_"
+                    "not_destructor_event_count\","
+                    "\"source_program_checked\":false,"
                     "\"deployable\":false,\"plugin_build_clang_version\":"
                  << llvm::formatv("{0}", llvm::json::Value(CLANG_VERSION_STRING))
                  << ",\"ast_target_triple\":"
@@ -173,6 +196,10 @@ public:
     llvm::outs() << ",\"captures\":"
                  << llvm::formatv("{0}",
                                   llvm::json::Value(Visitor.takeCaptures()))
+                 << ",\"expression_cleanups\":"
+                 << llvm::formatv(
+                        "{0}", llvm::json::Value(
+                                   Visitor.takeExpressionCleanups()))
                  << "}\n";
   }
 };

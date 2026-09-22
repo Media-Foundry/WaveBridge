@@ -33,3 +33,20 @@ syntactic nesting only and must not be interpreted as runtime object identity.
 The observer covers LambdaExpr nodes reached through capture initializers and
 lambda bodies. It does not claim complete capture coverage for every possible
 template instantiation, merged declaration, or default-argument traversal.
+
+The envelope also contains optional `expression_cleanups` observations from
+`VisitExprWithCleanups`: `expression_id`, `subexpression_id`, `num_objects`, and
+`cleanups_have_side_effects`. These IDs resolve in the same embedded AST and
+are deduplicated by native expression pointer. `cleanup_coverage` is explicitly
+`visited_expressions_not_exhaustive`; absence of an observation is not evidence
+that a program has no cleanup. Older v1 envelopes do not contain this extension.
+
+`num_objects` reflects Clang's auxiliary cleanup-object array (block declarations
+and block-scoped compound literals), **not C++ temporary destructor events**.
+The native cleanup fixture demonstrates a destructor writing a global counter
+even though `num_objects` is zero. C++ temporary binding is represented elsewhere
+in the AST, including `CXXBindTemporaryExpr`. The native boolean is an observed
+compiler flag, not an independent proof of effects, lifetime, or deployment.
+Adding these observations does not upgrade existing checker results or historical
+AST artifacts. A future consumer must bind a specific observation to the exact
+full-expression and explicitly state its trusted-frontend assumptions.

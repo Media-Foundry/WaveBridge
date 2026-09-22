@@ -2,6 +2,19 @@
 
 更新日期：2026-09-23。
 
+## 原生表达式清理观察
+
+扩展既有 Clang 插件，在同次完整 AST 旁记录 ExprWithCleanups 的精确表达式/
+子表达式 ID、辅助对象数量和清理副作用标志；按原生指针去重，覆盖明确非穷尽。
+旧v1工件可缺少这些可选字段，不能将缺失解释成没有清理。
+
+真实CPU回归确认：标量临时量与有析构写入的对象都可以 num_objects=0，后者
+仍执行全局计数器写入，原生副作用flag为true。数量不是析构事件数，API flag
+也不是独立正确性证明；尚未将此观察接入初始化检查或升级部署门控。
+同次AST绑定、lambda body遍历与去重、真实析构执行均有回归。
+最终新插件下606项CPU、139项Clang专项及demo通过；本轮无GPU或vLLM大TU重采集。
+新插件构建及验收详见 `.agents/handoffs/wb03-native-cleanups-20260923.md`。
+
 ## 受限构造参数求值效果门控
 
 新增 `verification/constructor_argument_effects.py`，fresh 运行构造字段域检查，
