@@ -470,3 +470,18 @@ lambda 内对象或不支持的初始化形状。类型与表达式身份必须�
 早先别名、初始化后的值保持/逃逸、析构、异常展开、动态调用历史和实际 launch
 仍未建立；`source_program_checked=false`、`deployable=false`。这不是把初始化
 字段域直接传给 GPU launch 的许可。预算约束每次扫描的节点数，不是总运行时间。
+
+## 立即调用 lambda 的接收者绑定
+
+`verification.lambda_invocation.check(root, lambda_id, *, max_ast_nodes=None)`
+从完整 AST 检查原始 lambda 临时对象是否沿受支持包装链，直接成为无参
+`CXXOperatorCallExpr` 的接收者。callee 必须精确关联该 closure record 的非模板
+`operator()`，其 body 与 LambdaExpr 的 body 一致；不根据相似名称猜测方法身份。
+具名 closure、返回或传递 closure、泛型、带显式/默认参数、间接或显式成员调用
+不在首个子集内。closure body 的重复 AST 副本必须一致，不能吞掉冲突。
+
+这里检查的是条件接收者身份和调用语法关联，不保证调用可达、次数、正常返回、
+捕获初始化/函数体/外围清理没有副作用，也不证明被捕获对象值保持。尤其
+`[&]() { source.x = 99; Config target(source); }()` 可以具备正确的接收者绑定，
+但复制值显然不再等于初始值。初始化、捕获身份、调用绑定三个局部成功不能
+替代源对象从初始化到复制点之间的效果分析。整核和部署标记仍为 false。

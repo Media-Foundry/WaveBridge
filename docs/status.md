@@ -2,6 +2,21 @@
 
 更新日期：2026-09-23。
 
+## 立即调用 lambda 的接收者绑定
+
+新增 `verification/lambda_invocation.py`，从完整 AST 检查原始 lambda 临时对象
+到直接零参 operator() 的接收者、closure record、精确方法及 body 绑定。
+重复 body 副本须一致；mutable、括号、嵌套及尾置返回类型有真实正例，
+具名/传出/泛型/带参或错绑定形状保持 unknown。
+
+本地619项CPU、152项Clang专项及demo通过；新增8项在匹配原生插件下均执行。
+真实组合反例中，初始化值为3、捕获身份与调用绑定均checked，但lambda body
+改写后CPU复制结果为99。故这些局部结果不能替代后续历史保持检查；可达性、
+次数、body效果、捕获对象逃逸与值保持均未建立，整核和部署仍为false。
+固定 vLLM 完整原生 TU 中与 block 关联的4个立即 lambda 调用点均 checked；
+并行独立重放耗时193.56秒，76个实现文件前后哈希一致。没有重采集或运行GPU。
+详见 `.agents/handoffs/wb04-lambda-invocation-20260923.md`。
+
 ## 自动对象初始化组合门控
 
 新增 `verification/object_initialization.py`，将同次原生 envelope 中的自动变量
