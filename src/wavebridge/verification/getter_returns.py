@@ -256,3 +256,95 @@ def check(root: object, start_declaration_id: object, leaf_contract: object,
     except _Rejected as error:
         result.update(status="rejected", reason=str(error))
     return result
+
+
+def check_no_memory_write(root: object, start_declaration_id: object,
+                          leaf_contract: object, integer_types: object,
+                          effect_protocol: object) -> dict[str, Any]:
+    """Conditionally check that the restricted getter wrappers do not write memory.
+
+    The external leaf effect and normal completion are explicit, unverified
+    premises.  In particular, declaration names and Clang attributes are not
+    interpreted as effect evidence.
+
+    This deliberately narrower sufficient check also requires the existing
+    value-domain check. Callers must supply an independently justified domain;
+    they must not invent one merely to obtain a memory-effect conclusion.
+    """
+    value_report = check(root, start_declaration_id, leaf_contract, integer_types)
+    result: dict[str, Any] = {
+        "schema_version": "getter-no-memory-write-check/v1",
+        "status": "unknown",
+        "reason": None,
+        "start_declaration_id": start_declaration_id,
+        "getter_return_check": value_report,
+        "scope": "restricted_getter_wrapper_chain_no_memory_write_under_explicit_external_leaf_effect",
+        "source_program_checked": False,
+        "deployable": False,
+        "external_leaf_effect_verified": False,
+        "assumptions": [
+            "AST is a faithful well-formed single translation unit",
+            "the fresh getter return check exactly describes the wrapper call chain",
+            "the exact external leaf performs no memory writes",
+            "source calls are valid and the exact external leaf returns normally",
+        ],
+        "limitations": [
+            "requires the supplied leaf domain and ABI; not a standalone effect analysis",
+            "the external evidence reference is recorded but not verified",
+            "declaration names and attributes do not establish memory effects",
+            "coordinate meaning, receiver and call-site effects are not established",
+            "compiled-code identity and whole-program memory behavior are not established",
+        ],
+    }
+    if not isinstance(effect_protocol, dict):
+        result["reason"] = "invalid_effect_protocol"
+        return result
+    try:
+        root_sha256 = _hash(root)
+        result["input_sha256"] = {
+            "root": root_sha256,
+            "start_declaration_id": _hash(start_declaration_id),
+            "leaf_contract": _hash(leaf_contract),
+            "integer_types": _hash(integer_types),
+            "effect_protocol": _hash(effect_protocol),
+        }
+    except (TypeError, ValueError, RecursionError):
+        result["reason"] = "input_hash_unsupported"
+        return result
+
+    if value_report.get("status") != "checked":
+        result["reason"] = "getter_return_check_not_checked"
+        return result
+    completion = value_report.get("completion")
+    leaf_id = leaf_contract.get("declaration_id") if isinstance(leaf_contract, dict) else None
+    if (not isinstance(completion, dict) or completion.get("status") != "conditional" or
+            completion.get("external_leaf_declaration_id") != leaf_id):
+        result["reason"] = "getter_completion_not_established"
+        return result
+
+    evidence_reference = effect_protocol.get("evidence_reference")
+    if (effect_protocol.get("schema_version") != "getter-leaf-effect-assumption/v1" or
+            effect_protocol.get("root_sha256") != root_sha256 or
+            effect_protocol.get("start_declaration_id") != start_declaration_id or
+            effect_protocol.get("external_leaf_declaration_id") != leaf_id or
+            effect_protocol.get("external_leaf_no_memory_write_assumed") is not True or
+            effect_protocol.get("valid_calls_and_external_leaf_returns_normally_assumed") is not True or
+            not isinstance(evidence_reference, str) or not evidence_reference.strip()):
+        result["reason"] = "effect_protocol_not_applicable"
+        return result
+
+    result.update(
+        status="checked",
+        external_leaf_declaration_id=leaf_id,
+        effect_evidence={
+            "reference": evidence_reference,
+            "verification_status": "unverified",
+        },
+        conclusion={
+            "status": "conditional",
+            "property": "no_memory_write",
+            "subject": "restricted_getter_wrapper_chain",
+            "premise": "the exact external leaf performs no memory writes and returns normally from valid calls",
+        },
+    )
+    return result

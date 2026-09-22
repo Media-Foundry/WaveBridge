@@ -263,6 +263,21 @@ participation继续未建立，不授权GPU部署。
 值保持，给出条件行坐标域。它仅覆盖初始化式，不证明row*ncols算术、指针范围
 或每次launch的精确row/nrows相关性；不授权部署。
 
+## Getter 的条件无写协议
+
+`getter-no-memory-write-check/v1` 首先 fresh 执行现有 getter 返回值域检查；因此
+它要求有依据的外部叶值域和整数 ABI，不是独立于值域的 effect 分析。值域拒绝
+只使该充分检查 unknown，不表示确实发生写入。不得为通过此检查虚构值域。
+
+`getter-leaf-effect-assumption/v1` 必须提供 `root_sha256`、
+`start_declaration_id`、`external_leaf_declaration_id` 的精确绑定，
+`external_leaf_no_memory_write_assumed` 与
+`valid_calls_and_external_leaf_returns_normally_assumed` 必须严格为 true，
+并提供非空 `evidence_reference`。引用不自动读取或核验，报告明确 unverified。
+成功只说明：在这些前提下，受限单 return wrapper 调用链不写内存。函数名、
+BuiltinAttr、ConstAttr 均不能替代协议；receiver/调用点求值、坐标语义、机器码
+及整核内存行为不在范围内。该入口尚未用于放行 column_loops 的 body。
+
 ## 行偏移整数关系
 
 `row-offset-check/v1`消费完整表达式、精确row/count声明ID、非负闭区间及显式

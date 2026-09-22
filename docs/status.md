@@ -2,6 +2,20 @@
 
 更新日期：2026-09-22。
 
+## Getter 条件无写检查与 builtin lowering 诊断
+
+getter_returns 新增 check_no_memory_write：fresh 值域检查通过后，要求显式外部
+无写/正常返回前提精确绑定 root、start 和 leaf；证据引用只记录为 unverified。
+这是依赖叶值域及 ABI 的更窄充分条件，不是独立 effect 分析，不能虚构值域来通过。
+503 项 CPU 测试及 demo 通过，包含真实 Clang signed leaf→unsigned wrapper 正例、
+写入及不透明调用负例。未改变 body 门控，未运行 GPU。
+
+固定完整 vLLM AST 的 blockIdx.x getter 是 static 单 return，外部叶声明返回 int；
+同工具链 CUDA 编译诊断得到 llvm.nvvm.read.ptx.sreg.ctaid.x 的 memory(none)。
+这是外部语义依据的局部观察，不按名字或 ConstAttr 自动认定无写，也未给完整
+vLLM TU 签发 checked。大 TU 预算、调用点 receiver、实际坐标域和 body 组合仍待建立。
+详见 `.agents/handoffs/wb04-getter-effects-20260922.md`。
+
 ## 同 ID launch 归一化与实际 body 首拒绝定位
 
 launch_facts 对同root、同非空ID且完整节点一致的重复出现归一化，site保留
