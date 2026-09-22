@@ -1,5 +1,6 @@
 import copy
 import unittest
+from unittest.mock import patch
 
 from wavebridge.verification.getter_returns import check_no_memory_write, _hash
 from tests.test_getter_returns import ABI, fixture, literal
@@ -19,6 +20,30 @@ def protocol(root, *, start="start", leaf="leaf", no_write=True,
 
 
 class GetterEffectsTests(unittest.TestCase):
+    def test_explicit_budget_propagates_without_relaxing_declaration_uniqueness(self):
+        root, contract = fixture()
+        with patch("wavebridge.verification.getter_returns.MAX_AST_NODES", 2):
+            self.assertEqual(check_no_memory_write(
+                root, "start", contract, ABI, protocol(root))["status"], "unknown")
+            result = check_no_memory_write(root, "start", contract, ABI, protocol(root),
+                                           max_ast_nodes=1000)
+            self.assertEqual(result["status"], "checked", result)
+            self.assertEqual(result["getter_return_check"]["budget"]["max_ast_nodes"], 1000)
+        root["inner"].append(copy.deepcopy(root["inner"][-1]))
+        result = check_no_memory_write(root, "start", contract, ABI, protocol(root),
+                                       max_ast_nodes=1000)
+        self.assertEqual(result["status"], "unknown")
+        self.assertEqual(result["getter_return_check"]["reason"], "function_declaration_not_unique")
+
+    def test_unknown_reports_retain_effect_protocol_binding(self):
+        root, contract = fixture()
+        effect = protocol(root)
+        result = check_no_memory_write(root, "start", contract, ABI, effect,
+                                       max_ast_nodes=1)
+        self.assertEqual(result["status"], "unknown")
+        self.assertEqual(result["input_sha256"]["effect_protocol"], _hash(effect))
+        self.assertEqual(result["input_sha256"]["root"], _hash(root))
+
     def test_explicit_effect_assumption_checks_only_wrapper_chain(self):
         root, contract = fixture()
         result = check_no_memory_write(root, "start", contract, ABI, protocol(root))

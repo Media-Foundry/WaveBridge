@@ -2,6 +2,19 @@
 
 更新日期：2026-09-22。
 
+## 完整 TU getter 预算与下一处拒绝
+
+固定 vLLM 完整 AST 实测 3,705,324 个节点，目标 getter/leaf 各唯一，超过默认
+100 万节点预算。现允许显式配置至 1000 万的扫描预算，默认不变；仍扫描完整
+TU 并严格检查声明唯一性，不抽取子树替代。失败报告保留 effect 协议哈希。
+506 项 CPU 测试及 demo 通过，48 项 Clang 专项测试通过；无 GPU 执行。
+
+400 万预算的完整 TU 诊断到达具体调用后，因 BuiltinFnToFnPtr 返回
+unsupported_callee_cast，未得到 checked；没有因增大预算而放宽语义。
+诊断使用显式非负 int 域与 32 位 ABI，不声称这些已从实际 launch 恢复。
+下一步核验该 builtin 转换的支持条件，再处理 receiver、launch 及 body 组合。
+详见 `.agents/handoffs/wb04-getter-full-tu-20260922.md`。
+
 ## Getter 条件无写检查与 builtin lowering 诊断
 
 getter_returns 新增 check_no_memory_write：fresh 值域检查通过后，要求显式外部

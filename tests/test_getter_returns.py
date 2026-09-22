@@ -79,6 +79,22 @@ def fixture(*, upper=255, start_type="unsigned int", leaf_argument=0):
 
 
 class GetterReturnsTests(unittest.TestCase):
+    def test_explicit_node_budget_boundaries_and_invalid_limits(self):
+        root, contract = fixture()
+        def nodes(node):
+            return 1 + sum(nodes(child) for child in node.get("inner", []))
+        count = nodes(root)
+        self.assertEqual(check(root, "start", contract, ABI,
+                               max_ast_nodes=count)["status"], "checked")
+        self.assertEqual(check(root, "start", contract, ABI,
+                               max_ast_nodes=10_000_000)["status"], "checked")
+        self.assertEqual(check(root, "start", contract, ABI,
+                               max_ast_nodes=count - 1)["reason"], "ast_node_budget_exceeded")
+        for limit in (True, False, 0, -1, 1.5, "100", 10_000_001):
+            with self.subTest(limit=limit):
+                self.assertEqual(check(root, "start", contract, ABI,
+                                       max_ast_nodes=limit)["reason"], "invalid_ast_node_budget")
+
     def test_limits_malformed_children_and_nonfinite_inputs_remain_unknown(self):
         root, contract = fixture()
         with patch("wavebridge.verification.getter_returns.MAX_AST_NODES", 2):
@@ -176,6 +192,10 @@ class GetterReturnsTests(unittest.TestCase):
         leaf_call = root["inner"][1]["inner"][-1]["inner"][0]["inner"][0]["inner"][0]
         leaf_call["inner"][0]["castKind"] = "BitCast"
         mutations["unsupported_callee_cast"] = (root, contract, ABI)
+        root = copy.deepcopy(root)
+        leaf_call = root["inner"][1]["inner"][-1]["inner"][0]["inner"][0]["inner"][0]
+        leaf_call["inner"][0]["castKind"] = "BuiltinFnToFnPtr"
+        mutations["builtin_callee_cast_still_unsupported"] = (root, contract, ABI)
         root, contract = fixture()
         mutations["missing_abi"] = (root, contract, {"int": ABI["int"]})
         for name, (tree, leaf_contract, integer_types) in mutations.items():

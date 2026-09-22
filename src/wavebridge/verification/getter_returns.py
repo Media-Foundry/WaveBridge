@@ -15,6 +15,7 @@ from wavebridge.verification.integer_conversion import check_interval
 from wavebridge.verification.kernel_arguments import _abi_type, _Unknown
 
 MAX_AST_NODES = 1_000_000
+HARD_MAX_AST_NODES = 10_000_000
 MAX_CALL_DEPTH = 32
 MAX_EXPRESSION_DEPTH = 32
 
@@ -39,7 +40,8 @@ def _children(node):
 
 
 def check(root: object, start_declaration_id: object, leaf_contract: object,
-          integer_types: object) -> dict[str, Any]:
+          integer_types: object, *, max_ast_nodes: int | None = None) -> dict[str, Any]:
+    node_budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result: dict[str, Any] = {
         "schema_version": "getter-return-domain-check/v1", "status": "unknown", "reason": None,
         "start_declaration_id": start_declaration_id, "conversion_checks": [],
@@ -51,9 +53,12 @@ def check(root: object, start_declaration_id: object, leaf_contract: object,
                         "explicit ABI matches the compilation target",
                         "the exact external leaf with the stated arguments returns in the supplied interval",
                         "source calls are valid and the external leaf returns normally"],
-        "budget": {"max_ast_nodes": MAX_AST_NODES, "max_call_depth": MAX_CALL_DEPTH,
+        "budget": {"max_ast_nodes": node_budget, "max_call_depth": MAX_CALL_DEPTH,
                    "max_expression_depth": MAX_EXPRESSION_DEPTH},
     }
+    if type(node_budget) is not int or not 1 <= node_budget <= HARD_MAX_AST_NODES:
+        result["reason"] = "invalid_ast_node_budget"
+        return result
     if (not isinstance(root, dict) or not isinstance(leaf_contract, dict) or
             not isinstance(integer_types, dict) or not isinstance(start_declaration_id, str) or
             not start_declaration_id):
@@ -87,7 +92,7 @@ def check(root: object, start_declaration_id: object, leaf_contract: object,
         while pending:
             node = pending.pop()
             nodes += 1
-            if nodes > MAX_AST_NODES:
+            if nodes > node_budget:
                 raise _Unknown("ast_node_budget_exceeded")
             if not isinstance(node, dict):
                 raise _Unknown("ast_node_not_object")
@@ -260,7 +265,8 @@ def check(root: object, start_declaration_id: object, leaf_contract: object,
 
 def check_no_memory_write(root: object, start_declaration_id: object,
                           leaf_contract: object, integer_types: object,
-                          effect_protocol: object) -> dict[str, Any]:
+                          effect_protocol: object, *,
+                          max_ast_nodes: int | None = None) -> dict[str, Any]:
     """Conditionally check that the restricted getter wrappers do not write memory.
 
     The external leaf effect and normal completion are explicit, unverified
@@ -271,7 +277,8 @@ def check_no_memory_write(root: object, start_declaration_id: object,
     value-domain check. Callers must supply an independently justified domain;
     they must not invent one merely to obtain a memory-effect conclusion.
     """
-    value_report = check(root, start_declaration_id, leaf_contract, integer_types)
+    value_report = check(root, start_declaration_id, leaf_contract, integer_types,
+                         max_ast_nodes=max_ast_nodes)
     result: dict[str, Any] = {
         "schema_version": "getter-no-memory-write-check/v1",
         "status": "unknown",
@@ -299,8 +306,12 @@ def check_no_memory_write(root: object, start_declaration_id: object,
     if not isinstance(effect_protocol, dict):
         result["reason"] = "invalid_effect_protocol"
         return result
+    if not isinstance(value_report.get("input_sha256"), dict):
+        result["reason"] = "getter_return_check_not_checked"
+        return result
     try:
-        root_sha256 = _hash(root)
+        # Reuse only the fresh in-process check above, never a caller's report.
+        root_sha256 = value_report["input_sha256"]["root"]
         result["input_sha256"] = {
             "root": root_sha256,
             "start_declaration_id": _hash(start_declaration_id),
