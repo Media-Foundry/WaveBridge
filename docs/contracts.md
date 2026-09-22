@@ -144,6 +144,21 @@ CLI 的 `--use-host-guard-assumptions` 必须显式开启，输出配置域报�
 支持边界见
 `compiler/analysis/README.md`。
 
+## 动态整数最小值的条件检查
+
+`verification.integer_selection.check` 从完整 TU 的唯一表达式 ID 出发，核对
+直接调用的精确函数声明与两个 const 整数引用参数。仅支持单 return、内建 `<`
+和选择对应两个参数的三元表达式；不按函数名赋予 min 语义。比较两侧可以交换，
+返回分支必须同步对应。调用必须在当前值表达式中立即读取，外围 IntegralCast
+须对整个结果区间值保持。引用逃逸、函数体写入和任意实参计算不在支持子集。
+
+输入 `declaration_intervals` 按精确变量/形参声明 ID 提供闭区间，`integer_types`
+显式提供 ABI。两个操作数区间的最小值区间为端点分别取 min；它是给定域下的
+值范围，不证明调用前的变量赋值、真实输入域或这些端点实际可达。
+AST 忠实性、源有效性及引用对象/字面量临时对象的生命周期是显式前提。
+不证明外围 ExprWithCleanups、对象复制、调用到 launch 的值保持或 GPU 行为。
+默认节点预算 100 万、显式上限 1000 万，超预算 unknown；结果不能授权部署。
+
 ## kernel 实参域：`kernel-argument-domain-check/v1`
 
 单个位置绑定条目、显式声明闭区间和整数ABI是输入。checker直接读取实参AST

@@ -320,3 +320,20 @@ checked 仅表示在这些前提下，选定 body 保持受保护变量；合法
 局部累加仍可存在，所以不是整个 body 无写。它不证明 header 的实际坐标含义、
 每轮 getter 值稳定、转换/增量无溢出、列覆盖、正常完成、浮点结果或整核正确性，
 不接通部署门控。预算按每次完整扫描约束节点数，不是总时间或内存预算。
+
+## 动态构造实参中的整数选择
+
+`verification.integer_selection.check(root, expression_id, declaration_intervals,
+integer_types, *, max_ast_nodes=None)` 独立核对完整 TU 中一个原始值表达式。
+输入域条目为 `{declaration_id, type, lower, upper}`，必须精确匹配使用的声明；
+缺失、重复、错类型或不可表示域不能检查通过。ABI 使用既有 `bits/signed` 格式。
+
+当前只接受两个 const 内建整数引用参数、单 return 的 `<`/三元选择函数，以及
+立即 LValueToRValue 读取的直接调用；实参限普通整型声明和 full-expression
+字面量临时对象。声明按 ID 关联，函数名、参数名不携带数值语义。
+外围 IntegralCast 检查整段结果域的值保持；不是按截断/取模解释窄化。
+
+报告 `integer-selection-check/v1` 绑定 root、表达式、输入域和 ABI 哈希，并记录
+callee、选择方向和相等时分支。结果只表示显式域下的 minimum 值区间，
+不建立返回引用身份保证、外围清理、域来源、构造字段、命名对象复制或 launch
+前值保持；也不把既有 constructor_arguments 的 unknown 自动升级。

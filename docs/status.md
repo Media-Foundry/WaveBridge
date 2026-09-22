@@ -2,6 +2,23 @@
 
 更新日期：2026-09-22。
 
+## 动态整数选择的条件值检查
+
+新增 integer_selection 独立检查器：从完整 TU 的唯一表达式及精确 callee ID
+核对两个 const 内建整数引用参数、单 return 的 `<`/三元 minimum 关系，不按
+函数名推断。只支持普通整型声明或字面量临时实参、立即值读取及值保持转换；
+输入域和 ABI 显式给定，未知域、错误选择、副作用、引用逃逸不放行。
+
+本地 545 项 CPU、78 项真实 Clang 专项和 demo 通过；ROCm Clang 23 下新增
+8 项也全部通过。独立小域枚举核对两变量区间，包含比较方向交换、long、负数、
+窄化及声明/参数 ID、临时对象存储期篡改回归。未运行 GPU，不自动升级构造字段、
+实际 launch 或 WB-03 验收。完整重放记录见
+`.agents/handoffs/wb04-integer-selection-20260922.md`。
+
+固定完整 vLLM TU 的真实 block 首参，在显式 hidden_size 域 [1,4096] 和
+int/unsigned int32 ABI 前提下条件 checked，结果 [1,1024]；三个实现文件
+前后哈希一致。该域不是从 Tensor.size 或 launch 自动恢复，不是新 holdout 成功。
+
 ## 构造默认实参的声明来源
 
 直接构造路径现可将无子节点的默认实参关联到选定构造参数的本地整数字面量，
