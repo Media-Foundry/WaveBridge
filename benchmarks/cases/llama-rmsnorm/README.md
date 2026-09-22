@@ -19,7 +19,11 @@ ggml launch wrapper 及融合/stride 分支在 `provenance.json` 明列。compat
 HIP math declarations，并把 `rsqrtf` 映射到该 wrapper 本身使用的 `__ocml_rsqrt_f32`；
 这不替换为 `1/sqrt`，也不改变冻结运算。
 
-人工关系只在 `oracle/manual.json`，不是自动分析输入；当前没有自动源码恢复结果。
+人工关系只在 `oracle/manual.json`，不是自动分析输入。
+受限自动源码恢复记录见 [source-evidence.json](source-evidence.json)：0dfbbaf 在
+完整 standalone HIP TU 上恢复两个列循环、局部贡献、归约链、行前缀和输出后缀，
+同时观察到依赖清单与独立 driver 计划任务。这不代表自动处理原始上游 TU、
+整核等价或部署门控通过；本次源码分析没有运行 GPU。
 
 父执行者可在 WB-01 已验证的工具链上运行最小 sanity：
 

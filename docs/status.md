@@ -2,6 +2,21 @@
 
 更新日期：2026-09-22。
 
+## 完整 standalone TU 重采集与下一语义边界
+
+固定 0dfbbaf，用 source 入口在完整 HIP standalone TU 上重跑 required 依赖观测和
+driver trace；两个列循环 step256、局部贡献、归约链、行前缀及输出后缀仍恢复成功。
+22 个实现文件哈希与运行后源码一致；320 个依赖文件、7 个计划 bitcode 已记录。
+新增 `benchmarks/cases/llama-rmsnorm/source-evidence.json` 索引，修正案例 README
+过时的“没有自动源码恢复结果”。完整 TU 指手工 standalone，不是原始生产 TU；
+无 GPU、整核 checker 或候选生成结果。0dfbbaf 远端 run35731336147 success。
+
+下一语义边界已按 vLLM 固定 AST 核对：直接 threadIdx.x 起点存在 unsigned→int
+转换，blockDim.x 步长依赖实际 launch，+= 本身也使用 unsigned computation。
+不能仅放开 wrapper 或将 blockDim.x 猜成常量；需要完整表达式和显式坐标/launch/ABI
+条件下的值保持检查。现有拒绝结果保留，不把新分析建议记为已支持。
+详见 `.agents/handoffs/wb03-full-input-20260922.md`。
+
 ## Driver 计划任务证据与 HIP 依赖输出修正
 
 可选 --toolchain-trace 保存独立 -### dry-run 原文，严格解析唯一 cc1 计划任务，
