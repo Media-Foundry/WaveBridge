@@ -275,10 +275,12 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> 
         "body_preserves_induction": "not_established",
         "body_preserves_bound": "not_established",
         "body_effect_reason": None,
+        "body_effect_unknown_range": None,
         "condition_ast": None, "assumptions": {
             "signed_recurrence_overflow": "external_precondition_unproven",
             "iteration_domain": "external_precondition_unproven",
             "memory_no_alias": "unproven",
+            "source_validity": "external_precondition_unproven",
         },
     }
     try:
@@ -321,6 +323,7 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> 
                             body_preserves_bound="established_in_supported_effect_subset")
             except _Unknown as error:
                 item["body_effect_reason"] = error.reason
+                item["body_effect_unknown_range"] = error.range
         start_expr = _unwrap_value(initializer)
         if start_expr.get("kind") == "IntegerLiteral" and _signed_int(start_expr):
             try:

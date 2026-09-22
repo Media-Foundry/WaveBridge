@@ -2,6 +2,18 @@
 
 更新日期：2026-09-22。
 
+## 同 ID launch 归一化与实际 body 首拒绝定位
+
+launch_facts 对同root、同非空ID且完整节点一致的重复出现归一化，site保留
+ast_occurrences；不同ID不合并，缺ID逐次保留，同ID内容冲突整体unknown且sites为空。
+函数定义唯一性不放宽，归一化不证明执行次数或host可达性。真实Clang lambda回归
+及配置/target冲突负例已通过，496项CPU测试通过。
+完整vLLM重放每个具体实例由4次AST出现变为1个site（ast_occurrences=4）；另一个
+CUB头内kernel_not_exact_declref仍保留在unresolved_sites，不视为整TU launch闭包通过。
+body首拒绝已定位：float的blockIdx.x PseudoObjectExpr，Half/BFloat16的operator float
+CXXMemberCallExpr；未放宽调用/属性副作用假设。报告新增body未知范围及源有效性前提。
+详见 `.agents/handoffs/wb03-launch-identity-20260922.md`。本轮无GPU，适配链未完成。
+
 ## 直接坐标循环的独立 body 保持检查
 
 coordinate header observed 后现调用原副作用白名单，保护 induction、边界和

@@ -1,5 +1,14 @@
 # 关系恢复
 
+## 同 TU launch 身份归一化
+
+launch_facts 在解释目标前按非空 Clang ID 收集 CUDAKernelCallExpr，仅完整节点
+一致的同 ID 出现可合并；site.ast_occurrences 保留出现次数。不同 ID 不合并，
+缺 ID 保留各次出现。同 ID 内容冲突（包括指向不同 kernel）使整份报告 unknown、
+sites 为空，不能由目标过滤绕过冲突。函数定义的唯一性检查不因此放宽。
+这是单 AST root 内的语法身份归一化，不是 host 控制流、调用次数或可达性证明；
+一个 lambda 节点可能运行零次或多次。other_kernel_sites 仍计原始出现次数。
+
 ## 直接坐标循环头：结构观察而非递推证明
 
 列循环报告新增完整 `initializer_ast`、`increment_ast`，后者保留 CompoundAssign
@@ -11,6 +20,7 @@
 即使子报告 `observed`，循环和总恢复仍 `unknown`，数值 step 为空，
 header_recurrence_observed 为 false。body 保持性通过原受限副作用检查单独建立：
 保护 induction、边界及两个 receiver 声明；失败保存 body_effect_reason。
+body_effect_unknown_range 保存首拒绝范围；source_validity 前提显式标为未证明。
 循环体改 induction 也可能具有相同 header 观察，但 body 保持性不得建立。
 即使 body 检查成功，也以有效源程序和 memory_no_alias 为前提，不证明 body 正常
 完成、分支一致、数据贡献、receiver purity 或参与，绝不能据此放行。
