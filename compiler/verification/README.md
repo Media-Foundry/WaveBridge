@@ -448,3 +448,25 @@ callee 属性只允许明确列出的形状。`enable_if` 在 Clang 中属于非
 上下文；首版只接受实际案例中的单个常量真布尔字面量形状，不开放任意属性。
 语义依据见 [Clang enable_if 文档](https://clang.llvm.org/docs/AttributeReference.html#enable-if)。
 数值子报告不回写升级，外部输入域、ABI、有效源码及正常返回仍是前提。
+
+## 自动对象初始化完成时的条件关系
+
+`verification.object_initialization.check(payload, variable_id, integer_types,
+selection_domains, *, max_ast_nodes=None)` 接收同次原生 envelope（不是外层采集报告），
+按唯一 VarDecl ID 关联普通非模板函数中的自动对象、直接构造式及可选的一层
+ExprWithCleanups。允许普通嵌套块，不支持 static/TLS、引用、volatile、属性、
+lambda 内对象或不支持的初始化形状。类型与表达式身份必须精确对应。
+
+有清理 wrapper 时，要求同 ASTContext 的唯一原生观察精确绑定 wrapper 和构造式，
+副作用标志严格为 false、辅助对象数严格为整数0，覆盖/计数语义必须匹配；若 JSON
+本身带有标志，也必须一致。数量不是析构次数，标志属于可信前端证据，不是独立证明。
+缺失、冲突、重复或额外清理形状保持 unknown；不会从旧工件缺字段推断没有清理。
+
+随后从同一完整 AST fresh 运行参数效果、构造器实现与字段域检查。报告
+`object-initialization-check/v1` 的 checked 仅在有效源码、匹配 ABI、外部输入域及
+构造正常返回前提下，给出初始化完成时的字段域，以及该段初始化未观测到目标地址发布。
+保留子报告原有边界，不信任生成器或调用者提供的成功结果。
+
+早先别名、初始化后的值保持/逃逸、析构、异常展开、动态调用历史和实际 launch
+仍未建立；`source_program_checked=false`、`deployable=false`。这不是把初始化
+字段域直接传给 GPU launch 的许可。预算约束每次扫描的节点数，不是总运行时间。
