@@ -2,6 +2,20 @@
 
 更新日期：2026-09-23。
 
+## 整函数显式源对象引用闭合
+
+新增 `verification/object_use_closure.py`，fresh 组合初始化、直接/捕获复制和
+立即调用绑定，并要求整函数全部源引用恰好属于受支持捕获初始化或复制参数。
+不只审选定分支；三分支真实 fixture 的7个引用、4次捕获、3次复制和4个lambda
+全部纳入。额外写入、取址、引用别名、按值/init-capture、具名/传出closure、
+缺失协议或元数据冲突均保持 unknown。
+
+628项CPU、161项Clang专项及demo通过。真实回归还修复了lambda重复body仅省略
+位置line字段导致的误拒绝；不忽略offset、ID或语义冲突。闭合检查不建立历史
+值保持、先前别名、未跟踪内存效果或一般调用纯度，整核和部署仍为false。
+固定 vLLM 完整 TU 的全组合重放已启动，尚无终态结果，不能记为通过；见
+`.agents/handoffs/wb04-object-use-closure-20260923.md` 的确切进程和工件记录。
+
 ## 立即调用 lambda 的接收者绑定
 
 新增 `verification/lambda_invocation.py`，从完整 AST 检查原始 lambda 临时对象

@@ -485,3 +485,28 @@ lambda 内对象或不支持的初始化形状。类型与表达式身份必须�
 `[&]() { source.x = 99; Config target(source); }()` 可以具备正确的接收者绑定，
 但复制值显然不再等于初始值。初始化、捕获身份、调用绑定三个局部成功不能
 替代源对象从初始化到复制点之间的效果分析。整核和部署标记仍为 false。
+
+同 ID 副本比较只归一化 `loc`/`range` 中的 `line` 显示字段：真实 Clang17
+在重复 body 的一份 JSON 中省略该字段。节点 ID、offset、file、col、tokLen、
+类型、操作及子结构仍比较；完整 root 哈希仍绑定所有原始位置元数据。
+
+## 整函数显式源对象引用的闭合检查
+
+`verification.object_use_closure.check(payload, variable_id, integer_types,
+initialization_selection_domains, capture_protocols, *, max_ast_nodes=None)`
+首先 fresh 检查自动对象初始化，再遍历完整所属普通函数的语义 AST，包含所有
+分支与 lambda body，不只包含某个选定复制点。重复 closure body 副本须核对，
+不能由省略遍历掩盖同 ID 的源引用冲突。内联汇编属于不支持形状。
+
+每个显式源 DeclRef 必须归入精确 native by_reference 捕获初始化，或 fresh
+检查通过的直接 record copy 参数。普通复制调用 `record_copy_check`；lambda
+内复制调用 `capture_source_check`，其外部协议字典的键必须恰好覆盖全部此类
+复制 ID。native 捕获集合还必须与这些复制的完整 capture chain 并集一致。
+所有相关 lambda 都 fresh 核对立即调用接收者。写字段、取地址、引用别名、
+按值/init-capture、具名或传出 closure 等不能通过。未知不被解释成源码错误。
+
+`object-explicit-use-closure-check/v1` 的 checked 只建立完整受支持显式引用集合
+的闭合分类，并保留每个子检查的条件；不建立历史值保持、无先前别名、一般调用
+纯度或未跟踪内存效果。没有显式源引用的不透明调用可以存在，其效果仍未知。
+初始化字段域不能因此直接搬到复制点或 launch。失败时保留已经运行的子报告，
+不接通部署门控；默认资源上限仍是各次 fresh 扫描的节点数而不是总耗时。

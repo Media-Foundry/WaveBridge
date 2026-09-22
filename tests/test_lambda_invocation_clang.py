@@ -97,6 +97,25 @@ class LambdaInvocationClangTests(unittest.TestCase):
         occurrences[0]["valueCategory"] = "lvalue"
         self.assertEqual(check(root, node["id"])["status"], "unknown")
 
+    def test_display_line_omission_is_not_a_semantic_body_conflict(self):
+        for mutation in ("display_line", "offset", "nonlocation_line"):
+            root = copy.deepcopy(self.root)
+            node = self.lambdas("direct", root)[0]
+            closure = next(n for n in node["inner"] if n.get("kind") == "CXXRecordDecl")
+            method = next(n for n in closure["inner"] if n.get("name") == "operator()")
+            body = next(n for n in method["inner"] if n.get("kind") == "CompoundStmt")
+            direct_body = next(n for n in node["inner"] if n.get("kind") == "CompoundStmt")
+            if mutation == "display_line":
+                body["range"]["begin"]["line"] = 6
+                direct_body["range"]["begin"].pop("line", None)
+            elif mutation == "offset":
+                body["range"]["begin"]["offset"] += 1
+            else:
+                body["line"] = 6  # Not source-location metadata: must remain strict.
+            with self.subTest(mutation=mutation):
+                self.assertEqual(check(root, node["id"])["status"],
+                                 "checked" if mutation == "display_line" else "unknown")
+
     def test_binding_does_not_prove_value_preservation_or_reachability(self):
         for name in ("mutating_body", "unreachable"):
             self.assertEqual(check(self.root, self.lambdas(name)[0]["id"])["status"], "checked")

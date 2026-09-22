@@ -48,6 +48,35 @@ def _raw_type(node: object) -> str:
     return info.get("desugaredQualType") or info["qualType"]
 
 
+def _same_ast(left: object, right: object) -> bool:
+    """Compare AST semantics, retaining IDs and locations except display lines.
+
+    A real Clang17 repeated body can omit range.begin.line in one JSON view.
+    Only `line` under loc/range is ignored; offsets, files, columns, token lengths
+    and all non-location fields remain exact. The full input hash still binds
+    the original location metadata, including every recorded line number.
+    """
+    pending = [(left, right, False)]
+    while pending:
+        first, second, location = pending.pop()
+        if type(first) is not type(second):
+            return False
+        if isinstance(first, dict):
+            first_keys = set(first) - ({"line"} if location else set())
+            second_keys = set(second) - ({"line"} if location else set())
+            if first_keys != second_keys:
+                return False
+            pending.extend((first[key], second[key], location or key in {"loc", "range"})
+                           for key in first_keys)
+        elif isinstance(first, list):
+            if len(first) != len(second):
+                return False
+            pending.extend((a, b, location) for a, b in zip(first, second))
+        elif first != second:
+            return False
+    return True
+
+
 def _template_marker(node: dict[str, Any]) -> bool:
     definition = node.get("definitionData")
     children = node.get("inner", [])
@@ -139,7 +168,7 @@ def check(root: object, lambda_id: object, *, max_ast_nodes: int | None = None) 
         lambda_occurrences = index.get(lambda_id, [])
         if (not lambda_occurrences or
                 any(node.get("kind") != "LambdaExpr" for node in lambda_occurrences) or
-                any(node != lambda_occurrences[0] for node in lambda_occurrences[1:])):
+                any(not _same_ast(node, lambda_occurrences[0]) for node in lambda_occurrences[1:])):
             raise _Unknown("original_lambda_expression_not_unique")
         # JSON repeats lambda bodies under the closure's operator method.  Walk
         # the semantic expression/body view while skipping that record copy;
@@ -182,7 +211,7 @@ def check(root: object, lambda_id: object, *, max_ast_nodes: int | None = None) 
         closure_occurrences = index.get(closure_id, [])
         if (not closure_occurrences or
                 any(node.get("kind") != "CXXRecordDecl" for node in closure_occurrences) or
-                any(node != closure_occurrences[0] for node in closure_occurrences[1:])):
+                any(not _same_ast(node, closure_occurrences[0]) for node in closure_occurrences[1:])):
             raise _Unknown("lambda_closure_declaration_not_unique")
 
         methods = [child for child in _children(closure, strict=True)
@@ -195,7 +224,7 @@ def check(root: object, lambda_id: object, *, max_ast_nodes: int | None = None) 
         method_occurrences = index.get(method_id, []) if isinstance(method_id, str) else []
         if (not isinstance(method_id, str) or not method_id or not method_occurrences or
                 any(node.get("kind") != "CXXMethodDecl" for node in method_occurrences) or
-                any(node != method_occurrences[0] for node in method_occurrences[1:]) or
+                any(not _same_ast(node, method_occurrences[0]) for node in method_occurrences[1:]) or
                 method.get("storageClass") is not None or method.get("isStatic") is True or
                 method.get("previousDecl") is not None or _template_marker(method)):
             raise _Unknown("lambda_call_operator_declaration_unsupported")
@@ -204,7 +233,7 @@ def check(root: object, lambda_id: object, *, max_ast_nodes: int | None = None) 
         method_bodies = [child for child in method_children if child.get("kind") == "CompoundStmt"]
         attributes = [child for child in method_children
                       if str(child.get("kind", "")).endswith("Attr")]
-        if (parameters or len(method_bodies) != 1 or method_bodies[0] != lambda_body or
+        if (parameters or len(method_bodies) != 1 or not _same_ast(method_bodies[0], lambda_body) or
                 any(child.get("kind") not in {"CompoundStmt", *_METHOD_ATTRS}
                     for child in method_children) or
                 any(child.get("kind") not in _METHOD_ATTRS or _children(child, strict=True)
@@ -263,7 +292,7 @@ def check(root: object, lambda_id: object, *, max_ast_nodes: int | None = None) 
         call_occurrences = index.get(call_id, []) if isinstance(call_id, str) else []
         if (not isinstance(call_id, str) or not call_id or not call_occurrences or
                 any(node.get("kind") != "CXXOperatorCallExpr" for node in call_occurrences) or
-                any(node != call_occurrences[0] for node in call_occurrences[1:]) or
+                any(not _same_ast(node, call_occurrences[0]) for node in call_occurrences[1:]) or
                 call.get("valueCategory") != "prvalue" or len(call_children) != 2 or
                 call_children[1] is not current):
             raise _Unknown("lambda_operator_call_shape_or_identity_unsupported")
