@@ -2,6 +2,24 @@
 
 更新日期：2026-09-22。
 
+## 原始构造实参与字段域的 fresh 组合
+
+新增 constructor_source_check：在完整 TU 中按唯一直接构造表达式 ID，重新
+恢复身份、原始实参及字段映射；literal/default 独立核对来源和转换，动态实参
+逐项 fresh 运行 minimum checker，再连接实际形参及字段初始化转换。
+外部仅提供声明域，不接受自报 checked；缺失、多余和错绑定的域均不放行。
+原始恢复报告保持其真实 unknown 等状态，只有全部字段义务满足才输出组合 checked。
+
+本地 553 项 CPU、86 项真实 Clang 专项和 demo 通过；ROCm Clang 23 下新增
+8 项通过。覆盖多个动态实参、字段交换、默认 7/13、错误函数、构造体写入、复制、
+窄化、伪造报告及类型/ID 畸形输入。未运行 GPU，实际 launch、copy 和输入域
+来源未建立；WB-03 未完整验收。完整证据见
+`.agents/handoffs/wb04-source-constructor-20260922.md`。
+
+固定完整 vLLM TU 的真实原始构造，在 hidden_size∈[1,4096]、int/unsigned int32
+的显式诊断前提下，字段 x∈[1,1024]、y=z=1 得到条件 checked；八个实现文件
+前后哈希一致，原始实参恢复仍为 unknown。没有建立这些字段的实际 launch 语义。
+
 ## 动态整数选择的条件值检查
 
 新增 integer_selection 独立检查器：从完整 TU 的唯一表达式及精确 callee ID

@@ -337,3 +337,21 @@ integer_types, *, max_ast_nodes=None)` 独立核对完整 TU 中一个原始值�
 callee、选择方向和相等时分支。结果只表示显式域下的 minimum 值区间，
 不建立返回引用身份保证、外围清理、域来源、构造字段、命名对象复制或 launch
 前值保持；也不把既有 constructor_arguments 的 unknown 自动升级。
+
+## 从原始构造表达式组合字段域
+
+`constructor_source_check.check(root, expression_id, integer_types,
+selection_domains, *, max_ast_nodes=None)` 接收完整 TU 中直接构造表达式的 ID。
+它重新恢复构造身份、实参和完整字段映射，再独立检查每个受支持实参。
+`selection_domains` 为 `{argument_expression_id: declaration_intervals}`，只提供
+外部变量域，不接收或信任调用者自报的 `checked`。键须精确覆盖需要检查的动态实参。
+
+第一子集为整数字面量（含有源码关联的默认实参）和已支持的 minimum 调用。
+动态实参从原始完整表达式重新运行 `integer_selection`，不会用伪造字面量或
+虚拟 DeclRef 替换 AST；其完整转换已经检查，之后只连接形参类型及字段初始化
+转换。字段按精确 ID/参数位置关联，不按 x/y/z 名称猜测坐标轴。
+
+输出 `source-constructor-values-check/v1` 仅在全部字段义务满足时给出 checked。
+原始恢复报告保留 unknown 等真实状态，组合结果不会回写成 inspected。
+结论只覆盖构造求值时的条件字段域；输入域来源、清理、复制、后续写入和实际
+launch 对应仍未建立。默认既有报告检查入口及部署门控不改变。

@@ -159,6 +159,13 @@ AST 忠实性、源有效性及引用对象/字面量临时对象的生命周期
 不证明外围 ExprWithCleanups、对象复制、调用到 launch 的值保持或 GPU 行为。
 默认节点预算 100 万、显式上限 1000 万，超预算 unknown；结果不能授权部署。
 
+`source-constructor-values-check/v1` 将上述检查与同一完整 TU 中 fresh 恢复的
+直接构造身份、literal/default 和完整字段映射连接。动态域按原始实参表达式 ID
+提供，不接受预先给出的 checked；所有字段义务均满足才给组合结论，原始恢复
+状态及 AST 不修改。检查构造求值时的字段域，不证明命名对象到 launch 的值
+保持，也不解释字段名为坐标轴。复制和未知实参不因局部成功而获准；详见
+`compiler/verification/README.md` 的源构造组合接口。
+
 ## kernel 实参域：`kernel-argument-domain-check/v1`
 
 单个位置绑定条目、显式声明闭区间和整数ABI是输入。checker直接读取实参AST
