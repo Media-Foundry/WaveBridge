@@ -10,10 +10,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: sudo apt-get update && sudo apt-get install -y clang-18
+      - run: sudo apt-get update && sudo apt-get install -y clang-18 llvm-18-dev libclang-18-dev
+      - name: Build compiler-matched native capture plugin
+        run: |
+          clang++-18 -std=c++17 -fno-rtti -fPIC -shared compiler/frontend/native/capture_plugin.cpp \
+            -I/usr/lib/llvm-18/include \
+            -o "$RUNNER_TEMP/libwavebridge_capture_plugin.so"
       - name: Record compiler and run real source regressions
         env:
           PYTHONPATH: src
+          WB_NATIVE_CAPTURE_PLUGIN: ${{ runner.temp }}/libwavebridge_capture_plugin.so
+          WB_NATIVE_CAPTURE_COMPILER: /usr/lib/llvm-18/bin/clang++
         run: |
           export PATH=/usr/lib/llvm-18/bin:$PATH
           command -v clang++

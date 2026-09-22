@@ -2,6 +2,21 @@
 
 更新日期：2026-09-22。
 
+## 原生 Clang 捕获采集原型
+
+新增可选原生插件与 `wavebridge.frontend.native_captures`：同一 ASTContext 输出
+完整 TU 和 getCaptureFields 的捕获变量/闭包字段映射，ID 不跨进程拼接。
+记录初始化表达式、捕获模式、body 嵌套路径、插件编译版本和目标 triple；
+init-capture/this 等保留 unsupported。初始化式里的 lambda 不归入新闭包 body。
+完整 AST 不代表捕获元数据覆盖完备：默认参数、全部模板实例等尚未穷尽。
+
+本机 AOCC Clang 17 插件构建、574 项 CPU（启用原生测试，无跳过）、107 项
+Clang 专项及 demo 通过。新增 11 项包含同类型多捕获、嵌套/初始化式、失败
+分类与同份 AST 上的既有复制检查；Clang 18 CI 已配置匹配插件构建与专项运行。
+采集报告哈希绑定源、插件、driver 和同次依赖观测，不建立完整 SDK 输入快照。
+未运行 GPU、未重新采集生产 vLLM TU、不建立 runtime identity 或 launch。
+证据见 `.agents/handoffs/wb03-native-captures-20260922.md`。
+
 ## 捕获来源的可执行边界回归
 
 真实 C++ CPU 执行确认：同一外层对象初始化为 3、随后改为 99，按值捕获返回 3，

@@ -46,3 +46,21 @@ resource-dir 不做递归闭包哈希。trace 失败保留原始原因，不抹�
 `--symbol` 仍用于核对入口是否存在。完整 HIP AST 可能很大：报告流式写出，
 完整模式只保留解析后的 AST 与 stdout 哈希，不重复存储原始 stdout 字符串；
 `stdout_retention=parsed_ast_only_not_verbatim` 明确这一边界。没有自动磁盘或内存预算管理。
+
+## 可选原生捕获证据
+
+`wavebridge.frontend.native_captures` 调用显式提供的编译器匹配插件，同次输出
+完整 TU 与 `getCaptureFields` 捕获变量/闭包字段映射，避免跨进程裸 ID 拼接。
+构建见 [原生插件](native/README.md)。它不改变默认 JSON 入口。
+
+```bash
+PYTHONPATH=src python3 -m wavebridge.frontend.native_captures input.cpp \
+  --compiler /path/to/clang++ --plugin /path/to/capture_plugin.so \
+  --compiler-arg=-std=c++17 --output artifacts/new-native-captures.json
+```
+
+输出必须为新文件；报告绑定源、插件、driver 的前后哈希、完整命令及同次依赖
+观测。编译失败、超时、依赖缺失、输入变化和 envelope 解析失败不能 collected。
+插件/AST 属于可信前端；collected 不检查元数据的语义正确性，更不证明运行时
+对象身份、无写历史或 launch。复杂捕获保留 unsupported，不消费旧构造字段域。
+Clang 插件 ABI 必须匹配；普通 CPU 测试可跳过原生集成，专项 CI 显式构建运行。
