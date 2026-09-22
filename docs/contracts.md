@@ -185,6 +185,12 @@ checker。外部`thread-start-assumptions/v1`绑定root hash、kernel、选定la
 
 ## 条件列数域覆盖
 
+`coordinate-column-header-observation/v1` 的 observed 仅表示受限直接属性起点和
+unsigned compound increment 的结构及 getter/receiver 绑定已观察到；不表示
+这些 getter 具有 CUDA/HIP 坐标语义。它不填写数值步长，也不建立 header/body
+递推，父循环继续 unknown。必须另行检查 launch、ABI、整数转换/加法和循环体
+保持性，不能将该观察替代下述列域门槛。原始初始化和增量 AST 保留在父报告中。
+
 循环报告将`header_recurrence_observed`与`body_preserves_induction`、
 `body_preserves_bound`分开。后两项只有在受支持的副作用子集中完成检查才为
 `established_in_supported_effect_subset`；仅观察循环头不允许进入列域checker。

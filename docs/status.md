@@ -2,6 +2,19 @@
 
 更新日期：2026-09-22。
 
+## 直接坐标 header 观察与下游拒绝回归
+
+column_loops 保留完整起点/增量 AST，新增受限 coordinate_header_observation：
+严格连接 unsigned 属性 getter、receiver 和 unsigned += computation type，
+但不填 step、不建立 header/body 递推，父报告仍 unknown。真实 Clang 的改名
+property、body 修改、额外窄化和步长算术回归，以及不 mock 循环/launch 恢复的
+column_domain 拒绝测试已补齐（线程前提仍为手工测试 fixture）。486 项 CPU 测试通过。
+重放固定 vLLM attempt-06 的六个循环均仍 unknown：symbol-filtered AST 缺唯一
+getter 声明，value_link 为 callee_declaration_not_unique。未拼接其它 AST，未新增
+holdout 成功、GPU 或候选证据。下一步先补同 TU 声明可见性，再检查坐标/launch/ABI
+条件下递推；不能仅凭新字段宣称关系恢复完成。见
+`.agents/handoffs/wb03-coordinate-header-20260922.md`。
+
 ## 完整 standalone TU 重采集与下一语义边界
 
 固定 0dfbbaf，用 source 入口在完整 HIP standalone TU 上重跑 required 依赖观测和

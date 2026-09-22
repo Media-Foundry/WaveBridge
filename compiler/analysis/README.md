@@ -1,5 +1,22 @@
 # 关系恢复
 
+## 直接坐标循环头：结构观察而非递推证明
+
+列循环报告新增完整 `initializer_ast`、`increment_ast`，后者保留 CompoundAssign
+的 computeLHSType/computeResultType。`coordinate_header_observation` 仅观察
+`int <- IntegralCast(unsigned PseudoObject)` 起点、同 induction 的 `< signed参数`
+条件和 unsigned PseudoObject 的 `+=` 步长；复用 initializer_value 精确绑定静态
+无参 getter 与 receiver，不按 threadIdx/blockDim 名字赋予语义。
+
+即使子报告 `observed`，循环和总恢复仍 `unknown`，数值 step 为空，
+header_recurrence_observed 为 false，body 保持性不建立。循环体改 induction 也
+可能具有相同 header 观察，绝不能据此放行。未知 getter、额外 cast/算术及不支持
+的 computation type 不获得该观察。旧 signed 常量递推路径保持不变。
+
+坐标语义、实际 launch/block 宽度、显式 ABI、起点转换、unsigned 加法及赋回 int
+（包括末次增量）尚待独立检查。当前 thread_start/column_domain 等消费者继续
+拒绝这些 unknown 循环。symbol-filtered AST 缺 getter 声明时不拼接别次 AST 补全。
+
 ## 列循环副作用边界（2026-09-21修复）
 
 声明类型分类同时用于引用初始化和存储目标：优先使用声明上的desugaredQualType，

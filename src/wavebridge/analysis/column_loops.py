@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from wavebridge.analysis.integer_constants import evaluate
+from wavebridge.analysis.initializer_value import link as link_initializer_value
 
 FUNCTION_KINDS = {"FunctionDecl", "CXXMethodDecl"}
 LOOP_KINDS = {"ForStmt", "WhileStmt", "DoStmt", "CXXForRangeStmt"}
@@ -184,11 +185,92 @@ def _check_body(body: dict[str, Any], protected_ids: set[str]) -> None:
                 _storage_target(children[0], protected_ids)
 
 
+def _coordinate_header(root: dict[str, Any], induction: dict[str, Any],
+                       initializer: dict[str, Any], condition: dict[str, Any],
+                       increment: dict[str, Any]) -> dict[str, Any]:
+    """Observe one exact CUDA/HIP-style coordinate header without proving values."""
+    result: dict[str, Any] = {
+        "schema_version": "coordinate-column-header-observation/v1",
+        "status": "unknown", "reason": None,
+        "start_value_link": None, "step_value_link": None,
+        "induction_declaration_id": induction.get("id"),
+        "bound_parameter_id": None,
+        "recurrence_checked": False, "coordinate_semantics": "not_established",
+        "launch_configuration_bound": False, "integer_abi_checked": False,
+        "source_program_checked": False, "deployable": False,
+        "obligations": [
+            "bind the exact start getter and receiver to local x coordinate semantics",
+            "bind the exact step getter and receiver to block x dimension semantics",
+            "bind one actual launch block dimension and the corresponding local-id domain",
+            "check unsigned-to-signed initialization and compound-assignment conversions",
+            "check intermediate addition and final increment representability on the declared domain",
+        ],
+    }
+    try:
+        induction_id = induction.get("id")
+        if not isinstance(induction_id, str) or not induction_id:
+            raise _Unknown("coordinate_induction_id_missing")
+        init_children = _children(initializer)
+        if (initializer.get("kind") != "ImplicitCastExpr" or
+                initializer.get("castKind") != "IntegralCast" or
+                initializer.get("valueCategory") != "prvalue" or
+                _type(initializer) != "int" or len(init_children) != 1 or
+                init_children[0].get("kind") != "PseudoObjectExpr" or
+                init_children[0].get("valueCategory") != "prvalue" or
+                _type(init_children[0]) != "unsigned int"):
+            raise _Unknown("coordinate_initializer_shape_unsupported")
+        start_link = link_initializer_value(root, initializer)
+        result["start_value_link"] = start_link
+        conversions = start_link.get("conversions_outer_to_inner")
+        if (start_link.get("status") != "recovered" or not isinstance(conversions, list) or
+                len(conversions) != 1 or conversions[0].get("cast_kind") != "IntegralCast" or
+                conversions[0].get("source_type") != "unsigned int" or
+                conversions[0].get("target_type") != "int"):
+            raise _Unknown("coordinate_start_value_link_not_recovered")
+
+        condition_children = _children(condition)
+        if (condition.get("kind") != "BinaryOperator" or condition.get("opcode") != "<" or
+                _type(condition) != "bool" or len(condition_children) != 2):
+            raise _Unknown("coordinate_condition_shape_unsupported")
+        condition_induction, _ = _declref(condition_children[0])
+        bound_id, bound_kind = _declref(condition_children[1])
+        if condition_induction != induction_id or bound_kind != "ParmVarDecl":
+            raise _Unknown("coordinate_condition_binding_mismatch")
+        result["bound_parameter_id"] = bound_id
+
+        increment_children = _children(increment)
+        if (increment.get("kind") != "CompoundAssignOperator" or
+                increment.get("opcode") != "+=" or _type(increment) != "int" or
+                increment.get("valueCategory") != "lvalue" or
+                increment.get("computeLHSType") != {"qualType": "unsigned int"} or
+                increment.get("computeResultType") != {"qualType": "unsigned int"} or
+                len(increment_children) != 2):
+            raise _Unknown("coordinate_increment_shape_unsupported")
+        increment_induction, _ = _declref(increment_children[0])
+        step_expression = increment_children[1]
+        if (increment_induction != induction_id or
+                step_expression.get("kind") != "PseudoObjectExpr" or
+                step_expression.get("valueCategory") != "prvalue" or
+                _type(step_expression) != "unsigned int"):
+            raise _Unknown("coordinate_increment_binding_mismatch")
+        step_link = link_initializer_value(root, step_expression)
+        result["step_value_link"] = step_link
+        if (step_link.get("status") != "recovered" or
+                step_link.get("conversions_outer_to_inner") != []):
+            raise _Unknown("coordinate_step_value_link_not_recovered")
+        result.update(status="observed", reason=None)
+    except _Unknown as error:
+        result["reason"] = error.reason
+    return result
+
+
 def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> dict[str, Any]:
     item: dict[str, Any] = {
         "status": "unknown", "reason": None, "range": loop.get("range"),
         "induction": None, "start": None, "bound": None, "step": None,
         "step_source": None,
+        "initializer_ast": None, "increment_ast": None,
+        "coordinate_header_observation": None,
         "header_recurrence_observed": False,
         "body_preserves_induction": "not_established",
         "body_preserves_bound": "not_established",
@@ -219,7 +301,12 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> 
         induction_id = induction.get("id")
         if not isinstance(induction_id, str):
             raise _Unknown("induction_id_missing", induction.get("range"))
-        start_expr = _unwrap_value(_initializer(induction))
+        initializer = _initializer(induction)
+        item["initializer_ast"] = initializer
+        item["increment_ast"] = increment
+        item["coordinate_header_observation"] = _coordinate_header(
+            root, induction, initializer, condition, increment)
+        start_expr = _unwrap_value(initializer)
         if start_expr.get("kind") == "IntegerLiteral" and _signed_int(start_expr):
             try:
                 start_value = int(str(start_expr["value"]), 0)
