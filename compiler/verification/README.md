@@ -377,3 +377,30 @@ FieldDecl ID；`source_object_preservation` 和 `launch_semantics` 始终未建�
 同一非空表达式 ID 若在 AST 出现多次，只有完整节点一致才归一；记录
 `expression_ast_occurrences`，不解释为执行次数。冲突副本拒绝，不同 ID 不合并，
 声明/record/形参唯一性不放宽。旧构造字段检查和部署门控不因此改变。
+
+## 全引用捕获链的条件对象身份
+
+`capture_source_check.check(payload, copy_expression_id, integer_types, protocol,
+*, max_ast_nodes=None)` 消费同次原生 envelope，fresh 运行复制检查，再从完整 AST
+重新恢复目标表达式的 lambda body 路径。它跳过 closure record 内的重复 body，
+捕获初始化式按外部路径处理；相同 ID 的冲突节点或不同路径不能归一放行。
+
+首个子集要求普通非模板函数内、所有相关 lambda 之外的自动非引用 VarDecl。
+每层必须有唯一正面原生捕获记录、精确 closure/field/initializer 声明关联和
+匹配的外层路径；只接受全 by_reference 链。缺失记录不是“没有捕获”的证明。
+按值层、static/TLS、引用别名、init-capture、generic/template 和不支持的作用域
+保持 unknown；这不是判定原程序错误。
+
+`capture-source-assumptions/v1` 必须精确绑定 root_sha256、copy_expression_id、
+source_declaration_id，并提供以下严格 true 前提和非空 evidence_reference：
+
+- source_initialized_alive_assumed
+- closure_instances_from_recorded_lambdas_assumed
+- source_and_closures_share_recorded_activation_assumed
+- source_program_valid_assumed
+
+这些是外部前提，不是本模块检测出的事实；引用记录保持 unverified。
+checked 仅在这些条件下表示复制实参的 lvalue 指向对应的同一动态对象，
+不证明其值自初始化后未变、lambda 会执行、实际 launch 或机器码正确。
+复制子报告保留原有 identity=not_established，新增条件结论单独记录，不回写升级。
+原生捕获元数据仍是可信前端的一部分，不宣称独立验证了 Clang API。

@@ -2,6 +2,23 @@
 
 更新日期：2026-09-23。
 
+## 全引用捕获链的条件身份检查
+
+新增 capture_source_check：fresh 复制检查和 lambda body 路径恢复，逐层关联
+原生捕获、closure 引用字段和精确 initializer DeclRef；不沿字段名猜测。
+初始子集为普通函数外层自动对象与全引用捕获链，模板/别名/静态对象等不放行。
+生命周期、闭包来源、同一次动态调用和源有效性均是精确绑定的外部前提；
+即使 checked，仍不证明对象值未变、实际调用、launch 或部署。
+
+本地启用原生插件的 583 项 CPU、116 项 Clang 专项及 demo 通过。新增 9 项
+包含双层引用、外值内引用、初始化式中的 lambda、静态/TLS/别名、协议缺失及
+错绑定、改变 AST 后重新绑定协议的负例。完整 TU 重放记录见
+`.agents/handoffs/wb04-capture-source-20260923.md`；本轮不运行 GPU。
+
+在固定完整 vLLM 原生 AST 上，目标 block 复制的两层引用捕获路径获得条件
+checked；七个实现文件前后哈希一致。外部协议明确为诊断前提、未经生命周期
+或执行证据验证；没有将原始构造字段值转移到实际 launch。
+
 ## 固定 vLLM 完整 TU 的原生捕获重采集
 
 以既有固定源码、CUDA device-only 编译视图重新运行原生插件，成功获得同次
@@ -13,7 +30,7 @@ float RMSNorm launch 的 block 词法源声明有 4 个捕获候选，其中包�
 的两个 lambda 候选形成两层原生嵌套记录，均为 by_reference。同一新树的 block
 复制检查为 checked（三个同字段整数关系）。这里只定位候选，不把完整子树
 包含关系当作已验证 body 路径；runtime identity、生命周期、无写历史及 launch
-语义仍未建立。下一步以这两层真实捕获为目标，fresh 核对逐层 body 路径与来源。
+语义仍未建立。当次只定位候选；后续逐层条件检查见上节。
 
 本轮启用原生插件后 574 项 CPU 无跳过、demo 通过。完整工件哈希与新 ID 见
 `.agents/handoffs/wb03-vllm-native-20260923.md`。

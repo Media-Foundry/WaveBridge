@@ -386,3 +386,9 @@ checked只表示两处指针更新的整数RHS关系及无溢出；矩形域可�
 `source_declaration_id` 只表示词法绑定：lambda 捕获解析、运行时源对象身份、
 初始化至复制之间的值保持，以及实际 launch 均未建立。不能把另一次构造的
 字段域直接搬入本报告；`source_program_checked` 与 `deployable` 始终为 false。
+
+`capture-source-check/v1` 可在独立的四项生命周期/闭包来源/同动态调用/源有效性
+外部前提下，检查普通自动对象的全引用捕获链。必须重新从 AST 恢复目标 body
+路径并核对每层原生正面映射；不通过元数据缺失推导任何否定事实。
+条件身份结论不覆盖对象内容、调用是否发生或 launch；evidence_reference 只记录，
+不当作已核实证据。原生元数据属于可信前端，既有部署门控仍保持 false。
