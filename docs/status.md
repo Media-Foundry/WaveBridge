@@ -2,6 +2,23 @@
 
 更新日期：2026-09-23。
 
+## 对象使用清单与构造期逃逸反例
+
+对固定完整 vLLM AST 中 block 对象的整个所属函数做诊断清点，跳过 closure
+record 中重复的 body：7 处显式引用为 4 处捕获初始化和 3 处配置复制；4 个
+相关 lambda 都呈现 MaterializeTemporary → NoOp → operator() 的立即调用形状。
+这是使用位置观测，不是无写/无逃逸证明，也不只扫描 float 分支。
+
+新增真实 Clang + CPU 执行回归：构造器 body 发布 this、字段初始化式发布 this
+均能让外部函数把值从 3 改为 99，调用方仍只有一处用于复制的显式引用。
+现有构造字段域检查正确 unknown，局部复制关系 checked 仍不代表历史值保持；
+没有发现当前检查器新的错误放行。下一步须单独建立构造期不发布目标地址、
+闭包调用/逃逸与所有相关使用的效应，而不是把 DeclRef 清单直接升级为证明。
+
+本地启用原生插件后 586 项 CPU、119 项 Clang 专项及 demo 通过；新增 3 项
+在 Clang 17/23 均通过。无 GPU 执行。证据见
+`.agents/handoffs/wb04-object-escape-boundary-20260923.md`。
+
 ## 全引用捕获链的条件身份检查
 
 新增 capture_source_check：fresh 复制检查和 lambda body 路径恢复，逐层关联
