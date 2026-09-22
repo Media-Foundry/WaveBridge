@@ -11,6 +11,20 @@ from wavebridge.source import run
 
 @unittest.skipUnless(shutil.which("clang++"), "requires real clang++")
 class DependencyBindingClangTests(unittest.TestCase):
+    def test_device_only_ast_collects_same_cc1_dependencies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "local.h").write_text("#define VALUE 4\n")
+            source = root / "input.cu"
+            source.write_text('#include "local.h"\n__attribute__((global)) void target(int* p) { *p = VALUE; }\n')
+            report = collect(source, shutil.which("clang++"),
+                             ["--cuda-device-only", "-nocudainc", "-nocudalib"], "target",
+                             dependency_binding="required")
+            self.assertEqual("collected", report["status"], report)
+            self.assertEqual("observed", report["dependency_binding"]["status"])
+            self.assertTrue(any(Path(item["resolved_path"]).name == "local.h"
+                                for item in report["dependency_binding"]["files"]))
+
     def test_header_changes_bind_observed_contents_and_temp_paths_do_not(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

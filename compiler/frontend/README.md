@@ -20,16 +20,27 @@ PYTHONPATH=src python3 -m wavebridge.frontend.clang_ast \
 由显式参数确定，不根据函数名猜测。
 
 低层collect/CLI可选`--dependency-binding required`；`wavebridge.source`默认required，
-可显式off进行不带依赖证据的诊断。同一次AST编译增加`-MD -MF -MT`，包含系统头，
+可显式off进行不带依赖证据的诊断。同一次 AST 编译向 cc1 传递
+`-dependency-file`、`-MT`、`-sys-header-deps`，包含系统头，
 只接受单个wavebridge-inputs规则，保存原depfile、路径、文件大小和SHA256。
 缺清单、缺文件、源文件前后hash变化均阻止required模式进入分析；失败编译仍
 保持compile_failed而不是依赖成功。off明确not_requested，不静默升级完整性。
 
 `observed`仅代表编译后读取依赖内容，不是冻结快照：并发修改无法完全排除。
-实际wrapper后端、resource-dir/bitcode追踪尚未接入，
+实际 AST 子进程身份与完整 SDK 闭包尚未建立，
 `compilation_input_closure_established=false`始终保留，不能作为完整缓存键。
 required模式不接受用户覆盖依赖选项、response file或透传预处理选项，避免
 另一套depfile设置覆盖采集器；复杂编译命令需要后续明确支持。
+不依赖 driver 层 `-MF`：本机 HIP device-only 曾忽略该选项，导致缺清单并被拒绝；
+同次 cc1 参数路径已通过实际 HIP 采集和 CUDA device-only 回归。
+
+可选 `--toolchain-trace` 在 AST 采集前，用相同命令追加 `-###` 做独立 driver
+dry-run，保留原始输出和命令，并观察唯一 cc1 任务中的后端文件哈希、target
+triple/CPU、resource-dir 路径和显式 bitcode 文件哈希。多个 cc1 任务、参数歧义
+或文件不可读时 trace 为 unknown，不选择某个任务冒充完整结果。不执行日志中的命令。
+这只是 driver 计划与随后读取的文件，不证明实际 AST 使用了该后端或该文件内容；
+resource-dir 不做递归闭包哈希。trace 失败保留原始原因，不抹去独立 AST 采集结果，
+也不签发 checked 或部署许可。两次调用之间的环境变化仍未排除。
 
 需要同次编译中的外部声明时加 `--full-translation-unit`，不再使用 symbol filter；
 `--symbol` 仍用于核对入口是否存在。完整 HIP AST 可能很大：报告流式写出，

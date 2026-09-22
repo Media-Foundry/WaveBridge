@@ -2,15 +2,28 @@
 
 更新日期：2026-09-22。
 
+## Driver 计划任务证据与 HIP 依赖输出修正
+
+可选 --toolchain-trace 保存独立 -### dry-run 原文，严格解析唯一 cc1 计划任务，
+观察后端文件、triple/CPU、resource-dir 路径及显式 bitcode 哈希。多任务或歧义
+保持 unknown；不执行日志命令，不宣称实际 AST 进程身份已核验。
+真实 HIP device-only 首次核验发现 driver -MF 被忽略，缺清单正确阻断分析；
+现改为同次 cc1 -dependency-file/-MT/-sys-header-deps。最终 symbol-filtered
+HIP AST collected，依赖 observed（320 个文件），计划任务 gfx1100/Clang23，
+7 个 bitcode 文件已记录。失败及成功工件均保留，不是完整源码关系恢复或 GPU 结果。
+481 项 CPU 测试及 demo 通过。336add9 的远端 run35730352101 三任务均 success，
+不代表本次提交的 CI。完整闭包/冻结快照/实际进程身份仍未建立，WB-03 未完整验收。
+详见 `.agents/handoffs/wb03-toolchain-trace-20260922.md`。
+
 ## 同次 AST 编译的依赖观测门控
 
-源码分析入口默认 required：同次 Clang 调用用 -MD 生成包含系统头的依赖清单，
+源码分析入口默认 required：同次 Clang 调用生成包含系统头的依赖清单，
 记录原始清单、各文件路径/内容哈希及清单哈希；缺失、歧义、文件不可读或源文件
 前后哈希变化时不进入分析。低层 AST 采集保留 off 兼容入口，显式关闭不建立
 依赖证据。新增真实 Clang 头文件变化、系统头收集和缺清单门控回归。
 本地 make check 469 项通过，make demo 通过；无 GPU 执行，未核验本提交远端 CI。
 这只是编译后依赖内容观测，不是冻结输入快照或完整编译闭包；wrapper 实际后端、
-resource-dir/SDK 及 bitcode 绑定仍待接入，closure 标志始终 false。详见
+resource-dir/SDK 及 bitcode 完整绑定未建立（计划任务观测进展见上节），closure 标志始终 false。详见
 `.agents/handoffs/wb03-dependency-binding-20260922.md`。WB-03 仍未完整验收。
 
 ## 第二仓库源码验证：vLLM RMSNorm首次评估为unknown

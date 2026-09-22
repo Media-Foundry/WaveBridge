@@ -21,11 +21,12 @@ from wavebridge.analysis.reduction_chain import recover as recover_chain
 
 
 def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=30.0, *,
-        dependency_binding="required"):
+        dependency_binding="required", toolchain_trace=False):
     directory = Path(output_dir).resolve()
     directory.mkdir(parents=True, exist_ok=False)
     frontend = collect(source, compiler, compiler_args, symbol, timeout,
-                       full_translation_unit=True, dependency_binding=dependency_binding)
+                       full_translation_unit=True, dependency_binding=dependency_binding,
+                       toolchain_trace=toolchain_trace)
     with (directory / "ast.json").open("x", encoding="utf-8") as stream:
         json.dump(frontend, stream, indent=2, sort_keys=True, allow_nan=False)
         stream.write("\n")
@@ -40,9 +41,11 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
         "dependency_binding_mode": dependency_binding,
         "dependency_binding": frontend.get("dependency_binding", {"status": "missing"}),
         "compilation_input_closure_established": False,
+        "toolchain_trace": frontend.get("toolchain_trace", {"status": "missing"}),
         "implementation_sha256": {
             name: _sha256(Path(__file__).parent / name) for name in (
-                "source.py", "frontend/clang_ast.py", "frontend/dependencies.py", "analysis/column_loops.py",
+                "source.py", "frontend/clang_ast.py", "frontend/dependencies.py",
+                "frontend/toolchain_trace.py", "analysis/column_loops.py",
                 "analysis/integer_constants.py", "analysis/initializer_evidence.py",
                 "analysis/initializer_value.py",
                 "analysis/return_trace.py", "analysis/reduction_discovery.py",
@@ -112,12 +115,14 @@ def main(argv=None):
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--dependency-binding", choices=("required", "off"), default="required")
+    parser.add_argument("--toolchain-trace", action="store_true")
     args = parser.parse_args(argv)
     if not 2 <= args.int_bits <= 128:
         parser.error("--int-bits must be between 2 and 128")
     try:
         report = run(args.source, args.compiler, args.compiler_arg, args.symbol,
-                     args.int_bits, args.output_dir, args.timeout, dependency_binding=args.dependency_binding)
+                     args.int_bits, args.output_dir, args.timeout, dependency_binding=args.dependency_binding,
+                     toolchain_trace=args.toolchain_trace)
     except FileExistsError:
         parser.error("output directory must not exist; evidence is never overwritten")
     print(json.dumps({"status": report["status"], "output_dir": str(args.output_dir)}))

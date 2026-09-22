@@ -20,6 +20,7 @@ import time
 from typing import Any
 
 from wavebridge.frontend.dependencies import observe
+from wavebridge.frontend.toolchain_trace import observe as observe_toolchain
 
 SCHEMA_VERSION = "clang-ast-source/v1"
 FUNCTION_KINDS = {"FunctionDecl", "CXXMethodDecl", "CXXConstructorDecl",
@@ -116,7 +117,8 @@ def function_locations(roots: list[dict[str, Any]], symbol: str) -> list[dict[st
 
 def collect(source: str | Path, compiler: str, compiler_args: list[str], symbol: str,
             timeout: float = 30.0, cwd: str | Path | None = None,
-            full_translation_unit: bool = False, *, dependency_binding: str = "off") -> dict[str, Any]:
+            full_translation_unit: bool = False, *, dependency_binding: str = "off",
+            toolchain_trace: bool = False) -> dict[str, Any]:
     """Collect genuine AST roots and source locations, with no semantic interpretation."""
     source_path = Path(source).resolve()
     workdir = Path(cwd).resolve() if cwd is not None else Path.cwd().resolve()
@@ -139,7 +141,11 @@ def collect(source: str | Path, compiler: str, compiler_args: list[str], symbol:
         "dependency_binding_mode": dependency_binding,
         "dependency_binding": {"status": "not_requested"},
         "compilation_input_closure_established": False,
+        "toolchain_trace": {"status": "not_requested"},
     }
+    if not isinstance(toolchain_trace, bool):
+        report["reason"] = "invalid_toolchain_trace_mode"
+        return report
     if not isinstance(dependency_binding, str) or dependency_binding not in {"off", "required"}:
         report["reason"] = "invalid_dependency_binding_mode"
         return report
@@ -185,9 +191,25 @@ def collect(source: str | Path, compiler: str, compiler_args: list[str], symbol:
     with tempfile.TemporaryDirectory(prefix="wavebridge-deps-") as temporary:
         depfile = Path(temporary) / "inputs.d"
         if dependency_binding == "required":
-            command.extend(["-MD", "-MF", str(depfile), "-MT", "wavebridge-inputs"])
+            # HIP device-only drivers may discard driver-level -MF. Attach the
+            # output to the same cc1 invocation which emits the AST instead.
+            command.extend(["-Xclang", "-dependency-file", "-Xclang", str(depfile),
+                            "-Xclang", "-MT", "-Xclang", "wavebridge-inputs",
+                            "-Xclang", "-sys-header-deps"])
         command.append(str(source_path))
         report["command"] = command
+        if toolchain_trace:
+            # A separate driver dry-run describes planned jobs, not the identity
+            # of the process that subsequently produces this AST.
+            trace_execution = invoke([*command, "-###"], timeout, workdir)
+            if trace_execution["status"] == "completed" and trace_execution["returncode"] == 0:
+                trace = observe_toolchain(trace_execution["stderr"], workdir)
+            else:
+                trace = {"status": "unknown", "reason": "driver_trace_execution_failed"}
+            trace["execution"] = trace_execution
+            trace["actual_ast_process_identity_established"] = False
+            trace["compilation_input_closure_established"] = False
+            report["toolchain_trace"] = trace
         execution = invoke(command, timeout, workdir)
         if dependency_binding == "required":
             report["dependency_binding"] = observe(depfile, workdir, source_path, report["source_sha256"])
@@ -238,6 +260,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="repeatable explicit argument; use --compiler-arg=VALUE for dash-prefixed values")
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--dependency-binding", choices=("off", "required"), default="off")
+    parser.add_argument("--toolchain-trace", action="store_true",
+                        help="record a separate driver dry-run; not actual AST process attestation")
     parser.add_argument("--full-translation-unit", action="store_true",
                         help="retain all declarations in each compiler AST root; may produce large output")
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -256,7 +280,7 @@ def main(argv: list[str] | None = None) -> int:
     with output_stream:
         report = collect(source_path, args.compiler, args.compiler_arg, args.symbol,
                          args.timeout, args.cwd, args.full_translation_unit,
-                         dependency_binding=args.dependency_binding)
+                         dependency_binding=args.dependency_binding, toolchain_trace=args.toolchain_trace)
         # Full HIP translation units are large: do not materialize a second JSON string.
         json.dump(report, output_stream, indent=2, sort_keys=True, allow_nan=False)
         output_stream.write("\n")
