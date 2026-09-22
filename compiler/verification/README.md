@@ -355,3 +355,25 @@ selection_domains, *, max_ast_nodes=None)` 接收完整 TU 中直接构造表达
 原始恢复报告保留 unknown 等真实状态，组合结果不会回写成 inspected。
 结论只覆盖构造求值时的条件字段域；输入域来源、清理、复制、后续写入和实际
 launch 对应仍未建立。默认既有报告检查入口及部署门控不改变。
+
+## 复制求值时的整数字段关系
+
+`record_copy_check.check(root, expression_id, integer_types, *, max_ast_nodes=None)`
+从完整 TU 重新关联直接复制表达式的实际构造函数、所属 record 与源声明。
+第一子集为同一 record 的 const 引用参数、空构造函数体、全部直接内建整数
+字段逐一从该参数的同一 FieldDecl 读取。不根据 implicit/noexcept 标签或类型名
+猜测复制语义；手写复制必须满足同样的源码条件。交换字段、额外写入、不完整
+初始化以及 union、base、bitfield、volatile、指针等不支持情形不能通过。
+
+`record-copy-check/v1` 的 checked 只表示复制求值时对应字段的值相等，不给
+数值域。`source_declaration_id` 只记录词法 DeclRef 绑定，不证明运行时源对象
+身份（例如按值 lambda 捕获）；`source_declaration_binding=lexical_declref_only`、
+`source_object_identity=not_established` 明确保留这一缺口。关系针对实际求值的
+复制实参，不能据此跨越捕获边界。`field_mappings` 记录精确源/目标
+FieldDecl ID；`source_object_preservation` 和 `launch_semantics` 始终未建立。
+即使源对象在初始化之后被修改，合法的逐字段复制仍可以通过这条局部关系检查；
+不能据此搬用初始化时的字段域。源对象存活、字段有有效值、AST 和 ABI 可信仍是前提。
+
+同一非空表达式 ID 若在 AST 出现多次，只有完整节点一致才归一；记录
+`expression_ast_occurrences`，不解释为执行次数。冲突副本拒绝，不同 ID 不合并，
+声明/record/形参唯一性不放宽。旧构造字段检查和部署门控不因此改变。

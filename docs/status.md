@@ -2,6 +2,22 @@
 
 更新日期：2026-09-22。
 
+## 复制求值时的逐字段关系
+
+新增 record_copy_check：在完整 TU 中重新关联复制构造、record、形参与字段，
+检查空 body 和所有直接内建整数字段的同字段读取，不信任 implicit/noexcept
+标签。交换字段、额外写入、复杂类型和绑定缺失不能通过；结果不携带数值域。
+词法源声明与运行时对象身份分开，lambda 捕获、源对象历史和实际 launch 未建立。
+
+本地 562 项 CPU、95 项真实 Clang 专项及 demo 通过；ROCm Clang 23 下新增
+9 项通过。包含手写复制、修改后复制、按值捕获、字段/参数错绑定和未知边界。
+没有 GPU 执行，不升级 WB-03 验收或部署。完整 TU 重放证据与限制见
+`.agents/handoffs/wb04-record-copy-20260922.md`。
+
+固定完整 vLLM TU 中的 launch block 复制表达式，三个字段获得局部关系 checked；
+四个完全相同的 AST 出现归一，不表示四次执行。六个实现文件前后哈希一致。
+这是既有开发输入的重放，不是新 holdout 成功，也未将原始构造字段域接到 launch。
+
 ## 原始构造实参与字段域的 fresh 组合
 
 新增 constructor_source_check：在完整 TU 中按唯一直接构造表达式 ID，重新
