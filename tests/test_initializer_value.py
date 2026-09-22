@@ -24,7 +24,100 @@ def fixture():
     return root, outer
 
 
+def add_receiver_declaration(root, initializer_ast, *, ty="const Holder", **fields):
+    pseudo = initializer_ast["inner"][0]
+    receivers = (pseudo["inner"][0]["inner"][0], pseudo["inner"][1],
+                 pseudo["inner"][2]["inner"][0]["inner"][0]["inner"][0])
+    for receiver in receivers:
+        receiver["inner"][0]["referencedDecl"]["type"] = {"qualType": ty}
+    declaration = {"kind": "VarDecl", "id": "object",
+                   "type": {"qualType": ty}, "inner": [], **fields}
+    declaration.setdefault("storageClass", "extern")
+    root["inner"].append(declaration)
+    return declaration
+
+
 class InitializerValueTests(unittest.TestCase):
+    def test_exact_extern_receiver_evaluation_is_observed_without_claiming_purity(self):
+        root, init = fixture()
+        declaration = add_receiver_declaration(root, init)
+        declaration["inner"] = [{"kind": "CUDADeviceAttr"}, {"kind": "WeakAttr"}]
+        result = link(root, init)
+        self.assertEqual(result["status"], "recovered", result)
+        observation = result["receiver_evaluation_observation"]
+        self.assertEqual(observation["status"], "observed", observation)
+        self.assertEqual({key: observation[key] for key in (
+            "expression_id", "receiver_id", "receiver_declaration_id",
+            "call_id", "callee_declaration_id")}, {
+                "expression_id": "pseudo", "receiver_id": "opaque",
+                "receiver_declaration_id": "object", "call_id": "call",
+                "callee_declaration_id": "getter",
+            })
+        self.assertIn("initialized", " ".join(observation["premises"]))
+        self.assertEqual(result["receiver_purity"], "not_established")
+
+    def test_receiver_observation_failures_do_not_change_legacy_recovery(self):
+        cases = {}
+        root, init = fixture()
+        cases["missing_declaration"] = (root, init)
+        root, init = fixture(); declaration = add_receiver_declaration(root, init)
+        root["inner"].append(copy.deepcopy(declaration))
+        cases["duplicate_id"] = (root, init)
+        root, init = fixture(); add_receiver_declaration(root, init, storageClass="static")
+        cases["not_extern"] = (root, init)
+        root, init = fixture(); add_receiver_declaration(root, init, tls="dynamic")
+        cases["thread_local"] = (root, init)
+        root, init = fixture(); declaration = add_receiver_declaration(root, init)
+        declaration["inner"] = [{"kind": "CallExpr", "inner": []}]
+        cases["initializer_child"] = (root, init)
+        root, init = fixture(); add_receiver_declaration(root, init, init="c")
+        cases["initializer_marker"] = (root, init)
+        for name, (root, init) in cases.items():
+            with self.subTest(name=name):
+                result = link(root, init)
+                self.assertEqual(result["status"], "recovered", result)
+                self.assertEqual(result["receiver_evaluation_observation"]["status"], "unknown")
+                self.assertEqual(result["receiver_purity"], "not_established")
+
+    def test_receiver_semantic_types_references_and_alias_evidence_are_strict(self):
+        cases = {}
+        root, init = fixture(); add_receiver_declaration(root, init, ty="const Other")
+        cases["type_mismatch"] = (root, init)
+        root, init = fixture(); declaration = add_receiver_declaration(root, init, ty="const Holder &")
+        for receiver in (init["inner"][0]["inner"][0]["inner"][0],
+                         init["inner"][0]["inner"][1],
+                         init["inner"][0]["inner"][2]["inner"][0]["inner"][0]["inner"][0]):
+            receiver["type"] = {"qualType": "const Holder &"}
+            receiver["inner"][0]["type"] = {"qualType": "const Holder &"}
+        declaration["type"] = {"qualType": "const Holder &"}
+        cases["reference"] = (root, init)
+        root, init = fixture(); declaration = add_receiver_declaration(root, init, ty="Alias")
+        declaration["type"]["typeAliasDeclId"] = "alias"
+        cases["alias_without_desugaring"] = (root, init)
+        for name, (root, init) in cases.items():
+            with self.subTest(name=name):
+                result = link(root, init)
+                self.assertEqual(result["status"], "recovered", result)
+                self.assertEqual(result["receiver_evaluation_observation"]["status"], "unknown")
+
+    def test_receiver_semantic_type_prefers_complete_desugared_evidence(self):
+        root, init = fixture()
+        declaration = add_receiver_declaration(root, init, ty="Alias")
+        pseudo = init["inner"][0]
+        receivers = (pseudo["inner"][0]["inner"][0], pseudo["inner"][1],
+                     pseudo["inner"][2]["inner"][0]["inner"][0]["inner"][0])
+        type_info = {"qualType": "Alias", "desugaredQualType": "const Holder",
+                     "typeAliasDeclId": "alias"}
+        for receiver in receivers:
+            receiver["type"] = copy.deepcopy(type_info)
+            receiver["inner"][0]["type"] = copy.deepcopy(type_info)
+            receiver["inner"][0]["referencedDecl"]["type"] = copy.deepcopy(type_info)
+        declaration["type"] = copy.deepcopy(type_info)
+        result = link(root, init)
+        self.assertEqual(result["status"], "recovered", result)
+        observation = result["receiver_evaluation_observation"]
+        self.assertEqual(observation["status"], "observed", observation)
+        self.assertEqual(observation["semantic_type"], "const Holder")
     def test_property_links_call_but_not_coordinate_or_converted_value(self):
         root, init = fixture()
         result = link(root, init)

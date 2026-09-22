@@ -29,6 +29,21 @@ def _type(node):
     return value
 
 
+def _semantic_type(node):
+    info = node.get("type")
+    if not isinstance(info, dict):
+        raise _Unknown("receiver_type_evidence_missing")
+    qualified = info.get("qualType")
+    desugared = info.get("desugaredQualType")
+    if not isinstance(qualified, str) or not qualified:
+        raise _Unknown("receiver_type_evidence_missing")
+    if info.get("typeAliasDeclId") is not None and not isinstance(desugared, str):
+        raise _Unknown("receiver_alias_not_desugared")
+    if desugared is not None and (not isinstance(desugared, str) or not desugared):
+        raise _Unknown("receiver_type_evidence_missing")
+    return desugared if isinstance(desugared, str) else qualified
+
+
 def _id(node):
     value = node.get("id")
     if not isinstance(value, str) or not value:
@@ -53,6 +68,17 @@ def link(root: object, initializer: object) -> dict[str, Any]:
         "schema_version": "initializer-value-link/v1", "status": "unknown",
         "reason": None, "call_id": None, "callee_declaration_id": None,
         "conversions_outer_to_inner": [], "pseudo_object": None,
+        "receiver_evaluation_observation": {
+            "status": "unknown", "reason": "receiver_not_applicable",
+            "expression_id": None, "receiver_id": None,
+            "receiver_declaration_id": None, "call_id": None,
+            "callee_declaration_id": None,
+            "memory_effect": "not_established",
+            "premises": [
+                "the extern receiver object is initialized and its lifetime is active",
+                "the frontend extension preserves C++ discarded object-expression semantics for static members",
+            ],
+        },
         "checked": False, "deployable": False,
         "value_equivalence": "not_established", "coordinate_semantics": "not_established",
         "receiver_purity": "not_established",
@@ -90,6 +116,7 @@ def link(root: object, initializer: object) -> dict[str, Any]:
             current = children[0]
 
         receiver = None
+        receiver_reference = None
         if current.get("kind") == "PseudoObjectExpr":
             children = _children(current)
             if (len(children) != 3 or children[0].get("kind") != "MSPropertyRefExpr" or
@@ -116,6 +143,7 @@ def link(root: object, initializer: object) -> dict[str, Any]:
             reference = source[0].get("referencedDecl")
             if not isinstance(reference, dict) or reference.get("kind") != "VarDecl":
                 raise _Unknown("receiver_not_variable")
+            receiver_reference = reference
             if "volatile" in _type(receiver).split():
                 raise _Unknown("volatile_receiver")
             result["pseudo_object"] = {
@@ -154,9 +182,18 @@ def link(root: object, initializer: object) -> dict[str, Any]:
             expected_kind = "FunctionDecl"
         if not isinstance(target, str) or not target:
             raise _Unknown("missing_callee_id")
-        declarations = [node for node in _walk(root)
-                        if node.get("id") == target and
-                        node.get("kind") in {"FunctionDecl", "CXXMethodDecl"}]
+        declarations = []
+        receiver_declarations = []
+        receiver_declaration_id = (result["pseudo_object"]["receiver_declaration_id"]
+                                   if receiver is not None else None)
+        for node in _walk(root):
+            if (node.get("id") == target and
+                    node.get("kind") in {"FunctionDecl", "CXXMethodDecl"}):
+                declarations.append(node)
+            if (receiver_declaration_id is not None and
+                    node.get("kind") == "VarDecl" and
+                    node.get("id") == receiver_declaration_id):
+                receiver_declarations.append(node)
         if len(declarations) != 1 or declarations[0].get("kind") != expected_kind:
             raise _Unknown("callee_declaration_not_unique")
         declaration = declarations[0]
@@ -164,6 +201,52 @@ def link(root: object, initializer: object) -> dict[str, Any]:
             raise _Unknown("property_getter_not_static")
         if declaration.get("variadic") or any(c.get("kind") == "ParmVarDecl" for c in _children(declaration)):
             raise _Unknown("getter_has_parameters")
+        if receiver is not None:
+            observation = result["receiver_evaluation_observation"]
+            observation.update(
+                expression_id=result["pseudo_object"]["expression_id"],
+                receiver_id=result["pseudo_object"]["receiver_id"],
+                receiver_declaration_id=result["pseudo_object"]["receiver_declaration_id"],
+                call_id=_id(call), callee_declaration_id=target,
+            )
+            try:
+                if len(receiver_declarations) != 1:
+                    raise _Unknown("receiver_declaration_not_unique")
+                receiver_declaration = receiver_declarations[0]
+                semantic_types = {
+                    _semantic_type(receiver),
+                    _semantic_type(_children(receiver)[0]),
+                    _semantic_type(receiver_reference),
+                    _semantic_type(receiver_declaration),
+                }
+                if len(semantic_types) != 1:
+                    raise _Unknown("receiver_semantic_type_mismatch")
+                semantic_type = next(iter(semantic_types))
+                if "volatile" in semantic_type.split():
+                    raise _Unknown("receiver_is_volatile")
+                if "&" in semantic_type:
+                    raise _Unknown("receiver_is_reference")
+                if receiver_declaration.get("storageClass") != "extern":
+                    raise _Unknown("receiver_not_extern_object")
+                if (any(receiver_declaration.get(key) is not None
+                        for key in ("tls", "tlsKind", "thread_local", "threadLocal")) or
+                        receiver_declaration.get("storageDuration") == "thread"):
+                    raise _Unknown("receiver_has_thread_storage")
+                if "init" in receiver_declaration:
+                    raise _Unknown("receiver_declaration_has_initializer")
+                declaration_children = _children(receiver_declaration)
+                allowed_attributes = {"CUDADeviceAttr", "WeakAttr"}
+                if any(child.get("kind") not in allowed_attributes
+                       for child in declaration_children):
+                    raise _Unknown("receiver_declaration_has_initializer_or_unsupported_child")
+                observation.update(
+                    status="observed", reason=None,
+                    semantic_type=semantic_type,
+                    storage_class="extern",
+                    memory_effect="no_memory_read_or_write_during_receiver_expression_evaluation",
+                )
+            except _Unknown as error:
+                observation["reason"] = str(error)
         result.update(status="recovered", call_id=_id(call),
                       callee_declaration_id=target, call_type=_type(call),
                       call_range=call.get("range"))

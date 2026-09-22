@@ -385,3 +385,111 @@ def check_no_memory_write(root: object, start_declaration_id: object,
         },
     )
     return result
+
+
+def check_property_no_memory_write(root: object, expression_id: object,
+                                   leaf_contract: object, integer_types: object,
+                                   effect_protocol: object, receiver_protocol: object,
+                                   *, max_ast_nodes: int | None = None) -> dict[str, Any]:
+    """Freshly compose one exact property receiver and getter, not its enclosing body.
+
+    Select the expression from the complete TU; do not accept caller-supplied
+    AST fragments or recovery/check reports. Receiver readiness and extension
+    semantics remain explicit external premises, never inferred from a name.
+    """
+    from wavebridge.analysis.initializer_value import link
+
+    result: dict[str, Any] = {
+        "schema_version": "property-no-memory-write-check/v1", "status": "unknown",
+        "reason": None, "expression_id": expression_id,
+        "value_link": None, "getter_effect_check": None,
+        "source_program_checked": False, "deployable": False,
+        "scope": "one_exact_property_expression_under_external_receiver_and_leaf_premises",
+        "external_receiver_premises_verified": False,
+        "limitations": [
+            "receiver initialization history and lifetime are not proved",
+            "extension static-member evaluation semantics are externally assumed",
+            "leaf domain, ABI, normal return and no-write semantics remain external premises",
+            "enclosing expressions, loop body, coordinates and launch are not checked",
+        ],
+    }
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    result["budget"] = {"max_ast_nodes": budget}
+    if (not isinstance(root, dict) or not isinstance(expression_id, str) or not expression_id or
+            type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES):
+        result["reason"] = "invalid_inputs_or_budget"
+        return result
+    try:
+        pending, matches, nodes = [root], [], 0
+        while pending:
+            node = pending.pop()
+            nodes += 1
+            if nodes > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            if not isinstance(node, dict) or not isinstance(node.get("inner", []), list):
+                raise _Unknown("malformed_ast_node")
+            if node.get("id") == expression_id:
+                matches.append(node)
+            pending.extend(node.get("inner", []))
+        result["ast_nodes_scanned"] = nodes
+        if len(matches) != 1 or matches[0].get("kind") != "PseudoObjectExpr":
+            raise _Unknown("property_expression_not_unique")
+        expression = matches[0]
+        linked = link(root, expression)
+        result["value_link"] = linked
+        receiver = linked.get("receiver_evaluation_observation")
+        if (linked.get("schema_version") != "initializer-value-link/v1" or
+                linked.get("status") != "recovered" or not isinstance(receiver, dict) or
+                receiver.get("status") != "observed" or
+                receiver.get("memory_effect") !=
+                "no_memory_read_or_write_during_receiver_expression_evaluation"):
+            raise _Unknown("receiver_evaluation_not_observed")
+        pseudo = linked.get("pseudo_object")
+        if not isinstance(pseudo, dict):
+            raise _Unknown("property_binding_missing")
+        bindings = {
+            "expression_id": expression_id,
+            "receiver_id": pseudo.get("receiver_id"),
+            "receiver_declaration_id": pseudo.get("receiver_declaration_id"),
+            "call_id": linked.get("call_id"),
+            "callee_declaration_id": linked.get("callee_declaration_id"),
+        }
+        if any(not isinstance(value, str) or not value or receiver.get(key) != value
+               for key, value in bindings.items()):
+            raise _Unknown("receiver_binding_mismatch")
+        if (not isinstance(receiver_protocol, dict) or
+                receiver_protocol.get("schema_version") != "property-receiver-assumptions/v1" or
+                any(receiver_protocol.get(key) != value for key, value in bindings.items()) or
+                receiver_protocol.get("receiver_initialized_and_alive_assumed") is not True or
+                receiver_protocol.get("extension_static_member_evaluation_assumed") is not True or
+                not isinstance(receiver_protocol.get("evidence_reference"), str) or
+                not receiver_protocol["evidence_reference"].strip()):
+            raise _Unknown("receiver_protocol_not_applicable")
+        getter = check_no_memory_write(root, bindings["callee_declaration_id"],
+                                       leaf_contract, integer_types, effect_protocol,
+                                       max_ast_nodes=budget)
+        result["getter_effect_check"] = getter
+        hashes = getter.get("input_sha256")
+        if not isinstance(hashes, dict):
+            raise _Unknown("getter_effect_not_checked")
+        result["input_sha256"] = dict(hashes, expression_id=_hash(expression_id),
+                                       receiver_protocol=_hash(receiver_protocol))
+        if receiver_protocol.get("root_sha256") != hashes["root"]:
+            raise _Unknown("receiver_root_binding_mismatch")
+        if getter.get("status") != "checked":
+            raise _Unknown("getter_effect_not_checked")
+        actual_type = _abi_type(expression.get("type"), integer_types)
+        getter_type = _abi_type({"qualType": getter["getter_return_check"]["return_type"]},
+                                integer_types)
+        if actual_type != getter_type:
+            raise _Unknown("property_getter_return_type_mismatch")
+        result.update(status="checked", conclusion={
+            "status": "conditional", "property": "no_memory_write",
+            "subject": "exact_property_expression", **bindings,
+        }, receiver_evidence={"reference": receiver_protocol["evidence_reference"],
+                              "verification_status": "unverified"})
+    except _Unknown as error:
+        result["reason"] = error.reason
+    except (TypeError, ValueError, RecursionError):
+        result["reason"] = "input_hash_or_structure_unsupported"
+    return result

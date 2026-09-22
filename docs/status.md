@@ -2,6 +2,20 @@
 
 更新日期：2026-09-22。
 
+## 单属性表达式的 receiver/getter 条件组合
+
+initializer_value 新增独立 receiver observation，不改变旧 link 状态或 purity：
+核对同TU唯一extern、非TLS/reference/volatile、无initializer声明及类型一致性。
+getter_returns 新入口按完整root中的唯一expression ID fresh恢复receiver和getter，
+要求分别绑定的显式协议，不接受外部自报checked。518项CPU测试、54项Clang专项
+和demo通过；未放宽column_loops的body门控。
+
+固定完整vLLM TU的一个blockIdx.x原始属性表达式，在显式receiver readiness/
+扩展求值、leaf域/ABI/无写/正常返回前提下条件checked；四个实现文件运行前后
+hash一致。前提引用仍unverified，不代表整个loop、实际launch域或vLLM整核checked。
+未运行GPU，下一步处理循环体组合和实际坐标域。见
+`.agents/handoffs/wb04-property-effects-20260922.md`。
+
 ## 精确 builtin callee 支持与完整 TU 条件检查
 
 getter_returns 已支持直接调用位置的零参 BuiltinFnToFnPtr：核对唯一外部叶ID、

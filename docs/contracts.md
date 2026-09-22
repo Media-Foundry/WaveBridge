@@ -170,6 +170,17 @@ source_program_checked/deployable始终false，不能用它单独放行候选。
 receiver上下文有效性、外部函数/轴语义和launch域须另行建立。具体支持子集与
 不变量来源见 `compiler/analysis/README.md`。
 
+`receiver_evaluation_observation` 独立观察同 root 中唯一的 receiver VarDecl：
+只支持无 initializer 的 extern、非 TLS、非 reference、非 volatile 对象；四处
+类型证据须解糖后一致，别名证据缺失保持 unknown。声明 children 只允许空或
+CUDADeviceAttr/WeakAttr；属性不提供副作用保证。observed 仅在对象已初始化、
+生命周期有效且扩展遵循 static-member discarded-object 求值规则的前提下，
+描述 receiver 本次求值不读写内存。不修改旧 link 状态或 receiver_purity。
+
+依据：[成员访问](https://eel.is/c++draft/expr.ref)仍求值对象表达式，
+[discarded-value 规则](https://eel.is/c++draft/expr.context)不对该非 volatile
+glvalue 施加 lvalue-to-rvalue 转换；这不是忽略任意 receiver 副作用的理由。
+
 ## Getter 返回域检查：`getter-return-domain-check/v1`
 
 显式`getter-leaf-domain/v1`绑定同AST中的外部函数ID、常量实参、返回类型与
@@ -294,6 +305,19 @@ BuiltinAttr、ConstAttr 均不能替代协议；receiver/调用点求值、坐�
 找到目标而提前结束，超限仍 unknown。AST 解析及规范化哈希在节点扫描之前，
 因此该参数不是总内存/墙钟时间上限；大型输入须由调用者另行限制资源。
 无写入口只复用本次 fresh 值域检查生成的 root 哈希，不消费外部旧报告。
+
+`check_property_no_memory_write` 从完整 root 按 ID 唯一选择原始 PseudoObjectExpr，
+fresh 运行 value link 与 getter effect 检查，再按 ABI 检查 property/getter 返回类型
+一致。不接受调用者自报分析结果或脱离 root 的 AST 片段。receiver 必须有上述
+observed 结构及 exact no-read/write 含义；不能把任意 observed 当成无副作用。
+
+外部 `property-receiver-assumptions/v1` 精确绑定 `root_sha256`、`expression_id`、
+`receiver_id`、`receiver_declaration_id`、`call_id`、`callee_declaration_id`。
+`receiver_initialized_and_alive_assumed`、`extension_static_member_evaluation_assumed`
+必须严格为 true，并有非空 `evidence_reference`（只记录为 unverified）。
+`property-no-memory-write-check/v1` 的 checked 仅表示在这些前提及 getter 外部
+前提下，该属性表达式无写；不涵盖外围 cast/body、初始化历史、实际坐标或 launch。
+selector/link/getter 分别遍历 TU，节点预算不是组合总内存或时间上限。
 
 ## 行偏移整数关系
 
