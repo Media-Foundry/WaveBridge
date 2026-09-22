@@ -428,3 +428,23 @@ volatile、bitfield、base、union、虚函数、调用及不支持的 AST 效�
 即使构造器本身通过，`PlainValue source(publish_argument(&source))` 仍可在参数
 求值时发布地址；真实 CPU 回归覆盖这一界限。不能据此将初始字段域转移到 launch。
 完整有效 AST、匹配 ABI、有效参数和正常返回仍是前提；整核和部署标记保持 false。
+
+## 受限构造参数求值效果
+
+`verification.constructor_argument_effects.check(root, constructor_expression_id,
+integer_types, selection_domains, *, max_ast_nodes=None)` 从完整 TU fresh 运行构造
+字段域检查，并额外检查参数求值的声明来源与效果边界，不接受调用者提供的成功报告。
+只支持普通非模板函数中的直接构造，参数为既有受支持字面量/default 或 minimum
+表达式；minimum 的变量操作数必须来自同一普通函数的自动局部变量或形参。
+global、static、extern、TLS、捕获/引用来源及未知属性保守返回 unknown。
+
+普通变量早先初始化可以有副作用，成功结论不覆盖那段历史；本次绑定 const 引用
+和物化内建标量临时对象则是受支持求值的内部操作。检查不宣称完全没有存储写入，
+按值整数参数自身的存储初始化也不属于外部存储写。检查限制的是本次参数求值
+对外部存储的写入及地址逃逸。构造器本体、目标分配、外围
+清理、异常、析构、后续历史和实际 launch 仍不属于这项结论。
+
+callee 属性只允许明确列出的形状。`enable_if` 在 Clang 中属于非运行时求值
+上下文；首版只接受实际案例中的单个常量真布尔字面量形状，不开放任意属性。
+语义依据见 [Clang enable_if 文档](https://clang.llvm.org/docs/AttributeReference.html#enable-if)。
+数值子报告不回写升级，外部输入域、ABI、有效源码及正常返回仍是前提。
