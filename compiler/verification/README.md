@@ -539,3 +539,21 @@ one-shot会分配完整字符串与UTF-8字节缓冲区，仅适用于已评估�
 尚未建立；因此它不证明源内存不变，也不能将初始化字段域直接搬到复制或launch。
 外部源码有效、字段有定义值、源活跃、ABI匹配和构造正常返回前提仍然保留。
 现有capture/use-closure消费者只保存该子报告，没有自动解除历史保持义务。
+
+## 复制实参与按值形参的精确绑定
+
+同一 `record_copy_check.check` 还返回独立 `parameter_target` 子报告。先fresh
+完成字段值关系和局部效果检查，再从完整AST查找copy表达式的直接父CallExpr；
+不需要调用者填写预期的callee或参数ID。相同ID的重复copy/call必须一致，所有
+副本必须对应同一个call ID和实参位置；不把重复dump当成执行次数。
+
+只接受complete/prvalue复制、直接FunctionToPointerDecay→DeclRefExpr→唯一
+普通FunctionDecl、精确签名和按位置对应的同一record alias按值形参。模板、
+重声明、variadic、间接调用、引用形参、额外wrapper、参数属性/默认值或冲突
+副本均不建立此绑定。名字不赋予语义；callee可以只有声明而无body。
+
+`copy-parameter-target-binding/v1` 的checked只说明“完整prvalue复制实参对应
+精确按值形参”。没有绑定C++方言、copy-elision与物理ABI，故不宣称实参临时量
+就是最终参数对象；源/目标动态非重叠、其他实参顺序及效果、参数析构、callee
+body、配置API和launch语义仍未知。原v1主status仍仅描述字段值关系，不能因
+`parameter_target` checked自动解除source历史保持义务。

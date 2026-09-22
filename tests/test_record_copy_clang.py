@@ -219,6 +219,60 @@ class RecordCopyClangTests(unittest.TestCase):
         self.assertEqual(result["expression_ast_occurrences"], 2)
         self.assertEqual(result["launch_semantics"], "not_established")
 
+    def argument_expression(self, name, root=None):
+        root = self.root if root is None else root
+        function = next(n for n in _walk(root) if n.get("kind") == "FunctionDecl" and n.get("name") == name)
+        return next(n for n in _walk(function) if n.get("kind") == "CXXConstructExpr" and
+                    "const Plain &" in n.get("ctorType", {}).get("qualType", ""))
+
+    def test_by_value_parameter_target_is_bound_without_callee_name_semantics(self):
+        for name, position in (("argument_copy", 1), ("renamed_argument_copy", 0)):
+            result = check(self.root, self.argument_expression(name)["id"], ABI)
+            target = result["parameter_target"]
+            self.assertEqual(target["status"], "checked", result)
+            self.assertEqual(target["argument_position"], position)
+            self.assertEqual(target["target_kind"], "complete_prvalue_argument_for_exact_by_value_parameter")
+            self.assertFalse(target["deployable"])
+            self.assertEqual(target["source_target_storage_nonoverlap"], "not_established")
+            self.assertEqual(target["configuration_api_semantics"], "not_established")
+
+    def test_indirect_reference_and_template_targets_remain_unknown(self):
+        for name in ("indirect_argument_copy", "reference_argument_copy", "generic_argument_copy"):
+            with self.subTest(name=name):
+                result = check(self.root, self.argument_expression(name)["id"], ABI)
+                self.assertEqual(result["parameter_target"]["status"], "unknown", result)
+
+    def test_parameter_target_rejects_conflicting_types_positions_and_declarations(self):
+        for mutation in ("parameter_type", "parameter_child", "argument_count", "callee_id",
+                         "decay_type", "variadic", "duplicate_declaration", "conflicting_call",
+                         "construction_kind", "template", "previous_decl", "decay_category",
+                         "reference_category", "multiple_bodies"):
+            root = copy.deepcopy(self.root)
+            expression = self.argument_expression("argument_copy", root)
+            original = check(root, expression["id"], ABI)["parameter_target"]
+            call = next(n for n in _walk(root) if n.get("id") == original["call_expression_id"])
+            declaration = next(n for n in _walk(root) if n.get("id") == original["callee_declaration_id"])
+            parameter = next(n for n in declaration["inner"] if n.get("id") == original["parameter_declaration_id"])
+            if mutation == "parameter_type": parameter["type"] = {"qualType": "const Plain &"}
+            elif mutation == "parameter_child": parameter["inner"] = [{"kind": "UnusedAttr"}]
+            elif mutation == "argument_count": call["inner"].append({"kind": "IntegerLiteral", "value": "0"})
+            elif mutation == "callee_id": call["inner"][0]["inner"][0]["referencedDecl"]["id"] = "absent"
+            elif mutation == "decay_type": call["inner"][0]["type"] = {"qualType": "void *"}
+            elif mutation == "decay_category": call["inner"][0]["valueCategory"] = "lvalue"
+            elif mutation == "reference_category": call["inner"][0]["inner"][0]["valueCategory"] = "prvalue"
+            elif mutation == "multiple_bodies": declaration["inner"].extend([{"kind": "CompoundStmt"}, {"kind": "CompoundStmt"}])
+            elif mutation == "variadic": declaration["variadic"] = True
+            elif mutation == "duplicate_declaration": root["inner"].append(copy.deepcopy(declaration))
+            elif mutation == "conflicting_call":
+                other = copy.deepcopy(call)
+                other["inner"][1], other["inner"][2] = other["inner"][2], other["inner"][1]
+                root["inner"].append(other)
+            elif mutation == "construction_kind": expression["constructionKind"] = "non-virtual base"
+            elif mutation == "template": declaration["templateKind"] = "specialization"
+            else: declaration["previousDecl"] = "unresolved"
+            with self.subTest(mutation=mutation):
+                self.assertEqual(check(root, expression["id"], ABI)["parameter_target"]["status"], "unknown")
+
     def test_initializer_and_member_identity_are_checked_from_current_root(self):
         for mutation in ("missing", "field_duplicate", "parameter", "member", "arrow", "hidden_child"):
             root = copy.deepcopy(self.root)

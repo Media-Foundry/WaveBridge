@@ -4,6 +4,17 @@ typedef struct Plain {
 } Plain;
 void implicit_copy() { Plain source(3, 5, 7); Plain target(source); }
 void parameter_copy(Plain source) { Plain target(source); }
+#ifndef WAVEBRIDGE_CAPTURE_EXECUTION
+void accept_value(int prefix, Plain value);
+void differently_named(Plain value);
+void accept_reference(const Plain& value);
+template<class T> void accept_generic(T value);
+void argument_copy() { Plain source(3, 5, 7); accept_value(0, source); }
+void renamed_argument_copy() { Plain source(3, 5, 7); differently_named(source); }
+void indirect_argument_copy() { Plain source(3, 5, 7); auto f = &accept_value; f(0, source); }
+void reference_argument_copy() { Plain source(3, 5, 7); accept_reference(Plain(source)); }
+void generic_argument_copy() { Plain source(3, 5, 7); accept_generic(source); }
+#endif
 void alias_copy() { Plain source(3, 5, 7); Plain& alias = source; Plain target(alias); }
 void changed_before_copy() { Plain source(3, 5, 7); source.x = 99; Plain target(source); }
 unsigned captured_copy() {

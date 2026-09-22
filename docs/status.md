@@ -2,6 +2,15 @@
 
 更新日期：2026-09-23。
 
+## 真实配置复制实参的按值形参绑定
+
+`record_copy_check.parameter_target` 从同一完整AST自动关联直接copy、call、
+callee与形参位置，不靠函数名称或人工成功报告。只签精确语法绑定，保留动态
+identity、storage nonoverlap、copy-elision/ABI、API/launch与历史保持未知。
+647项CPU、171项Clang专项及demo通过。固定vLLM完整TU三个配置复制点全部
+fresh绑定到位置1的同一按值形参，耗时132.74秒，77个实现哈希稳定。无GPU执行。
+见 `.agents/handoffs/wb04-parameter-target-20260923.md`。
+
 ## 复制构造局部访问分类
 
 `record_copy_check` 新增独立 `local_copy_effects`，在原字段值检查之外，对

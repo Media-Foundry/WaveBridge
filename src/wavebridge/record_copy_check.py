@@ -7,6 +7,7 @@ from typing import Any
 from wavebridge.analysis.constructor_arguments import inspect as inspect_constructor
 from wavebridge.verification.integer_selection import BUILTIN_INTEGER_TYPES, _hash
 from wavebridge.verification.kernel_arguments import _Unknown, _abi_type
+from wavebridge.verification.lambda_invocation import _same_ast
 
 MAX_AST_NODES = 1_000_000
 HARD_MAX_AST_NODES = 10_000_000
@@ -103,6 +104,103 @@ def _local_effects(record, declaration, parameter, fields, mappings):
     return result
 
 
+def _parameter_target(nodes, expressions, expression):
+    """Recover a direct by-value parameter target; no runtime API semantics."""
+    result = {
+        "schema_version": "copy-parameter-target-binding/v1",
+        "status": "unknown", "reason": None,
+        "scope": "direct_complete_copy_expression_to_exact_by_value_parameter_binding",
+        "source_program_checked": False, "deployable": False,
+        "source_target_storage_nonoverlap": "not_established",
+        "physical_parameter_storage_and_calling_convention": "not_established",
+        "other_argument_effects_and_order": "not_established",
+        "parameter_cleanup_and_destructor_effects": "not_established",
+        "callee_body_effects": "not_established",
+        "configuration_api_semantics": "not_established", "launch_semantics": "not_established",
+        "assumptions": [
+            "the parent copy report binds the complete faithful valid C++ AST and declared integer ABI",
+            "source-level syntax binding does not establish execution or dynamic object identity",
+        ],
+    }
+    try:
+        if (expression.get("constructionKind") != "complete" or
+                expression.get("valueCategory") != "prvalue"):
+            raise _Unknown("copy_not_complete_prvalue")
+        occurrence_ids = {id(item) for item in expressions}
+        owners = [(node, position) for node in nodes
+                  for position, child in enumerate(_children(node, strict=False))
+                  if id(child) in occurrence_ids]
+        if len(owners) != len(expressions) or not owners:
+            raise _Unknown("copy_parent_missing_or_ambiguous")
+        call, position = owners[0]
+        if (call.get("kind") != "CallExpr" or position < 1 or
+                not isinstance(call.get("id"), str) or
+                any(owner.get("id") != call["id"] or index != position or
+                    not _same_ast(owner, call) for owner, index in owners)):
+            raise _Unknown("copy_not_one_direct_call_argument")
+        if any(not _same_ast(node, call) for node in nodes if node.get("id") == call["id"]):
+            raise _Unknown("copy_target_call_occurrences_conflict")
+        children = _children(call)
+        decay = children[0]
+        leaves = _children(decay)
+        if (decay.get("kind") != "ImplicitCastExpr" or
+                decay.get("castKind") != "FunctionToPointerDecay" or
+                decay.get("valueCategory") != "prvalue" or len(leaves) != 1):
+            raise _Unknown("copy_target_callee_not_direct_function_decay")
+        reference = leaves[0]
+        referenced = reference.get("referencedDecl")
+        if (reference.get("kind") != "DeclRefExpr" or reference.get("valueCategory") != "lvalue" or
+                _children(reference) or
+                not isinstance(referenced, dict) or referenced.get("kind") != "FunctionDecl" or
+                not isinstance(referenced.get("id"), str)):
+            raise _Unknown("copy_target_callee_not_function_declaration")
+        declarations = [node for node in nodes if node.get("id") == referenced["id"]]
+        if len(declarations) != 1 or declarations[0].get("kind") != "FunctionDecl":
+            raise _Unknown("copy_target_function_not_unique")
+        declaration = declarations[0]
+        signature = _raw_type(declaration)
+        split = signature.find(" (")
+        if split < 0 or _raw_type(decay) != signature[:split] + " (*)" + signature[split + 1:]:
+            raise _Unknown("copy_target_function_pointer_type_mismatch")
+        if (declaration.get("previousDecl") is not None or
+                any(node.get("previousDecl") == declaration["id"] for node in nodes) or
+                any(declaration.get(flag) is True for flag in
+                    ("variadic", "isVariadic", "isInvalid", "isInvalidDecl", "isDeleted",
+                     "explicitlyDeleted", "isDependent", "isInstantiationDependent")) or
+                any(key in declaration for key in
+                    ("templateArgs", "templateKind", "specializationKind", "instantiatedFrom")) or
+                any(node.get("kind") == "FunctionTemplateDecl" and
+                    any(child is declaration for child in _children(node, strict=False)) for node in nodes) or
+                _type(reference) != _type(declaration) or _type(referenced) != _type(declaration)):
+            raise _Unknown("copy_target_function_shape_or_type_unsupported")
+        declaration_children = _children(declaration)
+        if (any(child.get("kind") not in {"ParmVarDecl", "CompoundStmt"} for child in declaration_children) or
+                sum(child.get("kind") == "CompoundStmt" for child in declaration_children) > 1):
+            raise _Unknown("copy_target_function_children_unsupported")
+        parameters = [child for child in declaration_children if child.get("kind") == "ParmVarDecl"]
+        if len(parameters) != len(children) - 1:
+            raise _Unknown("copy_target_argument_count_mismatch")
+        parameter = parameters[position - 1]
+        parameter_id = parameter.get("id")
+        if (not isinstance(parameter_id, str) or not parameter_id or
+                sum(node.get("id") == parameter_id for node in nodes) != 1 or
+                _type(parameter) != _type(expression) or _children(parameter) or
+                parameter.get("init") is not None or
+                any(parameter.get(flag) is True for flag in
+                    ("isParameterPack", "isPackExpansion", "isInvalid", "isInvalidDecl",
+                     "hasDefaultArg", "hasInheritedDefaultArg", "hasUninstantiatedDefaultArg",
+                     "hasUnparsedDefaultArg"))):
+            raise _Unknown("copy_target_parameter_not_exact_plain_by_value_record")
+        result.update(status="checked", call_expression_id=call["id"],
+                      callee_declaration_id=declaration["id"],
+                      parameter_declaration_id=parameter_id, argument_position=position - 1,
+                      parameter_type=parameter["type"],
+                      target_kind="complete_prvalue_argument_for_exact_by_value_parameter")
+    except _Unknown as error:
+        result["reason"] = error.reason
+    return result
+
+
 def check(root: object, expression_id: object, integer_types: object,
           *, max_ast_nodes: int | None = None) -> dict[str, Any]:
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
@@ -115,6 +213,7 @@ def check(root: object, expression_id: object, integer_types: object,
         "source_object_identity": "not_established",
         "constructor_arguments": None, "field_mappings": [],
         "local_copy_effects": {"status": "unknown", "reason": "copy_value_relation_not_checked"},
+        "parameter_target": {"status": "unknown", "reason": "copy_value_and_effects_not_checked"},
         "scope": "evaluated_copy_argument_per_field_integer_value_equality_at_direct_construction",
         "source_program_checked": False, "deployable": False,
         "source_object_preservation": "not_established",
@@ -159,13 +258,13 @@ def check(root: object, expression_id: object, integer_types: object,
             if len(nodes) > budget:
                 raise _Unknown("ast_node_budget_exceeded")
             pending.extend(_children(node, strict=False))
-        expressions = [node for node in nodes if node.get("id") == expression_id]
-        result["expression_ast_occurrences"] = len(expressions)
-        if not expressions:
+        copy_expressions = [node for node in nodes if node.get("id") == expression_id]
+        result["expression_ast_occurrences"] = len(copy_expressions)
+        if not copy_expressions:
             raise _Unknown("copy_expression_id_missing")
-        if any(node != expressions[0] for node in expressions[1:]):
+        if any(node != copy_expressions[0] for node in copy_expressions[1:]):
             raise _Unknown("copy_expression_occurrences_conflict")
-        expression = expressions[0]
+        expression = copy_expressions[0]
         if expression.get("kind") != "CXXConstructExpr":
             raise _Unknown("copy_expression_not_direct_constructor")
 
@@ -359,6 +458,8 @@ def check(root: object, expression_id: object, integer_types: object,
         result.update(status="checked", field_mappings=mappings)
         result["local_copy_effects"] = _local_effects(
             record, declaration, parameter, fields, mappings)
+        if result["local_copy_effects"]["status"] == "checked":
+            result["parameter_target"] = _parameter_target(nodes, copy_expressions, expression)
     except _Rejected as error:
         result.update(status="rejected", reason=error.reason)
         if error.detail is not None:
