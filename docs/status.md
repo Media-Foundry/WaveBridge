@@ -9,7 +9,8 @@ desugaredQualType，direct constructor 将它误判为类型不匹配。现仅�
 回退 qualType，仍要求精确 alias→record ID 和 RecordType 拼写相等；不是按名称
 推测类型。新增同拼写省略正例及缺锚点/不同拼写/空值负例。
 本地 532 项测试、65 项 Clang 专项和 demo 通过；ROCm Clang 23 下 6 项定向
-测试通过。远端修复验收另见交接，未新增 GPU 或 launch 域结果。
+测试通过。修复提交 c1aaf73 的远端 run35741730545 三任务全部 success，含
+Clang 18 专项及 Python 3.11/3.12。未新增 GPU 或 launch 域结果。
 
 ## 命名 launch 配置的直接构造身份
 
