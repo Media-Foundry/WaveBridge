@@ -352,6 +352,11 @@ selection_domains, *, max_ast_nodes=None)` 接收完整 TU 中直接构造表达
 转换。字段按精确 ID/参数位置关联，不按 x/y/z 名称猜测坐标轴。
 
 输出 `source-constructor-values-check/v1` 仅在全部字段义务满足时给出 checked。
+签发字段域前还会从同一完整 TU fresh 运行 `constructor_effects`，核对构造器和
+所属 record 的精确身份。不能仅凭 `FieldDecl.type=unsigned int` 把 bitfield 当成
+完整 unsigned 存储；bitfield 等不支持存储形状保持 unknown，不输出字段域。
+报告保留副作用子报告，但 `call_argument_effects` 和 `post_construction_escape`
+仍为 not_established；组合接入不等于整个调用或对象历史已经验证。
 原始恢复报告保留 unknown 等真实状态，组合结果不会回写成 inspected。
 结论只覆盖构造求值时的条件字段域；输入域来源、清理、复制、后续写入和实际
 launch 对应仍未建立。默认既有报告检查入口及部署门控不改变。

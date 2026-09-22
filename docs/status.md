@@ -2,6 +2,20 @@
 
 更新日期：2026-09-23。
 
+## 构造字段域与存储形状的组合修复
+
+独立复现旧 `constructor_source_check` 的错误字段值：`unsigned x:3` 初始化为
+99 后报告 checked/value=99，而真实 CPU 返回 3。问题是字段转发恢复没有限制
+实际存储形状，上一轮独立 effects 门控尚未接入该路径。
+现在字段域签发前 fresh 检查构造器实现，并核对 record/constructor 精确身份；
+该 bitfield 返回 unknown，普通 unsigned 字段仍 checked/value=99。
+完整调用实参、清理和后续逃逸仍未建立，不把修复表述为整核或 GPU 保证。
+
+596 项 CPU 与 demo 通过，12 项相关真实 Clang 测试在 17/23 均通过。
+本轮未重放完整 vLLM TU，未执行 GPU；历史 vLLM 结果不作为新组合验收。
+固定旧提交、同一真实 AST 的前后报告及 CPU 复现见
+`.agents/handoffs/wb04-constructor-storage-20260923.md`。
+
 ## 构造器实现副作用门控
 
 新增独立 `verification/constructor_effects.py`，重新关联完整 TU 中所选构造器、

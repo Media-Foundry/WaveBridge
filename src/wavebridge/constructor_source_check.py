@@ -11,6 +11,7 @@ from typing import Any
 
 from wavebridge.analysis.constructor_arguments import inspect as inspect_constructor
 from wavebridge.analysis.constructor_fields import recover as recover_fields
+from wavebridge.verification.constructor_effects import check as check_constructor_effects
 from wavebridge.verification.constructor_values import (
     _Rejected,
     _Unknown,
@@ -98,10 +99,13 @@ def check(root: object, expression_id: object, integer_types: object,
         "schema_version": "source-constructor-values-check/v1",
         "status": "unknown", "reason": None, "expression_id": expression_id,
         "constructor_arguments": None, "constructor_fields": None,
+        "constructor_effects": None,
         "selection_checks": [], "fields": [], "conversion_checks": [],
         "scope": "direct_constructor_evaluation_time_integer_field_domains",
         "source_program_checked": False, "deployable": False,
         "copy_or_move_semantics": "not_established", "launch_semantics": "not_established",
+        "call_argument_effects": "not_established",
+        "post_construction_escape": "not_established",
         "assumptions": [
             "the AST is a faithful complete single translation unit",
             "the explicit integer ABI matches the compilation target",
@@ -156,17 +160,28 @@ def check(root: object, expression_id: object, integer_types: object,
                 (arguments.get("status") == "unknown" and
                  arguments.get("reason") == "one_or_more_arguments_unknown")):
             raise _Unknown("constructor_argument_recovery_unsupported")
-        if (arguments.get("constructor_identity", {}).get("mode") !=
+        identity = arguments.get("constructor_identity", {})
+        if (identity.get("mode") !=
                 "exact_alias_record_and_unique_selected_constructor_type"):
             raise _Unknown("constructor_not_exact_direct_identity")
         constructor_id = arguments.get("constructor_declaration_id")
-        if not isinstance(constructor_id, str) or not constructor_id:
+        record_id = identity.get("record_declaration_id")
+        if (not isinstance(constructor_id, str) or not constructor_id or
+                not isinstance(record_id, str) or not record_id):
             raise _Unknown("constructor_declaration_id_missing")
+        effects = check_constructor_effects(root, constructor_id, integer_types,
+                                            max_ast_nodes=budget)
+        result["constructor_effects"] = effects
+        if (effects.get("status") != "checked" or
+                effects.get("constructor_declaration_id") != constructor_id or
+                effects.get("record_declaration_id") != record_id):
+            raise _Unknown("constructor_effects_not_checked")
         fields = recover_fields(root, constructor_id)
         result["constructor_fields"] = fields
         if fields.get("status") != "recovered":
             raise _Unknown("constructor_field_recovery_unsupported")
         if (fields.get("constructor_declaration_id") != constructor_id or
+                fields.get("record_declaration_id") != record_id or
                 fields.get("record_completeness") != "all_direct_record_fields_initialized"):
             raise _Unknown("constructor_fields_not_complete_direct_record")
 
