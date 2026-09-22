@@ -2,6 +2,21 @@
 
 更新日期：2026-09-22。
 
+## 坐标循环体的条件保持组合
+
+新增 column_body 独立入口：完整 TU 精确定位函数/直接循环，fresh 观察 header
+并推导受保护声明；循环体内 1～8 个属性必须逐项重新检查 receiver/getter。
+其它节点继续受原副作用和存储目标限制，默认 column_loops 恢复行为不变。
+外部源码有效性、无别名及属性协议须精确绑定，缺失或自报 checked 不可放行。
+
+526 项 CPU 测试、59 项真实 Clang 专项及 demo 通过。包括合法数组写入/只读
+cast、多属性、修改 induction/边界、隐藏引用、下标 col++、不透明调用、静态
+induction、错误上下文与协议错绑定。结论只为 body 保持受保护声明，不是整个
+body 无写、header 递推、列覆盖或整核验证；未运行 GPU，WB-03 未完整验收。
+固定完整 vLLM TU 的 float 首个循环体在显式诊断前提下条件 checked，扫描
+3,705,324 节点，七个实现文件前后哈希一致；未建立实际 launch 域或新 holdout
+成功。完整 TU 诊断与工件绑定见 `.agents/handoffs/wb04-column-body-20260922.md`。
+
 ## 单属性表达式的 receiver/getter 条件组合
 
 initializer_value 新增独立 receiver observation，不改变旧 link 状态或 purity：

@@ -152,9 +152,18 @@ BODY_KINDS = {
 }
 
 
-def _check_body(body: dict[str, Any], protected_ids: set[str]) -> None:
-    for node in _walk(body):
+def _check_body(body: dict[str, Any], protected_ids: set[str],
+                property_callback=None) -> None:
+    pending = [body]
+    while pending:
+        node = pending.pop()
         kind = node.get("kind")
+        if kind == "PseudoObjectExpr" and property_callback is not None:
+            if property_callback(node) is True:
+                # The callback is responsible for a fresh conditional effect
+                # check. Only then may its semantic call subtree be skipped.
+                continue
+            raise _Unknown("property_effect_not_checked", node.get("range"))
         if kind in LOOP_KINDS:
             raise _Unknown("nested_loop_in_body", node.get("range"))
         if kind in CONTROL_KINDS:
@@ -183,6 +192,7 @@ def _check_body(body: dict[str, Any], protected_ids: set[str]) -> None:
                 if len(children) != 2:
                     raise _Unknown("unsupported_storage_target", node.get("range"))
                 _storage_target(children[0], protected_ids)
+        pending.extend(reversed(_children(node)))
 
 
 def _coordinate_header(root: dict[str, Any], induction: dict[str, Any],

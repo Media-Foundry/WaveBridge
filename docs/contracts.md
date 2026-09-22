@@ -220,6 +220,14 @@ checker。外部`thread-start-assumptions/v1`绑定root hash、kernel、选定la
 
 ## 条件列数域覆盖
 
+独立 `conditional-column-body-check/v1` 入口从完整 AST 的精确函数/循环 ID
+重新观察坐标 header，并对整个受支持 body 检查受保护声明保持性。属性调用
+必须逐项 fresh 组合 receiver/getter 的无写证据；协议须精确覆盖 body 属性。
+`column-body-assumptions/v1` 显式绑定 root、函数与循环，要求源码有效和存储
+不与受保护声明别名，引用不自动成为证明。默认源码恢复及列域门控不因此升级。
+checked 不是整个 body 无写，也不建立 getter 值稳定、整数递推或列覆盖；
+具体接口和支持限制见 `compiler/verification/README.md`。
+
 `coordinate-column-header-observation/v1` 的 observed 仅表示受限直接属性起点和
 unsigned compound increment 的结构及 getter/receiver 绑定已观察到；不表示
 这些 getter 具有 CUDA/HIP 坐标语义。它不填写数值步长，也不建立 header

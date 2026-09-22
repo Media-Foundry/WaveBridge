@@ -296,3 +296,27 @@ int_bits=32, use_host_guard_assumptions=True)`fresh运行grid域和row-prefix恢
 值保持失败保留rejected，缺协议/不支持保持unknown。该区间不是每次launch的
 精确行集合，也未保持row与动态nrows的完整相关性；不得直接用它替代逐输入内存
 边界证明。不检查指针偏移、分配大小、别名、参与或FP结果，source/deploy为false。
+
+## 坐标循环体的条件保持检查
+
+`verification.column_body.check(root, function_id, loop_id, integer_types,
+property_protocols, binding, *, max_ast_nodes=None)` 从完整 TU 选择唯一函数和
+唯一循环；第一子集只支持函数体直接包含的坐标型 ForStmt。fresh 观察 header，
+推导 induction、边界参数和起点/步长 receiver 的受保护声明，不接受人工保护列表。
+循环体须为 CompoundStmt，每个循环检查 1～8 个属性表达式；超出保持 unknown。
+
+`binding` 的版本为 `column-body-assumptions/v1`，精确绑定 `root_sha256`、
+`function_id`、`loop_id`；`source_validity_assumed` 与
+`no_alias_with_protected_declarations_assumed` 必须为 true，`evidence_reference`
+非空。这些是外部前提，引用本身仍 unverified。
+
+`property_protocols` 按 body 内原始 PseudoObjectExpr ID 提供 `leaf_contract`、
+`effect_protocol`、`receiver_protocol`。每项重新执行属性 receiver/getter 检查；
+缺失、多余、错绑定或调用方自报 checked 不可代替检查。只有该属性完整通过，
+body 遍历才将其视为已检查子树；其它节点继续使用原存储目标与副作用限制。
+默认源码恢复入口不因此放宽。
+
+checked 仅表示在这些前提下，选定 body 保持受保护变量；合法的输出数组写入和
+局部累加仍可存在，所以不是整个 body 无写。它不证明 header 的实际坐标含义、
+每轮 getter 值稳定、转换/增量无溢出、列覆盖、正常完成、浮点结果或整核正确性，
+不接通部署门控。预算按每次完整扫描约束节点数，不是总时间或内存预算。
