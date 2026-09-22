@@ -1,6 +1,22 @@
 # 当前状态
 
-更新日期：2026-09-22。
+更新日期：2026-09-23。
+
+## 固定 vLLM 完整 TU 的原生捕获重采集
+
+以既有固定源码、CUDA device-only 编译视图重新运行原生插件，成功获得同次
+完整 AST 与捕获元数据；不混用旧 AST 的 ID。运行 339.41 秒，记录 5,456 个
+依赖文件、296 项捕获观测，11 个实现文件前后哈希一致。目标为 nvptx64，
+没有 GPU 执行，也不是新留出谱系成功。
+
+float RMSNorm launch 的 block 词法源声明有 4 个捕获候选，其中包含该 launch
+的两个 lambda 候选形成两层原生嵌套记录，均为 by_reference。同一新树的 block
+复制检查为 checked（三个同字段整数关系）。这里只定位候选，不把完整子树
+包含关系当作已验证 body 路径；runtime identity、生命周期、无写历史及 launch
+语义仍未建立。下一步以这两层真实捕获为目标，fresh 核对逐层 body 路径与来源。
+
+本轮启用原生插件后 574 项 CPU 无跳过、demo 通过。完整工件哈希与新 ID 见
+`.agents/handoffs/wb03-vllm-native-20260923.md`。
 
 ## 原生 Clang 捕获采集原型
 
@@ -14,7 +30,8 @@ init-capture/this 等保留 unsupported。初始化式里的 lambda 不归入新
 Clang 专项及 demo 通过。新增 11 项包含同类型多捕获、嵌套/初始化式、失败
 分类与同份 AST 上的既有复制检查；Clang 18 CI 已配置匹配插件构建与专项运行。
 采集报告哈希绑定源、插件、driver 和同次依赖观测，不建立完整 SDK 输入快照。
-未运行 GPU、未重新采集生产 vLLM TU、不建立 runtime identity 或 launch。
+该实现提交时未重采集生产 TU；后续 vLLM 重放见上节。仍无 GPU 执行、
+runtime identity 或 launch 保证。
 证据见 `.agents/handoffs/wb03-native-captures-20260922.md`。
 
 ## 捕获来源的可执行边界回归
