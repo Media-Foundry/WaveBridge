@@ -2,6 +2,21 @@
 
 更新日期：2026-09-23。
 
+## 固定 vLLM 完整 TU 的构造组合重放
+
+新增存储形状门控接入后，重新在固定完整原生 AST 上运行构造字段域组合，
+不是拼接历史成功报告。在外部 `hidden_size∈[1,4096]` 与整数 ABI 假设下，
+原始 block 构造字段域为 x∈[1,1024]、y=z=1；fresh 构造器效果门控 checked。
+原始动态实参恢复仍 unknown，未被回写；这些值域不代表实际 launch 值保持。
+运行 432.26 秒，73 个 Python 实现文件前后哈希一致；重复完整 root 哈希的
+组合成本尚未优化。不是新增语料或 GPU 结果。
+
+新增真实动态 TLS 参数回归：数值关系 checked 且结果为7，但首次使用会执行
+初始化并写入其他存储。参数效果因此继续 not_established；完整调用保证需
+另行核对存储期、声明作用域、属性、捕获和清理。597 项测试及 demo 通过，
+相关 5 项在 Clang 17/23 均通过。证据见
+`.agents/handoffs/wb04-vllm-constructor-composed-20260923.md`。
+
 ## 构造字段域与存储形状的组合修复
 
 独立复现旧 `constructor_source_check` 的错误字段值：`unsigned x:3` 初始化为

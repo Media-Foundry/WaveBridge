@@ -357,6 +357,10 @@ selection_domains, *, max_ast_nodes=None)` 接收完整 TU 中直接构造表达
 完整 unsigned 存储；bitfield 等不支持存储形状保持 unknown，不输出字段域。
 报告保留副作用子报告，但 `call_argument_effects` 和 `post_construction_escape`
 仍为 not_established；组合接入不等于整个调用或对象历史已经验证。
+真实 TLS 回归展示这一边界：minimum 的整数结果和字段域可以正确，但首次使用
+动态初始化的 `thread_local int` 仍可能写入其他存储。Clang JSON 的存储期证据
+包含 `tls: dynamic`；未来参数效果门控不能只检查类型或 `tlsKind`，还需检查
+声明作用域、初始化、属性和捕获路径。现有值域前提不替代这些效果证据。
 原始恢复报告保留 unknown 等真实状态，组合结果不会回写成 inspected。
 结论只覆盖构造求值时的条件字段域；输入域来源、清理、复制、后续写入和实际
 launch 对应仍未建立。默认既有报告检查入口及部署门控不改变。

@@ -53,6 +53,22 @@ class ConstructorValueEffectsClangTests(unittest.TestCase):
         self.assertEqual(report["status"], "unknown", report)
         self.assertEqual(report["fields"], [])
 
+    def test_tls_value_domain_does_not_certify_argument_effects(self):
+        function = next(n for n in _walk(self.root) if n.get("kind") == "FunctionDecl"
+                        and n.get("name") == "tls_argument")
+        expression = next(n for n in _walk(function) if n.get("kind") == "CXXConstructExpr")
+        operand = next(n for n in _walk(self.root) if n.get("kind") == "VarDecl"
+                       and n.get("name") == "operand")
+        self.assertEqual(operand.get("tls"), "dynamic")
+        domains = {expression["inner"][0]["id"]: [{"declaration_id": operand["id"],
+                    "type": operand["type"], "lower": 7, "upper": 7}]}
+        report = check(self.root, expression["id"], ABI, domains)
+        self.assertEqual(report["status"], "checked", report)
+        self.assertEqual(report["fields"][0]["interval"], {"lower": 7, "upper": 7})
+        self.assertEqual(report["call_argument_effects"], "not_established")
+        self.assertEqual(report["post_construction_escape"], "not_established")
+        self.assertFalse(report["deployable"])
+
     def test_cpu_execution_distinguishes_bitfield_from_plain_unsigned(self):
         with tempfile.TemporaryDirectory(prefix="wb-field-storage-") as directory:
             executable = Path(directory) / "check"
