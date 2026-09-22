@@ -17,7 +17,19 @@ PYTHONPATH=src python3 -m wavebridge.frontend.clang_ast \
 
 `collected` 仅代表收到了对应声明的真实 AST；编译失败、超时、解析失败、缺工具和
 无对应声明分别报告。输出文件必须不存在。AST 原文保留多个 JSON 根，设备视图
-由显式参数确定，不根据函数名猜测。依赖头文件闭包尚未哈希，不能作为完整缓存键。
+由显式参数确定，不根据函数名猜测。
+
+低层collect/CLI可选`--dependency-binding required`；`wavebridge.source`默认required，
+可显式off进行不带依赖证据的诊断。同一次AST编译增加`-MD -MF -MT`，包含系统头，
+只接受单个wavebridge-inputs规则，保存原depfile、路径、文件大小和SHA256。
+缺清单、缺文件、源文件前后hash变化均阻止required模式进入分析；失败编译仍
+保持compile_failed而不是依赖成功。off明确not_requested，不静默升级完整性。
+
+`observed`仅代表编译后读取依赖内容，不是冻结快照：并发修改无法完全排除。
+实际wrapper后端、resource-dir/bitcode追踪尚未接入，
+`compilation_input_closure_established=false`始终保留，不能作为完整缓存键。
+required模式不接受用户覆盖依赖选项、response file或透传预处理选项，避免
+另一套depfile设置覆盖采集器；复杂编译命令需要后续明确支持。
 
 需要同次编译中的外部声明时加 `--full-translation-unit`，不再使用 symbol filter；
 `--symbol` 仍用于核对入口是否存在。完整 HIP AST 可能很大：报告流式写出，

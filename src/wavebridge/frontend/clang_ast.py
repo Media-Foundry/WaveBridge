@@ -15,8 +15,11 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from typing import Any
+
+from wavebridge.frontend.dependencies import observe
 
 SCHEMA_VERSION = "clang-ast-source/v1"
 FUNCTION_KINDS = {"FunctionDecl", "CXXMethodDecl", "CXXConstructorDecl",
@@ -113,7 +116,7 @@ def function_locations(roots: list[dict[str, Any]], symbol: str) -> list[dict[st
 
 def collect(source: str | Path, compiler: str, compiler_args: list[str], symbol: str,
             timeout: float = 30.0, cwd: str | Path | None = None,
-            full_translation_unit: bool = False) -> dict[str, Any]:
+            full_translation_unit: bool = False, *, dependency_binding: str = "off") -> dict[str, Any]:
     """Collect genuine AST roots and source locations, with no semantic interpretation."""
     source_path = Path(source).resolve()
     workdir = Path(cwd).resolve() if cwd is not None else Path.cwd().resolve()
@@ -133,7 +136,18 @@ def collect(source: str | Path, compiler: str, compiler_args: list[str], symbol:
         "function_locations": [],
         "relation_recovery": "not_implemented",
         "manual_oracle_read": False,
+        "dependency_binding_mode": dependency_binding,
+        "dependency_binding": {"status": "not_requested"},
+        "compilation_input_closure_established": False,
     }
+    if not isinstance(dependency_binding, str) or dependency_binding not in {"off", "required"}:
+        report["reason"] = "invalid_dependency_binding_mode"
+        return report
+    if dependency_binding == "required" and any(
+            arg.startswith(("-M", "-Wp,", "@")) or arg in {"-Xclang", "-Xpreprocessor"}
+            for arg in compiler_args):
+        report["reason"] = "dependency_options_must_be_owned_by_collector"
+        return report
     if (not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or
             not math.isfinite(timeout) or timeout <= 0):
         report["reason"] = "invalid_timeout"
@@ -168,9 +182,15 @@ def collect(source: str | Path, compiler: str, compiler_args: list[str], symbol:
                "-ast-dump=json"]
     if not full_translation_unit:
         command.extend(["-Xclang", f"-ast-dump-filter={symbol}"])
-    command.append(str(source_path))
-    report["command"] = command
-    execution = invoke(command, timeout, workdir)
+    with tempfile.TemporaryDirectory(prefix="wavebridge-deps-") as temporary:
+        depfile = Path(temporary) / "inputs.d"
+        if dependency_binding == "required":
+            command.extend(["-MD", "-MF", str(depfile), "-MT", "wavebridge-inputs"])
+        command.append(str(source_path))
+        report["command"] = command
+        execution = invoke(command, timeout, workdir)
+        if dependency_binding == "required":
+            report["dependency_binding"] = observe(depfile, workdir, source_path, report["source_sha256"])
     report["execution"] = execution
     if execution["status"] == "timeout":
         report["status"] = "timeout"
@@ -179,6 +199,10 @@ def collect(source: str | Path, compiler: str, compiler_args: list[str], symbol:
     if execution["status"] != "completed" or execution["returncode"] != 0:
         report["status"] = "compile_failed"
         report["reason"] = "compiler_launch_failed" if execution["status"] == "launch_failed" else "compiler_nonzero_exit"
+        return report
+    if dependency_binding == "required" and report["dependency_binding"].get("status") != "observed":
+        report["status"] = "dependency_binding_failed"
+        report["reason"] = "same_invocation_dependencies_not_observed"
         return report
     try:
         roots = parse_json_roots(execution["stdout"])
@@ -213,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--compiler-arg", action="append", default=[],
                         help="repeatable explicit argument; use --compiler-arg=VALUE for dash-prefixed values")
     parser.add_argument("--symbol", required=True)
+    parser.add_argument("--dependency-binding", choices=("off", "required"), default="off")
     parser.add_argument("--full-translation-unit", action="store_true",
                         help="retain all declarations in each compiler AST root; may produce large output")
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -230,7 +255,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--output already exists; AST evidence is never overwritten")
     with output_stream:
         report = collect(source_path, args.compiler, args.compiler_arg, args.symbol,
-                         args.timeout, args.cwd, args.full_translation_unit)
+                         args.timeout, args.cwd, args.full_translation_unit,
+                         dependency_binding=args.dependency_binding)
         # Full HIP translation units are large: do not materialize a second JSON string.
         json.dump(report, output_stream, indent=2, sort_keys=True, allow_nan=False)
         output_stream.write("\n")

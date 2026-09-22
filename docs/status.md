@@ -1,6 +1,17 @@
 # 当前状态
 
-更新日期：2026-09-21。
+更新日期：2026-09-22。
+
+## 同次 AST 编译的依赖观测门控
+
+源码分析入口默认 required：同次 Clang 调用用 -MD 生成包含系统头的依赖清单，
+记录原始清单、各文件路径/内容哈希及清单哈希；缺失、歧义、文件不可读或源文件
+前后哈希变化时不进入分析。低层 AST 采集保留 off 兼容入口，显式关闭不建立
+依赖证据。新增真实 Clang 头文件变化、系统头收集和缺清单门控回归。
+本地 make check 469 项通过，make demo 通过；无 GPU 执行，未核验本提交远端 CI。
+这只是编译后依赖内容观测，不是冻结输入快照或完整编译闭包；wrapper 实际后端、
+resource-dir/SDK 及 bitcode 绑定仍待接入，closure 标志始终 false。详见
+`.agents/handoffs/wb03-dependency-binding-20260922.md`。WB-03 仍未完整验收。
 
 ## 第二仓库源码验证：vLLM RMSNorm首次评估为unknown
 
@@ -12,8 +23,8 @@ unsupported_value_wrapper；未到达后续步长/归约/组合检查。模板�
 这是一个不同仓库候选的具体拒绝记录，不是holdout通过或CUB语义结论。
 前四次环境失败保留；无GPU执行。来源、冻结规则和结果见
 `benchmarks/intake/vllm-rmsnorm{,-result}.json`及对应protocol.md。
-依赖绑定已完成最小接入方案审查，但尚未实现；下一步同次AST depfile及driver
-trace绑定，不用另一次预处理输出冒充冻结输入。
+同次 AST depfile 观测已接入（见上节）；下一步 driver trace 绑定，
+不用另一次预处理输出冒充冻结输入。历史 vLLM 工件未因此追溯获得依赖证据。
 
 ## 引用类型别名与induction存储期修复
 

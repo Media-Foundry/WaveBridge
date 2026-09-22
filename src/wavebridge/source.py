@@ -20,11 +20,12 @@ from wavebridge.analysis.launch_guards import recover as recover_launch_guards
 from wavebridge.analysis.reduction_chain import recover as recover_chain
 
 
-def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=30.0):
+def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=30.0, *,
+        dependency_binding="required"):
     directory = Path(output_dir).resolve()
     directory.mkdir(parents=True, exist_ok=False)
     frontend = collect(source, compiler, compiler_args, symbol, timeout,
-                       full_translation_unit=True)
+                       full_translation_unit=True, dependency_binding=dependency_binding)
     with (directory / "ast.json").open("x", encoding="utf-8") as stream:
         json.dump(frontend, stream, indent=2, sort_keys=True, allow_nan=False)
         stream.write("\n")
@@ -36,9 +37,12 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
         "compiler_sha256": frontend["compiler_sha256"], "command": frontend["command"],
         "int_bits": int_bits, "int_bits_origin": "explicit_external_assumption",
         "checked": False, "deployable": False, "analysis": None,
+        "dependency_binding_mode": dependency_binding,
+        "dependency_binding": frontend.get("dependency_binding", {"status": "missing"}),
+        "compilation_input_closure_established": False,
         "implementation_sha256": {
             name: _sha256(Path(__file__).parent / name) for name in (
-                "source.py", "frontend/clang_ast.py", "analysis/column_loops.py",
+                "source.py", "frontend/clang_ast.py", "frontend/dependencies.py", "analysis/column_loops.py",
                 "analysis/integer_constants.py", "analysis/initializer_evidence.py",
                 "analysis/initializer_value.py",
                 "analysis/return_trace.py", "analysis/reduction_discovery.py",
@@ -53,6 +57,8 @@ def run(source, compiler, compiler_args, symbol, int_bits, output_dir, timeout=3
     locations = frontend["function_locations"]
     if frontend["status"] != "collected":
         report["reason"] = "frontend_" + frontend["status"]
+    elif dependency_binding == "required" and report["dependency_binding"].get("status") != "observed":
+        report["reason"] = "dependency_binding_not_observed"
     elif len(frontend["ast_roots"]) != 1 or len(locations) != 1:
         report["reason"] = "ambiguous_entry_or_compilation_view"
     else:
@@ -105,12 +111,13 @@ def main(argv=None):
     parser.add_argument("--int-bits", type=int, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--dependency-binding", choices=("required", "off"), default="required")
     args = parser.parse_args(argv)
     if not 2 <= args.int_bits <= 128:
         parser.error("--int-bits must be between 2 and 128")
     try:
         report = run(args.source, args.compiler, args.compiler_arg, args.symbol,
-                     args.int_bits, args.output_dir, args.timeout)
+                     args.int_bits, args.output_dir, args.timeout, dependency_binding=args.dependency_binding)
     except FileExistsError:
         parser.error("output directory must not exist; evidence is never overwritten")
     print(json.dumps({"status": report["status"], "output_dir": str(args.output_dir)}))
