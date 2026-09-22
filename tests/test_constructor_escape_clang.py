@@ -33,7 +33,7 @@ class ConstructorEscapeClangTests(unittest.TestCase):
         return function, variables, constructors
 
     def test_publication_constructors_do_not_gain_field_domain_approval(self):
-        for name in ("no_publication", "body_publication", "initializer_publication"):
+        for name in ("no_publication", "body_publication", "initializer_publication", "argument_publication"):
             _, _, constructors = self.inputs(name)
             report = check_construction(self.root, constructors["source"]["id"], ABI, {})
             with self.subTest(name=name):

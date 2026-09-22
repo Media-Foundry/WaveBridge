@@ -404,3 +404,18 @@ checked 仅在这些条件下表示复制实参的 lvalue 指向对应的同一�
 不证明其值自初始化后未变、lambda 会执行、实际 launch 或机器码正确。
 复制子报告保留原有 identity=not_established，新增条件结论单独记录，不回写升级。
 原生捕获元数据仍是可信前端的一部分，不宣称独立验证了 Clang API。
+
+## 构造器实现的受限副作用检查
+
+`verification.constructor_effects.check(root, constructor_id, integer_types,
+*, max_ast_nodes=None)` 从完整 TU 独立关联唯一构造器及所属 record。
+只支持普通内建整数字段、整数值参数、空函数体，以及逐字段恰好一次的参数或
+字面量初始化；允许列明的整数隐式转换，但不据此证明数值保持。引用、指针、
+volatile、bitfield、base、union、虚函数、调用及不支持的 AST 效果保持 unknown。
+
+`constructor-effects-check/v1` 的 checked 仅说明该构造器成员初始化式和函数体
+没有观测到目标地址读取/发布或其他存储写入；允许的写入是目标直接字段初始化。
+它不覆盖调用参数求值、目标分配/生命周期、清理、异常、析构及后续逃逸。
+即使构造器本身通过，`PlainValue source(publish_argument(&source))` 仍可在参数
+求值时发布地址；真实 CPU 回归覆盖这一界限。不能据此将初始字段域转移到 launch。
+完整有效 AST、匹配 ABI、有效参数和正常返回仍是前提；整核和部署标记保持 false。

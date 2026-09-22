@@ -8,6 +8,15 @@ unsigned no_publication() {
   PlainValue target(source);
   return target.x;
 }
+PlainValue* argument_published = nullptr;
+unsigned publish_argument(PlainValue* object) { argument_published = object; return 3; }
+void mutate_argument_publication() { argument_published->x = 99; }
+unsigned argument_publication() {
+  PlainValue source(publish_argument(&source));
+  mutate_argument_publication();
+  PlainValue target(source);
+  return target.x;
+}
 
 typedef struct BodyPublished {
   static BodyPublished* published;
@@ -46,6 +55,7 @@ int main() {
   if (no_publication() != 3) return 1;
   if (body_publication() != 99) return 2;
   if (initializer_publication() != 99) return 3;
+  if (argument_publication() != 99) return 4;
   return 0;
 }
 #endif
