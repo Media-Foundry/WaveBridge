@@ -6,11 +6,26 @@ void implicit_copy() { Plain source(3, 5, 7); Plain target(source); }
 void parameter_copy(Plain source) { Plain target(source); }
 void alias_copy() { Plain source(3, 5, 7); Plain& alias = source; Plain target(alias); }
 void changed_before_copy() { Plain source(3, 5, 7); source.x = 99; Plain target(source); }
-void captured_copy() {
+unsigned captured_copy() {
   Plain source(3, 5, 7);
-  auto f = [source]() mutable { Plain target(source); };
+  auto f = [source]() mutable { Plain target(source); return target.x; };
   source.x = 99;
-  f();
+  return f();
+}
+unsigned reference_captured_copy() {
+  Plain source(3, 5, 7);
+  auto f = [&source]() { Plain target(source); return target.x; };
+  source.x = 99;
+  return f();
+}
+unsigned nested_captured_copy() {
+  Plain source(3, 5, 7);
+  auto f = [source]() mutable {
+    auto g = [&source]() { Plain target(source); return target.x; };
+    return g();
+  };
+  source.x = 99;
+  return f();
 }
 typedef struct Manual {
   unsigned x, y;
@@ -44,3 +59,12 @@ typedef struct Polymorphic {
   virtual ~Polymorphic() {}
 } Polymorphic;
 void polymorphic_copy() { Polymorphic source; Polymorphic target(source); }
+
+#ifdef WAVEBRIDGE_CAPTURE_EXECUTION
+int main() {
+  if (captured_copy() != 3) return 1;
+  if (reference_captured_copy() != 99) return 2;
+  if (nested_captured_copy() != 3) return 3;
+  return 0;
+}
+#endif

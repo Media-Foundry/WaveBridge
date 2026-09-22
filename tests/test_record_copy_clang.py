@@ -2,6 +2,8 @@
 import copy
 from pathlib import Path
 import shutil
+import subprocess
+import tempfile
 import unittest
 
 from wavebridge.frontend.clang_ast import collect, _walk
@@ -65,13 +67,30 @@ class RecordCopyClangTests(unittest.TestCase):
                 self.assertEqual(result["field_mappings"], [])
 
     def test_capture_does_not_establish_runtime_source_object_identity(self):
-        result = self.run_check("captured_copy")
-        self.assertEqual(result["status"], "checked", result)
-        self.assertEqual(result["source_declaration_id"], self.inputs("captured_copy")[1])
-        self.assertEqual(result["source_declaration_binding"], "lexical_declref_only")
-        self.assertEqual(result["source_object_identity"], "not_established")
-        self.assertEqual(result["source_object_preservation"], "not_established")
-        self.assertNotIn("fields", result)
+        for name in ("captured_copy", "reference_captured_copy", "nested_captured_copy"):
+            with self.subTest(name=name):
+                result = self.run_check(name)
+                self.assertEqual(result["status"], "checked", result)
+                self.assertEqual(result["source_declaration_id"], self.inputs(name)[1])
+                self.assertEqual(result["source_declaration_binding"], "lexical_declref_only")
+                self.assertEqual(result["source_object_identity"], "not_established")
+                self.assertEqual(result["source_object_preservation"], "not_established")
+                self.assertNotIn("fields", result)
+
+    def test_capture_runtime_values_differ_despite_same_lexical_binding_pattern(self):
+        # Actual CPU execution: value=3, reference=99, value->reference=3.
+        # In particular, the innermost reference capture is not enough to
+        # associate a copy with the original outer object's current value.
+        fixture = Path(__file__).parent / "fixtures/record_copy.cpp"
+        with tempfile.TemporaryDirectory(prefix="wb-capture-execution-") as directory:
+            executable = Path(directory) / "capture"
+            compiled = subprocess.run(
+                [shutil.which("clang++"), "-std=c++17", "-DWAVEBRIDGE_CAPTURE_EXECUTION",
+                 str(fixture), "-o", str(executable)],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            executed = subprocess.run([str(executable)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(executed.returncode, 0, executed.stderr)
 
     def test_misbound_source_and_duplicate_expression_are_rejected(self):
         for mutation in ("source_id", "source_type", "duplicate_expression", "reference_source"):
