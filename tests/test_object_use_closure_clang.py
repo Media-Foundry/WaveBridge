@@ -1,6 +1,8 @@
 """Whole-function source uses, native captures and independently checked copies."""
 import copy
 import os
+import subprocess
+import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -35,8 +37,10 @@ class ObjectUseClosureClangTests(unittest.TestCase):
         root_hash = _hash(root)
 
         def visit(node, depth=0):
-            if node.get("kind") == "VarDecl" and node.get("name") == "target" and depth:
-                expression = next(n for n in _walk(node) if n.get("kind") == "CXXConstructExpr")
+            if (node.get("kind") == "CXXConstructExpr" and depth and
+                    any(n.get("kind") == "DeclRefExpr" and
+                        n.get("referencedDecl", {}).get("id") == source["id"] for n in _walk(node))):
+                expression = node
                 protocols[expression["id"]] = {
                     "schema_version": "capture-source-assumptions/v1", "root_sha256": root_hash,
                     "copy_expression_id": expression["id"], "source_declaration_id": source["id"],
@@ -154,3 +158,31 @@ class ObjectUseClosureClangTests(unittest.TestCase):
         for budget in (0, True, 1, 10_000_001):
             self.assertEqual(self.run_check(max_ast_nodes=budget)["status"], "unknown")
         self.assertEqual(check(self.payload, "missing", ABI, {}, {})["status"], "unknown")
+
+    def test_parameter_copies_compose_without_assuming_callee_purity(self):
+        for name in ("by_value_flow", "captured_by_value_flow"):
+            with self.subTest(name=name):
+                report = self.run_check(name)
+                self.assertEqual(report["status"], "checked", report)
+                copies = report["copy_checks"] + [r["copy_check"] for r in report["capture_checks"]]
+                self.assertEqual(len(copies), 2)
+                for copy_report in copies:
+                    self.assertEqual(copy_report["local_copy_effects"]["status"], "checked")
+                    target = copy_report["parameter_target"]
+                    self.assertEqual(target["status"], "checked")
+                    self.assertEqual(target["callee_body_effects"], "not_established")
+                self.assertEqual(report["source_object_preservation"], "not_established")
+                self.assertFalse(report["deployable"])
+        self.assertEqual(self.run_check("by_reference_flow")["status"], "unknown")
+
+    def test_cpu_value_vs_reference_mutation_is_a_separate_observation(self):
+        # Finite CPU evidence only; the checker above does not certify history.
+        with tempfile.TemporaryDirectory(prefix="wb-parameter-flow-") as directory:
+            executable = Path(directory) / "run"
+            built = subprocess.run(
+                [COMPILER, "-std=c++17", "-DWAVEBRIDGE_OBJECT_USES_EXECUTION",
+                 str(Path(__file__).parent / "fixtures/object_uses.cpp"), "-o", str(executable)],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(built.returncode, 0, built.stderr)
+            run = subprocess.run([str(executable)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(run.returncode, 0, run.stderr)

@@ -84,3 +84,37 @@ void tls_source() {
   thread_local Config source(3);
   Config target(source);
 }
+
+// The callee is deliberately impure: parameter writes and a global counter.
+unsigned observed_value = 0;
+unsigned mutation_calls = 0;
+void change_value(Config value) { ++mutation_calls; value.x = 99; }
+void observe_value(Config value) { observed_value = value.x; }
+void change_reference(Config& value) { ++mutation_calls; value.x = 99; }
+void by_value_flow() {
+  Config source(3);
+  change_value(source);
+  observe_value(source);
+}
+void captured_by_value_flow() {
+  Config source(3);
+  [&]() { change_value(source); observe_value(source); }();
+}
+void by_reference_flow() {
+  Config source(3);
+  change_reference(source);
+  observe_value(source);
+}
+
+#ifdef WAVEBRIDGE_OBJECT_USES_EXECUTION
+void opaque_call() {}
+int main() {
+  by_value_flow();
+  if (observed_value != 3 || mutation_calls != 1) return 1;
+  captured_by_value_flow();
+  if (observed_value != 3 || mutation_calls != 2) return 2;
+  by_reference_flow();
+  if (observed_value != 99 || mutation_calls != 3) return 3;
+  return 0;
+}
+#endif

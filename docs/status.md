@@ -2,6 +2,17 @@
 
 更新日期：2026-09-23。
 
+## 按值实参的跨层与CPU对照回归
+
+新增真实Clang组合测试连接初始化、显式引用闭合、copy局部效果及parameter
+target。被调函数实际改写自己的按值参数并递增全局计数器，未假设callee纯。
+普通调用与立即lambda两条路径均局部checked；CPU执行随后读到源值3。
+按引用改写对照读到99，闭合检查unknown。有限执行证据不升级历史保持结论。
+649项CPU、173项Clang专项及demo通过；上一提交 `2ba9b4a` CI已成功。
+下一步是自动建立源声明与复制求值的顺序/立即调用链，不添加“无别名”或
+“source值保持”同义假设来换取组合通过。见
+`.agents/handoffs/wb04-value-flow-regression-20260923.md`。
+
 ## 真实配置复制实参的按值形参绑定
 
 `record_copy_check.parameter_target` 从同一完整AST自动关联直接copy、call、
