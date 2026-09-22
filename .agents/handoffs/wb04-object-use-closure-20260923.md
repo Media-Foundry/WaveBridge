@@ -73,3 +73,37 @@ PYTHONPATH=src python3 artifacts/wb-object-use-closure-N4Xis6/check.py \
 `report.json`。没有结果文件或只有进程运行不代表checked。没有重采集、GPU、
 性能或整核证明。下一步先收取此任务的实际终态和范围，再推进初始化至复制
 之间的有限路径保持；当前显式集合闭合本身不能替代那项保证。
+
+## 等待期间的独立成本诊断（不修改正式运行）
+
+命令：`PYTHONPATH=src python3 artifacts/wb-hash-cost-X3no77/check.py`。
+输入仍是上述固定完整native AST；新进程只读输入，没有重启PID426259，也没有
+修改任何`src/wavebridge`文件。使用与现有hash一致的sort_keys、紧凑separators、
+allow_nan=False参数，改用一次性`json.dumps`生成字符串再UTF-8编码并SHA-256。
+
+实际加载24.90秒，序列化14.84秒，UTF-8与哈希2.01秒；结果精确等于已记录的
+`ce0f70bbec8ae7dfc727882d5185a1e13982c9facc32c52346e4f5878413f7ba`。
+canonical字符串为1,849,557,363字符。Linux进程ru_maxrss在加载后/一次性哈希后
+均为12,735,492 KiB：这是累计高水位，不证明序列化没有额外分配；该路径明确创建
+完整字符串和完整字节缓冲区。未在本次重跑流式基准，不能报告受控加速比。
+
+报告 `artifacts/wb-hash-cost-X3no77/report.json` SHA-256：
+`f6bffd115b72b607b12bab4cb1175fde20084ab5b43d4b42428268d87fe26d68`。
+它是下一轮可选加速路径的工程依据，不改变保证范围。未来若实现，应保留内存
+受限的流式默认路径，并验证两种模式的canonical摘要和失败行为一致；正在运行
+任务必须先收取终态，不能为了加速丢弃或暗中重启。
+
+## 复制效果只读审阅与排除的候选反例
+
+现有copy核心shape只读取const Record&的直接整数字段、逐字段初始化目标且body
+为空，适合追加局部source写入/地址发布检查。但现有报告没有该效果保证；任意
+constructor/field `*Attr`以及ParmVarDecl的未门控children仍需明确支持边界。
+不应把现有逐字段值关系直接重命名为无副作用，也不能从中消除capture协议的
+alive/closure来源/same activation等外部前提。
+
+Sol在`artifacts/wb-copy-attr-d3SUgE`测试参数和字段上的cleanup属性；AOCC17均
+发出“only applies to local variables”的ignored-attributes警告，AST不含该属性。
+主代理另实际编译、链接并执行param.cpp和field.cpp：两者成功构建，程序均按
+源码`return x`返回退出码3；cleanup函数仅声明而无定义，未产生运行时调用。
+因此这不是已证实漏洞，不列入负例发现或修复成果。下一效果门控应基于确切
+支持子集，而不是把这个被编译器忽略的语法当成实际攻击。

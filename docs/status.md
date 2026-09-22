@@ -16,6 +16,11 @@
 固定 vLLM 完整 TU 的全组合重放已启动，尚无终态结果，不能记为通过；见
 `.agents/handoffs/wb04-object-use-closure-20260923.md` 的确切进程和工件记录。
 
+等待期间另做固定完整AST的成本诊断：一次性canonical JSON序列化14.84秒、
+UTF-8与SHA-256约2.01秒，摘要与既有流式root hash完全一致。未修改checker、
+未重启正式任务；这是单工件诊断，不是GPU性能或完整checker加速比。一次性方式
+创建完整字符串/字节缓冲区，内存约束仍需单独处理，不能直接替换默认流式路径。
+
 ## 立即调用 lambda 的接收者绑定
 
 新增 `verification/lambda_invocation.py`，从完整 AST 检查原始 lambda 临时对象
