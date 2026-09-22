@@ -84,6 +84,75 @@ def _leaf(node: object) -> dict[str, Any]:
     return current
 
 
+def _argument_leaf(argument, constructor_report, mapping, abi):
+    """Recheck separately recorded parameter defaults without inventing AST children.
+
+    Same-TU provenance/redeclaration exclusion is a frontend premise, as for
+    existing field recovery. Parameter ownership, source and casts are checked
+    here independently of the reported constant value.
+    """
+    raw = argument.get("argument_ast")
+    binding = argument.get("default_source_binding")
+    if binding is None:
+        return _leaf(raw)
+    declaration = constructor_report.get("default_constructor_declaration_ast")
+    constructor_id = constructor_report.get("constructor_declaration_id")
+    if (not isinstance(raw, dict) or raw.get("kind") != "CXXDefaultArgExpr" or
+            raw.get("inner", []) != [] or argument.get("default_argument") is not True or
+            not isinstance(binding, dict) or
+            binding.get("schema_version") != "constructor-default-source/v1" or
+            binding.get("constructor_declaration_id") != constructor_id or
+            not isinstance(declaration, dict) or declaration.get("kind") != "CXXConstructorDecl" or
+            declaration.get("id") != constructor_id or declaration.get("previousDecl") is not None):
+        raise _Unknown("default_parameter_source_binding_missing_or_unsupported")
+    position = binding.get("parameter_position")
+    parameters = [node for node in _children(declaration) if node.get("kind") == "ParmVarDecl"]
+    ids = [node.get("id") for node in parameters]
+    if (type(position) is not int or position != argument.get("position") or
+            position != mapping.get("parameter_position") or
+            len(parameters) != len(constructor_report["arguments"]) or
+            not 0 <= position < len(parameters) or
+            any(not isinstance(identifier, str) or not identifier for identifier in ids) or
+            len(set(ids)) != len(ids)):
+        raise _Rejected("default_parameter_position_mismatch")
+    parameter = parameters[position]
+    if parameter["id"] != binding.get("parameter_id") or parameter["id"] != mapping.get("parameter_id"):
+        raise _Rejected("default_parameter_identity_mismatch")
+    expressions = [node for node in _children(parameter) if not str(node.get("kind", "")).endswith("Attr")]
+    source = argument.get("default_source_ast")
+    if parameter.get("init") != "c" or len(expressions) != 1 or source != expressions[0]:
+        raise _Rejected("default_parameter_initializer_mismatch")
+    expected_type = _abi_type(parameter.get("type"), abi)
+    if any(_abi_type(info, abi) != expected_type for info in
+           (raw.get("type"), source.get("type"), mapping.get("parameter_type"))):
+        raise _Rejected("default_parameter_type_mismatch")
+    current, casts, wrappers = source, [], 0
+    while current.get("kind") in {"ParenExpr", "ImplicitCastExpr"}:
+        wrappers += 1
+        children = _children(current)
+        if len(children) != 1 or wrappers > MAX_CASTS:
+            raise _Unknown("default_source_wrapper_unsupported")
+        child = children[0]
+        if (current.get("kind") == "ParenExpr" and
+                _abi_type(current.get("type"), abi) != _abi_type(child.get("type"), abi)):
+            raise _Rejected("default_source_parenthesis_type_mismatch")
+        if current.get("kind") == "ImplicitCastExpr":
+            if current.get("castKind") not in {"NoOp", "IntegralCast"}:
+                raise _Unknown("default_source_cast_unsupported")
+            casts.append({"kind": current["kind"], "cast_kind": current["castKind"],
+                          "source_type": child.get("type"), "destination_type": current.get("type"),
+                          "range": current.get("range")})
+        current = child
+    if current.get("kind") != "IntegerLiteral" or _children(current):
+        raise _Unknown("default_source_not_literal")
+    reported = argument.get("casts")
+    if (not isinstance(reported, list) or len(reported) != len(casts) or
+            any(not isinstance(item, dict) or any(item.get(key) != value for key, value in expected.items())
+                for item, expected in zip(reported, casts))):
+        raise _Rejected("default_source_cast_evidence_mismatch")
+    return current
+
+
 def _apply_casts(lower: int, upper: int, initial_type: object, casts: object, final_type: object,
                  abi: dict[str, Any], checks: list[dict[str, Any]], value_kind: str) -> None:
     if not isinstance(casts, list):
@@ -157,6 +226,12 @@ def check(constructor_report: object, field_report: object, abi: object,
     result["input_sha256"] = {
         "constructor_report": _hash(constructor_report), "field_report": _hash(field_report),
         "abi": _hash(abi)}
+    default_arguments = constructor_report.get("arguments")
+    if isinstance(default_arguments, list) and any(
+            isinstance(argument, dict) and argument.get("default_source_binding") is not None
+            for argument in default_arguments):
+        result["assumptions"].append(
+            "frontend establishes same-TU default declaration/source uniqueness and excludes redeclared, inherited or templated defaults")
     if interval_mode:
         result["input_sha256"]["declaration_intervals"] = _hash(declaration_intervals)
     try:
@@ -252,7 +327,7 @@ def check(constructor_report: object, field_report: object, abi: object,
             position = mapping["parameter_position"]
             argument = arguments[position]
             constant = argument.get("pre_conversion_constant") if isinstance(argument, dict) else None
-            leaf = _leaf(argument.get("argument_ast"))
+            leaf = _argument_leaf(argument, constructor_report, mapping, abi)
             value_kind = "constant"
             lower: int
             upper: int

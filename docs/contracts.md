@@ -136,8 +136,12 @@ CLI 的 `--use-host-guard-assumptions` 必须显式开启，输出配置域报�
 
 构造实参恢复额外支持精确 alias→record ID 锚定且 record 内选定 ctorType 唯一
 的直接构造；`constructor_identity.mode` 必须区分它与 AST 原有 conversionFunc
-引用。此身份关联不建立复制/移动语义、命名对象值保持、默认实参来源或动态
-调用值域。现有字段 checker 的条件保证不因此扩大；支持边界见
+引用。此身份关联本身不建立复制/移动语义、命名对象值保持或动态调用值域。
+对于无子节点的默认实参，额外的声明局部字面量恢复可记录精确参数 ID、位置、
+构造声明和默认表达式，保留调用点原始 AST，不补造 child。字段 checker 独立
+核对这些绑定、参数初始化式、类型与转换链，再检查整数值保持；同 TU 来源、
+声明唯一性及无重声明仍属于前端可信前提，不宣称 checker 重验完整 TU。
+支持边界见
 `compiler/analysis/README.md`。
 
 ## kernel 实参域：`kernel-argument-domain-check/v1`

@@ -363,5 +363,14 @@ ElaboratedType（可省略）到 RecordType 的精确 CXXRecordDecl ID。完整 
 报告 `constructor_identity.mode` 区分原始 conversionFunc 引用与上述推导关联；
 后者的 `constructor_reference` 是关联结果，不能称为 AST 原有 conversionFunc。
 仅构造身份关联不证明字段值、复制/移动语义或变量到 launch 时保持不变。
-实参中的未知调用与缺失默认实参 AST 继续阻断检查；不会把 std::min 的名字当作
+实参中的未知调用与无法关联的默认实参来源继续阻断检查；不会把 std::min 的名字当作
 语义契约，也不会把命名 dim3 对象的复制直接替换为其声明时字段值。
+
+直接构造路径中的空 `CXXDefaultArgExpr` 可按实参位置关联到所选构造声明的
+唯一参数及其本地 initializer；只支持内建整数 literal、括号和 NoOp/IntegralCast。
+参数、默认子树 ID 必须可在完整 TU 中唯一定位；重声明链、继承/隐式构造、
+调用、改写表达式及缺来源保持 unknown。不会把缺来源默认值一律填成 1。
+原调用点保存在 `argument_ast`；`default_source_ast` 和
+`default_source_binding` 单独记录来源，`default_constructor_declaration_ast`
+保留选定声明供字段 checker 核对。已有带子节点的默认表达式继续走原路径。
+来源恢复不等于整数转换安全；窄化仍由独立字段 checker 拒绝。
