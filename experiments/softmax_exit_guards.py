@@ -13,13 +13,16 @@ RECOVERY_SHA = "31a6570762225ea247f24b799be28ebd51f3dab13e562e32cccb8e305d764f67
 
 
 def run(native, recovery, output, *, prefix_values=False, header_connection=False, work_preservation=False,
-        int_bits=32, static_branches=False, nested_loops=False, iteration_domains=None):
+        int_bits=32, static_branches=False, nested_loops=False, iteration_domains=None,
+        source_constants=False):
     if static_branches and not work_preservation:
         raise ValueError("static_branches_requires_work_preservation")
     if nested_loops and not work_preservation:
         raise ValueError("nested_loops_requires_work_preservation")
     if iteration_domains is not None and not work_preservation:
         raise ValueError("iteration_domains_requires_work_preservation")
+    if source_constants and iteration_domains is None:
+        raise ValueError("source_constants_requires_iteration_domains")
     if sha(native) != NATIVE_SHA or sha(recovery) != RECOVERY_SHA:
         raise ValueError("fixed_input_mismatch")
     if output.exists():
@@ -57,7 +60,8 @@ def run(native, recovery, output, *, prefix_values=False, header_connection=Fals
             if domains is not None:
                 checked = check_iteration_bounds(frontend["payload"], matches[0]["id"], int_bits, protocols,
                                                   domains[matches[0]["id"]], use_static_branches=static_branches,
-                                                  use_nested_loops=nested_loops)
+                                                  use_nested_loops=nested_loops,
+                                                  use_source_constants=source_constants)
             else:
                 checked = check_work_preservation(frontend["payload"], matches[0]["id"], int_bits, protocols,
                                                    use_static_branches=static_branches,
@@ -97,6 +101,7 @@ def run(native, recovery, output, *, prefix_values=False, header_connection=Fals
         report["schema_version"] = "softmax-exit-iteration-bounds-development/v1"
         report["declaration_intervals"] = domains
         report["declaration_interval_status"] = "explicit_external_assumptions_not_launch_proven"
+        report["source_constants_enabled"] = source_constants
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"checks": [{"status": item["check"]["status"], "reason": item["check"]["reason"],
                                   "scope": item["check"]["scope"]}
@@ -117,8 +122,9 @@ if __name__ == "__main__":
     parser.add_argument("--static-branches", action="store_true")
     parser.add_argument("--nested-loops", action="store_true")
     parser.add_argument("--iteration-domains", type=Path)
+    parser.add_argument("--source-constants", action="store_true")
     args = parser.parse_args()
     run(args.native, args.recovery, args.output, prefix_values=args.prefix_values,
         header_connection=args.header_connection, work_preservation=args.work_preservation,
         int_bits=args.int_bits, static_branches=args.static_branches, nested_loops=args.nested_loops,
-        iteration_domains=args.iteration_domains)
+        iteration_domains=args.iteration_domains, source_constants=args.source_constants)

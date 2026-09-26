@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 从同次AST建立常量域
+
+check_iteration_bounds新增显式use_source_constants模式，按精确声明ID重新
+求值const int及依赖链，声明歧义unknown，外部域不能覆盖已推导常量。
+固定softmax的WARP_SIZE=[32,32]现由源码常量链得到，不再手填；内外层条件
+检查仍通过，次数界[0,2]/[0,4]。其余三个范围仍为外部示例前提，特别不能
+从local_batches的上界裁剪推断其非负。见
+[实录](../experiments/constant-domains-evidence-20260927.md)。
+完整1068项测试通过（73.774秒，native启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增5项真实Clang回归并复核；无GPU，远端CI未核验。源码常量值
+不等于物理波宽，初始化/坐标/launch域及完整覆盖仍未建立。
+
 ## 退出循环的条件次数界与前缀整数安全
 
 check_iteration_bounds重新检查work/header/prefix/guard，再用精确声明ID的

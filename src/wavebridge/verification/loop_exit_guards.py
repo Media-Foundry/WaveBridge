@@ -154,7 +154,8 @@ def inspect_structure(root, loop_id, *, max_ast_nodes=None):
 
 
 def check_iteration_bounds(payload, loop_id, int_bits, call_protocols, declaration_intervals, *,
-                           max_ast_nodes=None, use_static_branches=False, use_nested_loops=False):
+                           max_ast_nodes=None, use_static_branches=False, use_nested_loops=False,
+                           use_source_constants=False):
     """Conservative work-count bounds; check each evaluated prefix/guard operation.
 
     External declaration intervals are assumptions at entry, not inferred launch
@@ -177,14 +178,50 @@ def check_iteration_bounds(payload, loop_id, int_bits, call_protocols, declarati
         result["reason"] = "work_preservation_not_checked"
         return result
     try:
-        if not isinstance(declaration_intervals, dict):
+        if type(use_source_constants) is not bool or not isinstance(declaration_intervals, dict):
             raise _Unknown("invalid_declaration_intervals")
         connection = work["connection_check"]
         header, prefix = connection["header_check"]["header"], connection["prefix_check"]
         induction = connection["induction_declaration_id"]
         required = set(prefix["external_read_declaration_ids"]) - {induction}
-        if set(declaration_intervals) != required:
+        derived = {}
+        if use_source_constants:
+            from wavebridge.analysis.integer_constants import evaluate as constant_value
+
+            result["schema_version"] = "guarded-loop-iteration-bounds-source-constants/v1"
+            result["source_constant_checks"] = {}
+            result["derived_constant_intervals"] = derived
+            result["budget"]["max_constant_domain_reads"] = 64
+            if len(required) > 64:
+                raise _Unknown("constant_domain_read_budget_exceeded")
+            # Work checking already bounded/validated the full TU. Do not let
+            # the constant evaluator's declaration map hide duplicate IDs.
+            index, pending = {}, [payload["ast"]]
+            while pending:
+                node = pending.pop()
+                if isinstance(node.get("id"), str):
+                    index.setdefault(node["id"], []).append(node)
+                pending.extend(node.get("inner", []))
+            for identifier in sorted(required):
+                declarations = index.get(identifier, [])
+                if len(declarations) != 1:
+                    raise _Unknown("domain_declaration_not_unique")
+                declaration = declarations[0]
+                if (declaration.get("kind") != "VarDecl" or
+                        _type(declaration) != "const int"):
+                    continue
+                checked = constant_value(payload["ast"], identifier, int_bits)
+                result["source_constant_checks"][identifier] = checked
+                if any(len(index.get(source["declaration_id"], [])) != 1 for source in checked["sources"]):
+                    raise _Unknown("constant_domain_dependency_not_unique")
+                if checked["status"] == "evaluated":
+                    derived[identifier] = [checked["value"], checked["value"]]
+        if set(declaration_intervals) != required - set(derived):
             raise _Unknown("declaration_interval_keys_mismatch")
+        effective = {**declaration_intervals, **derived}
+        if use_source_constants:
+            result["effective_declaration_intervals"] = effective
+            result["limitations"].append("source-derived constant values do not establish the remaining external input ranges")
         minimum, maximum = -(1 << (int_bits - 1)), (1 << (int_bits - 1)) - 1
 
         def representable(bounds):
@@ -193,7 +230,7 @@ def check_iteration_bounds(payload, loop_id, int_bits, call_protocols, declarati
             return bounds
 
         ranges = {}
-        for identifier, interval in declaration_intervals.items():
+        for identifier, interval in effective.items():
             if (not isinstance(interval, (list, tuple)) or len(interval) != 2 or
                     any(type(value) is not int for value in interval) or interval[0] > interval[1]):
                 raise _Unknown("invalid_declaration_interval")

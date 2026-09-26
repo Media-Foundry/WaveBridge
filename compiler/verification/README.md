@@ -1144,7 +1144,7 @@ IfStmt条件为bool字面量、经核验的Clang模板bool字面量替换、括�
 `loop_exit_guards.check_iteration_bounds(payload, loop_id, int_bits, call_protocols,
 declaration_intervals, ...)`重新执行work保持性检查，再消费按精确声明ID给出的
 闭整数区间。键必须恰好覆盖prefix/guard的外部读取（不含本层induction）；
-即使常量读也要在当前接口显式提供范围。范围是外部前提，未自动验证其与
+默认模式即使常量读也要显式提供范围。范围是外部前提，未自动验证其与
 初始化、常量定义或实际launch一致，不可作为已建立输入域的证据。
 
 仅支持已观察的常量start/bound、正step和至多1024次原header迭代。每次按原
@@ -1157,3 +1157,12 @@ unknown，不因最终比较为false而省略prefix。除/余和其它运算暂�
 和条件work次数界；nested与work内部其它算术、全局覆盖、输出值和部署仍
 未检查，`full_iteration_domain_established=false`保持。各work前提完整保留。
 budget耗尽、域缺失/多余、非整数/非法区间均unknown，不提升旧循环恢复。
+
+显式`use_source_constants=True`启用独立
+`guarded-loop-iteration-bounds-source-constants/v1`。同次完整AST内，对最多64个
+所需读取的const int声明重新调用受限常量求值；声明及求值依赖ID必须唯一，
+歧义不能被外部范围覆盖。成功推导的值形成singleton区间，单独保存
+source_constant_checks、derived_constant_intervals与effective_declaration_intervals。
+外部区间键必须恰好覆盖剩余读取，冗余或冲突常量override也不接受。
+普通变量及不受支持的动态const依然需要显式范围，失败的常量求值报告保留。
+这不证明其余参数域、mutable初始化历史、线程坐标或launch。默认入口保持不变。
