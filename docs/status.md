@@ -2,6 +2,22 @@
 
 更新日期：2026-09-26。
 
+## 实际浮点编译观察：默认局部更新为 FMAC
+
+固定首例源和 literal-width64 离线候选，在 gfx1100 上完成默认 -O2 / 关闭
+contraction 的 IR 与汇编 8 项编译，均退出 0。通过第 48/49 行 debug 映射与
+局部循环数据流核对：默认两侧为 contract 乘加及 FMAC；off 为分离乘法/加法。
+这是编译观察，不是新 checker 或 GPU 数值结果。四份汇编均声明 wave32；
+literal64 能编译不意味着其运行合法，候选仍不可部署。
+
+结果说明不能把默认编译直接解释为逐操作独立舍入；抽象局部值入口的外部
+FP 解释仍未验证。未修改源码、checker、冻结编译基线或 tolerance；无 GPU
+执行、不宣称 native64 或整核等价。命令、工具链、原始日志与哈希见
+`artifacts/wb-fp-ir-qZFn37/matrix/report.json`，SHA256
+`fee4e55f93d04a16299c0b4840e2fdf1db112678a2c76e7771247d5044ed563c`。
+详细复现和范围见 [编译观察](../experiments/fp-compile-observation-20260926.md)。
+本轮仅新增证据文档，未重跑完整 826 项测试；历史测试数不计作本轮验收。
+
 ## 显式成对输入假设下的抽象局部值对应
 
 新增独立 compare_rmsnorm_local_values 入口，原 v5 保持不变。内部 fresh 运行
