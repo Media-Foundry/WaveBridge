@@ -240,6 +240,26 @@ launch域或源/目标等价。source_program_checked/deployable始终false。�
 
 ## 初始化域与选定launch的线程起点组合
 
+`device_evidence.compare_rmsnorm_local_values(source_root, source_protocol,
+target_root, target_protocol, assumptions)` 是独立的条件抽象值入口；内部重新运行
+v5，不接受旧检查报告。`paired-local-input-assumptions/v1` 使用严格键集：
+`source/target` 各绑定 root/protocol SHA256、kernel/launch ID 和 input/count 参数
+ID；三个 `*_assumed`（common_count_and_coordinates、same_immutable_logical_input_array、
+valid_complete_local_executions）必须为 JSON true；`coordinate_domain` 必须是
+`common_tuple_in_both_checked_domains`，`input_origin` 必须是
+`kernel_entry_parameter_before_row_offset`，`evaluation_model` 必须是
+`common_total_deterministic_order_preserving_typed_AST_interpretation`，另须非空
+`evidence_reference`。多余的 output/accumulator equality 字段也拒绝。
+
+共同坐标是对两侧 checked 域内共同 r/n/t 的全称条件，不是已测得的执行配对。
+共同逻辑输入假设要求：以进入 kernel、尚未执行行偏移的参数为原点，在坐标/
+前缀求值至最后一次局部 load 期间，对应元素值相同且不变，包含 alias/其他
+线程/并发写的影响；load 和局部执行有效。运算解释是相同、全定义、确定性、
+保持 AST 顺序的抽象解释，不推断实际 rounding、FTZ、NaN、异常、FMA 或重排。
+完整 typed seed/loop 与检查过的有序索引相同，才能用迭代归纳得到抽象 loop-exit
+accumulator 的条件对应。结论不是 C++ `==`、bitwise IEEE 等价或编译后行为证明；
+顶层实际叶值对应仍未建立，shared reduction、输出及部署保证不升级。
+
 双侧 v5 新增 `load_index_relation`：消费同次 fresh 局部恢复、唯一 range 匹配
 的 column recovery/coverage、行偏移、坐标和 v4 effect 结果。要求正整数
 loop step 等于已检查 block x，角色 ID 一致，源偏移为已检查的 row*count。

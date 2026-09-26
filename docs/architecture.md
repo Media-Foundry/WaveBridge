@@ -75,6 +75,11 @@ v5 在这些 fresh 子检查之后规范化局部加载的有序元素下标：�
 偏移为 `r*n+t+k*B`。B 来自已检查的 block 步长，不是 logical width。
 它显式连接同一 column loop 的覆盖/溢出条件、坐标和 offset 检查，比较两侧
 规范式；不证明实际执行已经配对，不证明指针地址、输入内容或浮点叶值相等。
+独立 `compare_rmsnorm_local_values` 入口保持 v5 不变，fresh 检查后再消费精确
+绑定的 paired-input 外部假设。它只在相同不可变逻辑输入、共同域内坐标和同一
+确定性顺序保持 typed-AST 解释下，组合 seed/step/终止关系的迭代归纳，得到
+抽象局部 loop-exit accumulator 对应。外部假设与实际 FP 解释均未验证；不
+将该结论扩展至 IEEE bitwise、consumer/shared reduction、机器码或 GPU 部署。
 
 `transforms.source_token.edit`仅生成一个精确主源码 literal 的 byte-token 替换，
 不选择常量语义，不判断全部引用用途，不推断目标能力。输出完整源码和变更

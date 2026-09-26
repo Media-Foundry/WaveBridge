@@ -482,3 +482,85 @@ def compare_rmsnorm_routes(source_root, source_protocol, target_root, target_pro
     if indices["status"] != "checked":
         result.update(status="unknown", reason="load_index_relation_not_checked")
     return result
+
+
+def _conditional_local_values(comparison, assumptions):
+    """Induction in an explicitly common abstract interpretation, NOT GPU FP."""
+    result = {"status": "unknown", "reason": None,
+              "scope": "local_accumulator_in_common_abstract_typed_AST_interpretation",
+              "external_premises_verified": False, "actual_FP_semantics_verified": False,
+              "source_program_checked": False, "deployable": False}
+    try:
+        keys = {"schema_version", "source", "target", "common_count_and_coordinates_assumed",
+                "coordinate_domain", "input_origin", "same_immutable_logical_input_array_assumed",
+                "valid_complete_local_executions_assumed", "evaluation_model", "evidence_reference"}
+        if (not isinstance(assumptions, dict)
+                or set(assumptions) != keys
+                or assumptions.get("schema_version") != "paired-local-input-assumptions/v1"
+                or assumptions.get("common_count_and_coordinates_assumed") is not True
+                or assumptions.get("coordinate_domain") != "common_tuple_in_both_checked_domains"
+                or assumptions.get("input_origin") != "kernel_entry_parameter_before_row_offset"
+                or assumptions.get("same_immutable_logical_input_array_assumed") is not True
+                or assumptions.get("valid_complete_local_executions_assumed") is not True
+                or assumptions.get("evaluation_model") != "common_total_deterministic_order_preserving_typed_AST_interpretation"
+                or not isinstance(assumptions.get("evidence_reference"), str)
+                or not assumptions["evidence_reference"].strip()):
+            raise ValueError("explicit_paired_input_and_interpretation_assumptions_required")
+        result["assumptions_sha256"] = _hash(assumptions)
+        result["assumptions"] = assumptions
+        checks = comparison["checks"]
+        local = checks["local_structure"]
+        if (comparison["status"] != "evidence" or local["status"] != "evidence"
+                or local["local_structure_equal"] is not True
+                or checks["load_index_relation"]["status"] != "checked"):
+            raise ValueError("fresh_structure_and_index_relations_required")
+        for name in ("source", "target"):
+            side, snapshot = checks[name], local["checks"][name]
+            expected = {"root_sha256": side["input_sha256"]["root"],
+                        "protocol_sha256": side["input_sha256"]["protocol"],
+                        "kernel_declaration_id": side["kernel_declaration_id"],
+                        "launch_id": side["launch_id"],
+                        "input_parameter_id": snapshot["role_bindings"]["input"]["declaration_id"],
+                        "count_parameter_id": snapshot["role_bindings"]["bound"]["declaration_id"]}
+            if assumptions.get(name) != expected:
+                raise ValueError(name + "_paired_input_binding_mismatch")
+        source, target = (local["checks"][name]["template"] for name in ("source", "target"))
+        if source != target:
+            raise ValueError("typed_templates_not_identical")
+        result.update(status="checked", conclusion={
+            "status": "conditional",
+            "property": "equal_loop_exit_accumulators_in_the_common_abstract_interpretation",
+            "rule": "induction_over_equal_ordered_local_iterations",
+            "base": "identical_typed_seed_in_the_same_interpretation",
+            "step": "equal_logical_input_values_and_identical_deterministic_typed_update",
+            "termination": "equal_checked_iteration_sequences_under_common_count_and_coordinates",
+        }, derivation_bindings={"seed_sha256": _hash(source["accumulator"]),
+                                "loop_sha256": _hash(source["loop"]),
+                                "indices_sha256": _hash(checks["load_index_relation"])})
+    except (KeyError, TypeError, ValueError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
+def compare_rmsnorm_local_values(source_root, source_protocol, target_root, target_protocol,
+                                 assumptions, *, max_ast_nodes=1_000_000):
+    """Fresh source comparison plus conditional abstract local-value congruence.
+
+    No numerical tolerance or compiler FP mode is inferred. The original route
+    comparison remains available unchanged, without these extra assumptions.
+    """
+    result = compare_rmsnorm_routes(source_root, source_protocol, target_root, target_protocol,
+                                    max_ast_nodes=max_ast_nodes)
+    result["schema_version"] = "rmsnorm-local-value-comparison/v1"
+    result["scope"] = "fresh_relations_plus_conditional_abstract_local_accumulator_correspondence"
+    if result["status"] != "evidence":
+        return result
+    local = _conditional_local_values(result, assumptions)
+    result["checks"]["conditional_local_values"] = local
+    result["remaining_obligations"]["conditional_local_values"] = [
+        "paired_input_values_immutability_and_runtime_coordinates_not_verified",
+        "common_abstract_interpretation_not_verified_against_compiler_or_device_FP",
+        "reduction_FP_and_whole_kernel_equivalence_not_established"]
+    if local["status"] != "checked":
+        result.update(status="unknown", reason="conditional_local_value_relation_not_checked")
+    return result

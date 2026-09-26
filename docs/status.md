@@ -2,6 +2,30 @@
 
 更新日期：2026-09-26。
 
+## 显式成对输入假设下的抽象局部值对应
+
+新增独立 compare_rmsnorm_local_values 入口，原 v5 保持不变。内部 fresh 运行
+所有既有检查，再核对 paired-local-input-assumptions/v1 的严格协议与两侧
+root/protocol/kernel/launch/input/count 身份。缺失、错接或夹带输出等价假设
+保持 unknown。共同域内 r/n/t、进入 kernel 时原始 input 基址对应的不可变
+逻辑数组、有效完整局部执行和同一确定性顺序保持 typed-AST 解释均显式声明。
+
+完整 typed seed/loop 相同与已检查索引关系组合成局部迭代归纳，只得到共同
+抽象解释中的 loop-exit accumulator 条件对应。实际 FP 模式、运行配对和输入
+内容没有自动验证；顶层 leaf_value_correspondence 仍 not_established，整核
+FP 和 deployable 不升级。本轮不改冻结 tolerance，不执行 GPU。
+
+826 项完整测试通过（62.344 秒，匹配 native 插件启用），demo、diff 检查通过。
+新增 7 项 fixture/mock 组合测试，不称为新的源码或 IEEE 证明；覆盖严格协议、
+全部双侧身份绑定、seed/FP/template 差异及父级失败传播。独立只读复核未发现
+保证范围夸大。工件、显式条件协议和重放脚本位于 `artifacts/wb-local-values-tIaIAb/`。
+固定真实 HIP 源/目标 AST 的新入口重放 350.976 秒退出 0，抽象局部值子检查
+为 checked/conditional，父 evidence；外部前提、实际 FP 语义均未验证，实际
+leaf 仍 not_established，实现哈希前后稳定。report.json SHA256 为
+`75235646b54eb70efcb156fdf0ac889322983572c7c9949679dc33518e9b8602`；
+paired-input-assumptions.json 为
+`414e42ee2def66b288f64bb0e42cb32bba9b1c9f5dc244598c8d25779ddb9586`。
+
 ## 共同坐标下的有序加载元素下标
 
 双侧入口升级 v5：在 v4 条件通过之后，连接 local loop 与同次 column
