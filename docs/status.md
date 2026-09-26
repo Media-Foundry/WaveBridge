@@ -2,6 +2,26 @@
 
 更新日期：2026-09-26。
 
+## 归约舍入见证：相同贡献不推出逐位相同
+
+新增可执行模型诊断 experiments/reduction_rounding_witness.py：用整数单位
+2^-149 精确模拟有限非负 binary32 的逐次 ties-to-even 加法，固定 block256
+的两阶段 width32/64 XOR 路由，并独立调用已有贡献/DAG检查。不是新源码
+恢复或 GPU 浮点 checker，不改变现有放行门控。
+
+冻结输入域内的一行34列，x[0]=1、x[1]=x[33]=2^-12、其余0：局部叶精确，
+但 width32 总和0x3f800000，width64总和0x3f800001。整数模型与独立C++ CPU
+快照实现对全部256线程一致，均相差1 ULP。这不证明最终RMSNorm超出容限，
+也不证明真实HIP内核错误；实际FP/通信前提、rsqrt及最终输出仍未检查。
+下一步必须处理声明的数值容限或保持运算树，不能用叶值/贡献相同直接提升
+整体为逐位等价。详见 [舍入见证](../experiments/reduction-rounding-witness-20260926.md)。
+
+848项完整CPU测试通过（66.726秒，匹配native插件启用），demo和diff检查通过。
+新增7项测试包括冻结输入域、舍入边界、精确正例与上述差异；无GPU作业。
+工件 artifacts/wb-rounding-witness-yHNsYH/ 包含模型报告、独立C++、编译/运行
+日志、完整check/demo日志。model-report.json SHA256：
+`6d66dcf255d78f6b934051a235f35ae1852a0a519ddd1b3efd4bbd22c5f6b5c8`。
+
 ## 数值 runner 的实际构建绑定与 W7900 重放
 
 冻结 logical32 runner 新增 build_binding 与编译前/执行前/执行后文件哈希核验，
