@@ -38,6 +38,25 @@ API语义，参数值、对象历史保持、host可达性与配置函数语义�
 忠实性是前端前提。报告始终source_program_checked=false、deployable=false。
 它不是GPU候选验收入口，不能替代设备关系、目标重提取或数值检查。
 
+## 同次调用的设备整数证据包
+
+`wavebridge.device_evidence.collect(root, protocol)`按顺序fresh调用静态launch绑定、
+`row_offset_check`及`shared_storage_check`。共享支路只能使用本次row-offset调用
+返回的thread子报告；不提供传入旧成功报告的接口。根、kernel/launch、ABI与
+各协议哈希须匹配，前项unknown/rejected时停止依赖支路并保留原报告。
+
+协议为`device-integer-protocol/v1`，字段为`selection`（上述launch选择协议）、
+`integer_types`、`sizeof_bytes`、`row_binding`、`thread_binding`、`int_bits`和
+显式布尔`use_host_guard_assumptions`。row/thread各采用原有条件协议；API轴、
+leaf和ABI仍为外部前提，不能由本接口推断。开启host guard选项也不会把外部
+运行时/源有效性前提变成已证明事实。
+
+输出`device-integer-evidence/v1`。所有选定局部检查通过时状态为`evidence`，
+`all_selected_integer_checks_passed=true`，不是整核checked；失败为unknown或
+rejected。配置对象历史、指针有效性、参与/收敛、shared值和同步、归约值对应、
+浮点输出、目标源码及设备执行义务仍显式保留。它是同次证据编排，不是新证明
+算法，也不改变qdot pipeline的模型边界，不授权GPU部署。
+
 ## 条件配置字段检查
 
 ```bash

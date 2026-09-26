@@ -2,6 +2,26 @@
 
 更新日期：2026-09-26。
 
+## 同次设备整数证据编排
+
+新增`device_evidence.collect`：从完整AST和一个显式协议fresh检查launch绑定，
+再调用row_offset（含row/thread/column），仅将本次生成的thread子报告交给
+shared_storage。root、kernel/launch、ABI和子协议哈希核对一致；不允许外部输入
+成功子报告。所有选定局部检查通过时状态为evidence，不是整核checked；其余
+保留unknown/rejected及具体子项。动态配置保持、指针有效性、参与/收敛、shared
+值与同步、归约值对应、浮点输出、目标改写及设备执行义务仍未建立。
+
+735项CPU、252项Clang专项及demo通过，native插件已启用。新增7项编排单测
+使用明确标注的mock子checker；另2项真实Clang无mock回归验证静态绑定通过
+不能补齐缺失设备协议、槽位错配必须先停止。Sol只读复核未发现阻断问题。
+首例llama手工HIP standalone完整AST重放已结束，会话78893退出0，134.91秒；
+工件位于artifacts/wb-device-evidence-y8sNOQ/，协议绑定当前root与精确API leaf/轴
+字段ID，没有读取oracle或旧成功报告。launch_binding、row_offsets、shared_storage
+三个子项均checked，顶层为evidence，仍不是整核通过。79个实现哈希前后一致并
+与当前源码逐项复核通过，src冻结解除。llama.json的SHA256为
+`11f9840b52d4546c82f9258a43b0978ed2bca7999e652d530fe33d04252f9997`。
+未重新编译或运行GPU；节点预算仅传入launch checker，其他子checker保留原预算。
+
 ## 精确选点与全TU发现分离
 
 静态绑定入口不再因另一个不同非空ID的未解析launch自动退出；完整未解析清单
