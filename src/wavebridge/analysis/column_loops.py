@@ -149,6 +149,7 @@ BODY_KINDS = {
     "DeclRefExpr", "IntegerLiteral", "FloatingLiteral", "CXXBoolLiteralExpr",
     "ParenExpr", "ImplicitCastExpr", "CXXStaticCastExpr", "CStyleCastExpr",
     "BinaryOperator", "CompoundAssignOperator", "UnaryOperator", "ArraySubscriptExpr",
+    "ConditionalOperator",
 }
 
 
@@ -174,6 +175,14 @@ def _check_body(body: dict[str, Any], protected_ids: set[str],
         # opaque builtins and new AST kinds cannot silently be treated as pure.
         if kind not in BODY_KINDS:
             raise _Unknown("unsupported_body_effect", node.get("range"))
+        if kind == "ConditionalOperator":
+            operands = node.get("inner")
+            if (not isinstance(operands, list) or len(operands) != 3 or
+                    any(not isinstance(child, dict) or not child for child in operands)):
+                raise _Unknown("conditional_body_operands_ambiguous", node.get("range"))
+            # Effect analysis visits the condition AND BOTH result branches.
+            # Unlike constant evaluation, it never erases a branch on a guessed
+            # value. A conditional lvalue is still not a supported write target.
         if kind == "UnaryOperator" and node.get("opcode") in {"++", "--", "&"}:
             if _contains_ref(node, protected_ids):
                 raise _Unknown("protected_variable_may_be_modified", node.get("range"))

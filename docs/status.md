@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 循环体条件表达式与剩余拒绝点
+
+普通三操作数 `?:` 已接入原有 body 副作用遍历；条件及两个结果分支都检查，
+不做死分支删除。写入 induction/bound、条件左值、未知调用和缺分支继续拒绝。
+固定 softmax AST 开发回放仍为 8 个循环 unknown，剩余首拒绝定位为嵌套循环、
+二维写入、pragma 包装、模板 bool 替换和 break；没有整核接受率提升。
+详见 [证据与逐循环定位](../experiments/column-condition-evidence-20260927.md)。
+
+完整 932 项 CPU 测试通过（67.194 秒，native 插件启用，无跳过）；demo 和
+diff 检查通过。新增 3 项真实 Clang 测试在 Clang17 与 SDK Clang23 各通过，
+另有 3 项 fixture 测试。未运行 GPU 或重新采集 softmax 前端，远端 CI 未核验。
+
 ## 内建 ++ 递推支持与循环体边界
 
 新增精确绑定的 signed-int 内建前置/后置 ++，保留原始 AST 和步长来源；
