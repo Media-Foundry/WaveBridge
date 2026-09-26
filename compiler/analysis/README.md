@@ -1,5 +1,25 @@
 # 关系恢复
 
+## 局部贡献的声明求值边界
+
+`local_contribution.recover`的逐列平方和子集要求accumulator和每次迭代加载的
+const float都是普通自动存储期变量。static、extern、TLS及未支持声明属性返回
+unknown，不能仅看到初始化表达式就认为它每次执行。成功报告中的
+declaration_evaluation只描述受支持声明被求值时的初始化规则，不证明前缀可达、
+输入值、别名、浮点模式或两份源码之间的局部值对应。
+
+循环后、consumer前只允许无初始化、无求值子节点的固定正float[N]局部数组，
+或extern float[N]/float[]声明；可有单个无子节点CUDASharedAttr。固定/动态HIP
+共享数组形状均保留，不把语法storageClass缺省称为共享对象的自动生命周期。
+普通extern数组声明不引入局部初始化；其外部分配、容量与可见性仍由其他门槛
+负责。VLA即使没有CallExpr也可能在维度表达式中修改
+accumulator；因此同时检查精确数组类型子集和声明children，不只匹配字符`[`。
+未知属性、static/TLS数组及其它声明保持unknown，不实现通用别名或VLA分析。
+
+真实Clang/CPU回归包含持续累加、静态加载冻结首值和数组维度写入；source.run
+到normalization_output的无mock负例确保局部失败不被下游成功状态覆盖。这些是
+源码分析回归，不是生产语料、HIP设备问题复现或GPU正确性结果。
+
 ## 协作宽度的显式引用用途
 
 `width_uses.inspect(root, kernel_id, int_bits)`从完整TU fresh恢复归约链及block/XOR，

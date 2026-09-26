@@ -51,6 +51,56 @@ def fixture(product_right="v", zero="0.0", index="col", extra_loop_statement=Non
 
 
 class LocalContributionTests(unittest.TestCase):
+    def test_persistent_scalar_storage_and_unknown_attributes_are_not_local_values(self):
+        for role in ("accumulator", "loop_value"):
+            for property_name, value in (("storageClass", "static"), ("storageClass", "extern"),
+                                         ("tls", "dynamic"), ("tlsKind", "static"),
+                                         ("thread_local", True), ("threadLocal", True)):
+                root = fixture()
+                statements = root["inner"][-1]["inner"][-1]["inner"]
+                declaration = (statements[0]["inner"][0] if role == "accumulator" else
+                               statements[1]["inner"][4]["inner"][0]["inner"][0])
+                declaration[property_name] = value
+                result = recover(root, "kernel", 32)
+                self.assertEqual("unknown", result["status"])
+                self.assertEqual(role + "_storage_not_automatic", result["reason"])
+        root = fixture()
+        root["inner"][-1]["inner"][-1]["inner"][0]["inner"][0]["inner"].append(
+            {"kind": "CleanupAttr"})
+        self.assertEqual("accumulator_declaration_attribute_unsupported",
+                         recover(root, "kernel", 32)["reason"])
+
+    def test_preconsumer_array_requires_known_inert_declaration(self):
+        for spelling in ("float[n]", "float[(sum = 7, 8)]", "float[0]", "Other[8]", "float[]"):
+            root = fixture()
+            array = root["inner"][-1]["inner"][-1]["inner"][2]["inner"][0]
+            array["type"]["qualType"] = spelling
+            self.assertEqual("preconsumer_array_declaration_effects_not_supported",
+                             recover(root, "kernel", 32)["reason"])
+        for extra in ({"storageClass": "static"}, {"tls": "dynamic"},
+                      {"inner": [lit_int(8)]}, {"inner": [{"kind": "CleanupAttr"}]},
+                      {"inner": [{"kind": "CUDASharedAttr"}, {"kind": "CUDASharedAttr"}]},
+                      {"inner": [{"kind": "CUDASharedAttr", "inner": [lit_int(8)]}]}):
+            root = fixture()
+            root["inner"][-1]["inner"][-1]["inner"][2]["inner"][0].update(extra)
+            self.assertEqual("unknown", recover(root, "kernel", 32)["status"])
+
+    def test_external_shared_array_shape_preserved_without_capacity_proof(self):
+        root = fixture()
+        array = root["inner"][-1]["inner"][-1]["inner"][2]["inner"][0]
+        array.update(storageClass="extern", type={"qualType": "float[]"},
+                     inner=[{"kind": "CUDASharedAttr"}])
+        result = recover(root, "kernel", 32)
+        self.assertEqual("recovered", result["status"])
+        self.assertEqual("automatic_initialization_on_each_iteration",
+                         result["declaration_evaluation"]["loop_value"])
+        self.assertFalse(result["checked"])
+        for spelling, storage, attributes in (("float[]", "extern", []),
+                                               ("float[8]", "extern", []),
+                                               ("float[8]", None, [{"kind": "CUDASharedAttr"}])):
+            array.update(storageClass=storage, type={"qualType": spelling}, inner=attributes)
+            self.assertEqual("recovered", recover(root, "kernel", 32)["status"])
+
     def test_recovers_sum_of_squares_and_consumer(self):
         result = recover(fixture(), "kernel", 32)
         self.assertEqual("recovered", result["status"])

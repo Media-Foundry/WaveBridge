@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+import re
 
 from wavebridge.analysis.column_loops import recover as recover_columns
 
@@ -74,6 +75,42 @@ def _initializer(declaration: dict[str, Any]) -> dict[str, Any]:
     return values[0]
 
 
+def _automatic_scalar(declaration: dict[str, Any], role: str) -> None:
+    """A syntactic initializer is not necessarily evaluated on each encounter."""
+    if (declaration.get("storageClass") not in (None, "auto", "register") or
+            any(declaration.get(key) is not None
+                for key in ("tls", "tlsKind", "thread_local", "threadLocal"))):
+        raise _Unknown(role + "_storage_not_automatic", declaration.get("range"))
+    if any(str(child.get("kind", "")).endswith("Attr") for child in _children(declaration)):
+        raise _Unknown(role + "_declaration_attribute_unsupported", declaration.get("range"))
+
+
+def _inert_array_declaration(declaration: dict[str, Any]) -> None:
+    """Only fixed local arrays or extern arrays, with no evaluated size.
+
+    JSON AST may put a VLA bound only in the type spelling, not in inner nodes.
+    Both the exact type subset and the absence of non-attribute children matter.
+    Shared storage capacity and visibility remain separate obligations.
+    """
+    reason = "preconsumer_array_declaration_effects_not_supported"
+    children = _children(declaration)
+    if (declaration.get("init") is not None or
+            any(declaration.get(key) is not None
+                for key in ("tls", "tlsKind", "thread_local", "threadLocal")) or
+            any(child.get("kind") != "CUDASharedAttr" or _children(child) for child in children)):
+        raise _Unknown(reason, declaration.get("range"))
+    if len(children) > 1:
+        raise _Unknown(reason, declaration.get("range"))
+    spelling = _type(declaration) or ""
+    fixed = re.fullmatch(r"float\s*\[([0-9]{1,20})\]", spelling)
+    storage = declaration.get("storageClass")
+    if fixed is not None and int(fixed[1]) > 0 and storage in (None, "auto", "register", "extern"):
+        return
+    if re.fullmatch(r"float\s*\[\]", spelling) and storage == "extern":
+        return
+    raise _Unknown(reason, declaration.get("range"))
+
+
 def _float_zero(node: dict[str, Any]) -> bool:
     current = _unwrap(node)
     if current.get("kind") != "FloatingLiteral":
@@ -103,6 +140,7 @@ def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
         "consumer_declaration_id": None, "consumer": None, "ranges": {},
         "prefix_scope": "not_analyzed", "prefix_statement_ranges": [],
         "operation": "sum_of_squares",
+        "declaration_evaluation": "not_established",
         "preconditions": {"aliasing": "not_established", "coordinate_semantics": "not_established",
                           "floating_point_semantics": "not_established",
                           "complete_source_validity": "not_established"},
@@ -138,6 +176,7 @@ def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
         if len(candidates) != 1:
             raise _Unknown("unique_adjacent_accumulator_loop_candidate_not_found", body.get("range"))
         accumulator_index, accumulator = candidates[0]
+        _automatic_scalar(accumulator, "accumulator")
         accumulator_id = accumulator.get("id")
         if not isinstance(accumulator_id, str):
             raise _Unknown("accumulator_id_missing", accumulator.get("range"))
@@ -161,6 +200,7 @@ def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
             raise _Unknown("loop_body_not_exactly_load_and_accumulate", loop_body.get("range"))
 
         value = _single_var(loop_statements[0], "loop_load_not_single_variable")
+        _automatic_scalar(value, "loop_value")
         if _type(value) != "const float":
             raise _Unknown("loop_value_not_const_float", value.get("range"))
         value_id = value.get("id")
@@ -213,9 +253,14 @@ def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
             shared = _single_var(statement, "statement_before_consumer_not_shared_array_declaration")
             if shared.get("init") is not None or "[" not in (_type(shared) or ""):
                 raise _Unknown("statement_before_consumer_not_uninitialized_shared_array", shared.get("range"))
+            _inert_array_declaration(shared)
         if consumer is None:
             raise _Unknown("accumulator_consumer_not_found", body.get("range"))
         result.update(status="recovered", loop_recurrence=recurrence, loop=recurrence,
+                      declaration_evaluation={
+                          "accumulator": "automatic_initialization_on_each_declaration_evaluation",
+                          "loop_value": "automatic_initialization_on_each_iteration",
+                          "preconsumer_arrays": "supported_declarations_without_evaluated_size_or_initializer"},
                       input_parameter_id=input_id, input_declaration_id=input_id,
                       accumulator_declaration_id=accumulator_id,
                       value_declaration_id=value_id, consumer=consumer,

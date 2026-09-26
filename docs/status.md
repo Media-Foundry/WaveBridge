@@ -2,6 +2,34 @@
 
 更新日期：2026-09-26。
 
+## 局部值对应前的保守性修复：存储期与数组维度副作用
+
+准备连接源目标local accumulator时，独立复现了local_contribution的五个错误
+恢复：static/thread_local累加器、循环内static/thread_local const float加载，
+以及consumer前`float scratch[(partial = 7.0f, 32)]`。旧实现均recovered；真实
+CPU输入[1,2]连续两次调用，普通版本5/5，持久累加器5/10，静态加载2/2，维度
+写入7/7。该证据限定普通C++/Clang，不声称真实HIP或GPU结果受到影响。
+
+现要求累加器和循环加载变量为普通自动存储期、无TLS及未知属性；消费前数组
+只接受无初始化/求值子节点的固定float[N]局部/extern数组或extern float[]，
+最多一个childless CUDASharedAttr。VLA类型即使没有表达式子节点也拒绝。
+普通extern声明本身不执行初始化，保留原外部分配unknown路径；不能把所有
+extern数组等同于shared，也不因CUDASharedAttr就证明容量和可见性。
+
+五个真实反例修复后均unknown，自动变量正例保留；新增source.run到输出分析
+的无mock跨层回归。固定真实HIP源/目标AST的局部与输出恢复均仍recovered，
+extern动态shared路径未退化。新字段declaration_evaluation仅描述声明被执行
+时的初始化规则，prefix/alias/FP/整核有效性和跨源码叶值对应仍未建立。
+
+工件`artifacts/wb-local-storage-JIGuU5/`保留原反例、CPU命令和输出、修复前后
+报告及最终正例重放。after-final.json SHA256为
+`27135c0d79155e1ac80ff87f53b3a7be4d7051a99e29135172854e7760c00194`；
+positive-final.json为`6553483ae63f3deff24f564bc9a3bec71350bfcffb0ce94a1001815723cbc658`。
+首次全测发现误拒绝普通extern数组，失败日志保留；修正后789项完整测试与demo
+通过，匹配native插件启用。新增6项测试方法，包含多变体真实Clang/CPU回归。
+本轮未建立源目标局部值等价、未执行GPU；先修复不可信恢复前提，不把相同
+sum_of_squares标签当成等价值证据。详细验收见本轮交接。
+
 ## 源目标条件归约比较：贡献相同不等于加法顺序相同
 
 在既有block_routes新增compare，要求两侧全部显式输入并重新检查贡献重数。
