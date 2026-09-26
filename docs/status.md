@@ -11,7 +11,12 @@
 callee效果、source lifetime与历史保持仍未建立，alive协议保留。
 681项CPU、205项Clang专项及demo通过。真实同一完整表达式内带副作用临时对象
 负例保持父checked、cleanup unknown；元数据边界回归通过。
-固定生产TU的整套v3重放尚未完成，不能将之前版本的结果计作本轮验证；见
+固定生产TU的整套v3重放已退出0：三个copy的新cleanup子状态checked，共绑定
+四个不同祖先wrapper（各路径两个，共享外层一个），native count均0、副作用
+标志均false；此计数不是析构事件数。主状态、顺序和复制效果子报告均checked。
+耗时666.70秒，77个实现哈希前后一致且当前复核通过，源码冻结解除。
+工件为`artifacts/wb-copy-cleanup-composition-LapMjC/report.json`；alive与
+source-valid协议仍保留，未运行GPU。0e441b4远端CI已success；见
 `.agents/handoffs/wb04-copy-cleanup-observations-20260926.md`。
 
 ## 复制目标对象与record析构门控
