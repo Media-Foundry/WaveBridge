@@ -304,6 +304,13 @@ Clang ID仅对指定AST工件/root有效。`source_program_checked=false` 始终
 候选中的外部语义、坐标、转换及收敛义务不自动解除，源码入口也不自动将其
 提交给条件路由 checker 后签发“源码通过”。旧的显式 ID 接口仍可用于诊断。
 
+`DeclRefExpr` 的静态 method 直接调用另要求 CallExpr、无子表达式的 lvalue
+引用、非空声明 ID，以及表达式/stub/全部匹配声明的类型一致。匹配声明须
+全为 static、非 virtual 的 CXXMethodDecl；缺类型、冲突或未知展开值拒绝。
+记录 `static_method_exact_declref`，仍由原唯一 body 规则决定是否追入。
+有调用边不等于效果或返回值验证；无 body 的 builtin 继续 unresolved，循环体
+调用门槛不随身份解析开放。原 free-function 与 MemberExpr 路径保持原边界。
+
 精确 `MemberExpr` 调用仅在同 root 声明明确为 `static` 的 `CXXMethodDecl`
 时加入调用边。receiver AST 保留且其语义未建立；virtual、缺失成员声明或
 未证明 static 的调用仍为 unresolved。此规则可以接入 HIP 静态属性 getter，

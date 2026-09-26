@@ -41,6 +41,14 @@ def _body(node: dict[str, Any]) -> dict[str, Any] | None:
     return bodies[0] if len(bodies) == 1 else None
 
 
+def _declared_type(node: dict[str, Any]) -> str | None:
+    info = node.get("type")
+    if not isinstance(info, dict):
+        return None
+    spelling = info.get("desugaredQualType", info.get("qualType"))
+    return spelling if isinstance(spelling, str) and spelling.strip() else None
+
+
 def _callee(call: dict[str, Any], declarations: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     result: dict[str, Any] = {"callee_id": None, "reason": None, "receiver_ast": None,
                               "receiver_semantics": "not_applicable",
@@ -73,6 +81,30 @@ def _callee(call: dict[str, Any], declarations: dict[str, list[dict[str, Any]]])
         if (isinstance(referenced, dict) and referenced.get("kind") == "FunctionDecl" and
                 isinstance(referenced.get("id"), str)):
             result.update(callee_id=referenced["id"], dispatch="direct_free_function")
+            return result
+        if isinstance(referenced, dict) and referenced.get("kind") == "CXXMethodDecl":
+            identifier = referenced.get("id")
+            if (call.get("kind") != "CallExpr" or current.get("inner", []) != [] or
+                    current.get("valueCategory") != "lvalue" or
+                    not isinstance(identifier, str) or not identifier):
+                result["reason"] = "static_method_reference_shape_unsupported"
+                return result
+            matches = declarations.get(identifier, [])
+            if not matches or any(node.get("kind") != "CXXMethodDecl" for node in matches):
+                result["reason"] = "static_method_declaration_missing_or_conflicting"
+                return result
+            if (referenced.get("storageClass") not in (None, "static") or
+                    referenced.get("virtual") not in (None, False) or
+                    any(node.get("storageClass") != "static" or
+                        node.get("virtual") not in (None, False) for node in matches)):
+                result["reason"] = "method_dispatch_not_proven_static"
+                return result
+            spelling = _declared_type(referenced)
+            if (spelling is None or _declared_type(current) != spelling or
+                    any(_declared_type(node) != spelling for node in matches)):
+                result["reason"] = "static_method_reference_type_mismatch"
+                return result
+            result.update(callee_id=identifier, dispatch="static_method_exact_declref")
             return result
         result["reason"] = "indirect_or_unresolved_callee"
         return result

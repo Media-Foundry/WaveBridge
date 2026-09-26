@@ -2,6 +2,19 @@
 
 更新日期：2026-09-27。
 
+## 静态 method 直接引用接通
+
+DeclRefExpr → static CXXMethodDecl 现要求精确 ID、childless lvalue、
+表达式/stub/全部候选声明类型一致且 static/nonvirtual；唯一 body 门槛保留。
+固定 softmax 的三处 numeric_limits 调用已连接两份实际函数体，可追踪 body
+由 13 增至 15。末端 builtin 仍 unknown：共 9 个外部叶、2 个特殊调用未解析。
+循环仍 1 recovered/7 unknown，归约候选仍 0，未开放 body 调用或整核部署。
+详见 [实录](../experiments/static-method-declref-evidence-20260927.md)。
+
+完整 970 项 CPU 测试通过（66.349 秒，native 插件启用，无跳过）；demo/diff
+通过。新增 4 项 fixture 与 3 项真实 Clang 回归；后者在 Clang17/SDK23 各通过。
+未运行新前端/GPU，远端 CI 未核验；旧冻结结果不改写，不算新的留出验收。
+
 ## softmax 调用身份审计
 
 新增固定 AST 调用清单 driver，保留生产解析结果与诊断观察 ID 的区别。
