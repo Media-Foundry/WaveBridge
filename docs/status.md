@@ -2,6 +2,16 @@
 
 更新日期：2026-09-27。
 
+## 退出循环工作分支保持性
+
+check_work_preservation fresh连接header/prefix/guard后，逐项检查work的所有
+分支与完整调用，保护induction、header start/bound和prefix/guard外部读取。
+固定softmax内层work在显式无别名/外部builtin效果等前提下checked；外层在
+std::log调用处unknown，尚未抵达嵌套loop门槛。历史6/8恢复不提升，整数域、
+溢出与完整访问覆盖仍未建立。见[实录](../experiments/exit-work-evidence-20260927.md)。
+完整1048项测试通过（70.672秒，native插件启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增4项真实Clang回归并复核；无GPU，远端CI未核验。
+
 ## 原始循环头与退出guard连接
 
 新增observe_header复用原始header解析，不删除break、不检查body；独立报告

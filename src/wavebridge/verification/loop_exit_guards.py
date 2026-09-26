@@ -305,3 +305,86 @@ def check_header_connection(root, loop_id, int_bits, *, max_ast_nodes=None):
                   input_sha256=header["input_sha256"],
                   assumptions=header["assumptions"] + prefix["assumptions"])
     return result
+
+
+def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_ast_nodes=None):
+    """Check all selected work statements, not just successfully checked calls."""
+    from wavebridge.analysis.column_loops import _check_body, _Unknown as BodyUnknown
+    from wavebridge.verification.builtin_calls import check_call_no_memory_write
+    from wavebridge.verification.scalar_call_effects import check_no_memory_write as check_scalar_call
+
+    result = {"schema_version": "loop-exit-work-preservation/v1", "status": "unknown", "reason": None,
+              "scope": "guarded_work_preserves_dependency_storage", "connection_check": None,
+              "protected_declaration_ids": [], "call_effect_checks": {},
+              "work_preserves_protected": "not_established", "external_call_effects_verified": False,
+              "source_program_checked": False, "deployable": False, "full_iteration_domain_established": False,
+              "assumptions": ["source is valid and asynchronous interference is excluded",
+                              "memory stores do not alias any protected declaration storage"],
+              "limitations": ["not a complete recurrence, integer overflow or iteration-domain proof",
+                              "nested loops are not accepted by this work checker",
+                              "external leaf effects remain unverified; all consumed call premises apply"],
+              "budget": {"max_call_protocols": 64}}
+    if (not isinstance(payload, dict) or not isinstance(payload.get("ast"), dict) or
+            not isinstance(call_protocols, dict) or len(call_protocols) > 64 or
+            any(not isinstance(key, str) or not key or not isinstance(value, dict)
+                for key, value in call_protocols.items())):
+        result["reason"] = "invalid_inputs_or_protocols"
+        return result
+    root = payload["ast"]
+    connection = check_header_connection(root, loop_id, int_bits, max_ast_nodes=max_ast_nodes)
+    result["connection_check"] = connection
+    if connection["status"] != "checked":
+        result["reason"] = "header_connection_not_checked"
+        return result
+    try:
+        prefix = connection["prefix_check"]
+        header = connection["header_check"]["header"]
+        protected = set(prefix["external_read_declaration_ids"])
+        protected.add(connection["induction_declaration_id"])
+        for source in (header["start"], header["bound"]):
+            if "declaration_id" in source:
+                protected.add(source["declaration_id"])
+        result["protected_declaration_ids"] = sorted(protected)
+        loops, pending = [], [root]
+        while pending:
+            node = pending.pop()
+            if node.get("id") == loop_id:
+                loops.append(node)
+            pending.extend(node.get("inner", []))
+        if len(loops) != 1:
+            raise _Unknown("loop_identity_changed")
+
+        def check_call(node):
+            identifier = node.get("id")
+            if identifier not in call_protocols:
+                return False
+            reports = result["call_effect_checks"]
+            if identifier not in reports:
+                protocol = call_protocols[identifier]
+                if protocol.get("schema_version") == "scalar-leaf-effect-assumption/v1":
+                    reports[identifier] = check_scalar_call(root, identifier, protocol, max_ast_nodes=max_ast_nodes)
+                else:
+                    reports[identifier] = check_call_no_memory_write(payload, identifier, protocol, max_ast_nodes=max_ast_nodes)
+            return reports[identifier]["status"] == "checked"
+
+        for binding in prefix["partition_check"]["work_statement_bindings"]:
+            statement = loops[0]
+            for position in binding["loop_relative_child_path"]:
+                statement = statement["inner"][position]
+            if statement.get("id") != binding["id"]:
+                raise _Unknown("work_binding_changed")
+            _check_body(statement, protected, call_callback=check_call)
+        unused = sorted(set(call_protocols) - set(result["call_effect_checks"]))
+        result["unused_call_protocol_ids"] = unused
+        if unused:
+            raise _Unknown("unused_call_protocols")
+        result.update(status="checked", work_preserves_protected="conditional",
+                      input_sha256={**connection["input_sha256"], "call_protocols": _hash(call_protocols)})
+        result["assumptions"].extend(connection["assumptions"])
+    except BodyUnknown as error:
+        result["reason"], result["unknown_range"] = error.reason, error.range
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, KeyError, IndexError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result

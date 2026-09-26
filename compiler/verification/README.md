@@ -1097,3 +1097,14 @@ header并重新检查prefix/guard值DAG，再核对相同root哈希。在guard�
 checked仅为依赖身份连接。header bound与guard bound可以不同；依赖相同
 induction不证明单调性、有效bound、body保持或完整访问域。没有建立body保持
 的程序仍可能获得本结构连接结果，相关未证明标记必须由下游继续消费。
+
+`loop_exit_guards.check_work_preservation(payload, loop_id, int_bits, call_protocols)`
+fresh执行以上连接，再保护header induction/start/bound及prefix/guard全部外部
+读取声明。通过本次partition的loop-relative路径选work语句，逐项检查所有分支、
+存储目标与完整调用；调用按协议fresh执行builtin或scalar checker，不消费旧
+成功报告。嵌套loop暂不支持，未知call、额外未消费协议阻止成功。
+
+成功只表示work在显式无别名/无异步干扰/有效源程序与全部call前提下保持这些
+对象；允许写输出，不是全函数无写入。condition/header/prefix子报告的前提
+继续适用，外部leaf性质未验证。仍不签发完整recurrence、整数溢出域、有效
+bound或访问覆盖，不能把单个call或header的checked升级为whole-work通过。
