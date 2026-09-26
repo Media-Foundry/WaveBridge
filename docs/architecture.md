@@ -139,3 +139,8 @@ native标志绑定逻辑。源初始化和copy祖先的排除项有显式记录�
 每次实际运行使用独立 `artifacts/<run-id>/`，源与候选工件不可覆盖。配置模板不包含凭据，私有机器地址放在忽略的 `experiments/local/`。实例结果必须带命令、提交号或工作树内容哈希、协议、工具链、设备 ID、原始采样和失败日志。
 
 主分支约定为 `master`，远端为 `https://github.com/Media-Foundry/WaveBridge.git`。本地 CPU 检查是基础门槛；GPU 检查待执行器和 runner 配置建立后启用。构建机是否安装 `hipcc` 不等于 GPU 测试已经执行。
+
+独立 `frontend.device_compile` 提供固定 O2 的 compile-only 观察入口，绑定显式
+target/contraction、源码、外部数值协议字节、命令和新 IR/汇编工件。协议未被
+该入口解释，compiled 不是 checked；不改变冻结 baseline，不执行设备代码，
+也不消费旧模型成功状态签发部署许可。它记录的 FP 配置还未连接实际数值验收。

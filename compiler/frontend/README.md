@@ -42,6 +42,32 @@ triple/CPU、resource-dir 路径和显式 bitcode 文件哈希。多个 cc1 任�
 resource-dir 不做递归闭包哈希。trace 失败保留原始原因，不抹去独立 AST 采集结果，
 也不签发 checked 或部署许可。两次调用之间的环境变化仍未排除。
 
+## 浮点设备编译观察
+
+`wavebridge.frontend.device_compile` 将 compile-only 诊断变成可复用入口：固定
+`-O2 -gline-tables-only`，显式 target 和 default/off contraction，分别生成
+device-only LLVM IR 与汇编。不接收任意附加编译参数，不运行产物。
+
+```bash
+PYTHONPATH=src python3 -m wavebridge.frontend.device_compile \
+  --source benchmarks/cases/llama-rmsnorm/baseline/rmsnorm_logical32.hip.cpp \
+  --protocol benchmarks/cases/llama-rmsnorm/protocol.json \
+  --compiler /path/to/hipcc --target gfx1100 --output-parent artifacts
+```
+
+每次使用新目录，记录源码/数值协议/driver 前后哈希、实现哈希、完整命令及
+canonical JSON 命令摘要、版本、日志、产物哈希与单独 dry-run 的计划工具链。
+数值协议仅做字节绑定，没有被验证或应用于比较。为保留 quoted include 搜索，
+编译原始源码路径而不是移位副本；头文件/共享库/环境未冻结，前后哈希也不能
+排除短暂并发修改。不得将报告作为完整缓存键或历史 binary 的复现证明。
+
+`compiled` 仅指两次命令退出零、输出非空且直接输入前后哈希一致，不验证输出
+格式、语义或 FP 等价。单项区分 compile_failed、timeout、launch_failed 和
+output_missing_or_empty；汇总 input_changed 优先，否则缺项为 incomplete。
+退出码：compiled 为 0，未完整采集为 2，输入错误为 3。工具链 trace 独立保留
+失败状态，不冒充实际子进程身份；runtime_verified、deployable 恒为 false。
+`--contraction off` 只允许作为显式诊断，不能自动替换冻结 baseline 编译配置。
+
 需要同次编译中的外部声明时加 `--full-translation-unit`，不再使用 symbol filter；
 `--symbol` 仍用于核对入口是否存在。完整 HIP AST 可能很大：报告流式写出，
 完整模式只保留解析后的 AST 与 stdout 哈希，不重复存储原始 stdout 字符串；

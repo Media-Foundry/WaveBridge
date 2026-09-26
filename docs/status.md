@@ -2,6 +2,31 @@
 
 更新日期：2026-09-26。
 
+## 可复用的 FP 编译证据采集入口
+
+新增 `wavebridge.frontend.device_compile`，固定 O2 device-only IR/汇编编译，
+显式 target 与 default/off contraction。每次新目录保存源/数值协议/driver
+前后哈希、实现摘要、完整命令及命令摘要、日志、产物和独立计划工具链。
+缺输出、编译失败、超时、进程启动失败、输入变化不报告完整采集成功。
+compiled 仅为工件采集状态；不验证数值协议、不执行 GPU、不签发 FP 等价或
+部署许可。输入闭包仍未冻结，尚未连接实际数值验收。
+
+完整 835 项 CPU 测试通过（64.289 秒，匹配 native 插件启用），demo 与 diff
+检查通过。新增 9 项 mock 采集测试，不冒充真实编译回归；真实编译证据单列。
+首次全量运行读到了测试编写中的中间版本，1 项 mock 缺 command 失败；最终
+冻结版本重新全量通过，两次日志均在下述源/default 目录中保留。
+
+真实首例源/离线候选各 default/off 重放，共 8 项实际编译均成功，直接输入
+前后哈希一致；默认局部 FMAC 与 off 分离乘加对应上一轮观察。四份汇编仍为
+wave32，不能将 literal64 候选当成 native64 运行结果。工件与报告摘要如下：
+
+| 输入/配置 | artifacts 下的目录 | report.json SHA256 |
+| --- | --- | --- |
+| 源/default | fp-compile-bi8gy8eo | 5f152c2e8d9f5e3246691c714ab0ed42cf8356703c3268fbeab243db4f31dd72 |
+| 候选/default | fp-compile-8jiceyhw | fc51b5d172b43f083191c37df24c3fb04835160a9d9b99d419e9575712b66b7a |
+| 源/off | fp-compile-_92vqrln | 512be41ab7c96bdd0dc7ddf71c4b4b0787de98e28dc434198b36d832cd94e27c |
+| 候选/off | fp-compile-puzvs3co | 49e75620082014deb47a460c330045a30d729987368f745057733b22bd4c4505 |
+
 ## 实际浮点编译观察：默认局部更新为 FMAC
 
 固定首例源和 literal-width64 离线候选，在 gfx1100 上完成默认 -O2 / 关闭
