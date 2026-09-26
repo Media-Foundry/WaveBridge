@@ -57,6 +57,20 @@ rejected。配置对象历史、指针有效性、参与/收敛、shared值和�
 浮点输出、目标源码及设备执行义务仍显式保留。它是同次证据编排，不是新证明
 算法，也不改变qdot pipeline的模型边界，不授权GPU部署。
 
+`device_evidence.collect_rmsnorm(root, protocol)`在保持上述v1入口不变的前提下，
+将其同次fresh chain/helper/indexing/capacity与fresh输出结构相连，再运行独立
+XOR及block有限贡献计数。两份chain须一致；accumulator、consumer调用位置、
+shared array、输入/输出/count参数以及两处已检查列循环的range/start/bound/step
+逐项绑定，不接受调用者提供归约或输出成功报告。
+
+block route的参数均显式给出：两次offset来自同一reduce声明；writer来自helper
+和索引检查；gather偏移0来自已检查的index=lane；槽数来自available_bytes除以
+外部float大小。barrier=True仅用于条件计数模型，表示尚未证明的全员到达与
+写入可见性前提，不是barrier调用语法的推论。全部局部连接成功时输出
+`rmsnorm-structural-evidence/v1`的evidence状态；output仍为recovered，route
+checked仍仅为条件贡献计数。原整数包的所有剩余义务保留，尤其shared值、
+shuffle对应、参与/同步、浮点与目标改写，不能据此生成已授权部署工件。
+
 ## 条件配置字段检查
 
 ```bash

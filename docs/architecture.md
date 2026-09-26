@@ -54,6 +54,8 @@
 同一次调用中；共享支路只接收本次fresh生成的thread报告，根/ABI/选点哈希
 核对一致。结果是带完整条件和未解除义务的证据包，不是源程序、目标改写或
 部署安全证明；归约值、同步/参与和浮点输出尚未接成统一验证结论。
+`collect_rmsnorm`进一步绑定同次归约链、helper、shared索引/容量与fresh输出
+结构，再独立检查条件贡献计数；其输出仍为结构证据包，不消除上述语义缺口。
 
 对象复制与捕获各有独立结构入口（`record_copy_check.inspect_effects`、
 `capture_source_check.inspect_structure`），不通过假设源存活的值检查去证明源存活。

@@ -2,6 +2,28 @@
 
 更新日期：2026-09-26。
 
+## 同次归约计数与输出结构连接
+
+新增`device_evidence.collect_rmsnorm`，保持原整数入口不变，使用同次生成且
+一致的thread/shared归约链，把helper调用、accumulator、shared数组、输入/输出/
+count参数和两处已覆盖列循环与fresh输出结构逐项连接。随后独立运行XOR与
+block条件贡献计数；参数全部显式绑定，不使用默认writer、槽数或偏移。
+shared槽数来自checked available_bytes除以显式float大小；barrier=True仍只是
+全员到达与可见性模型前提。output的recovered不升级为FP正确或整核checked。
+原整数包的九项剩余义务完整保留，不授权部署。
+
+743项CPU、253项Clang专项及demo通过，native插件已启用；新增7项组合单测
+明确mock源码/整数恢复、使用真实有限路由checker，另1项真实Clang无mock回归
+确认上游unknown不升级。Sol只读复核未发现阻断问题。826d679远端CI已success。
+首例完整HIP standalone重放会话18571已退出0，136.15秒：顶层evidence，整数
+子包evidence、输出结构recovered、XOR/block条件计数checked。实际模型为block256、
+width32、offsets[16,8,4,2,1]、writer0、可用shared32槽；不是整核或FP通过。
+79个实现哈希前后一致且结束后复核通过，src冻结解除；整数子报告与上一轮
+完整JSON规范排序比较一致。工件目录artifacts/wb-rmsnorm-evidence-vsAsE8/，
+llama.json SHA256为`c70757263438e10f81e0c768a3aa723d32d3296a40b4ed1121cd6e265a3d4e5b`。
+未运行GPU。下一步生成声明ID/源码哈希绑定的未验收候选，重新分析目标源码；
+W7900当前仅wave32已验证，不能把抽象logical64路由通过当作native64部署依据。
+
 ## 同次设备整数证据编排
 
 新增`device_evidence.collect`：从完整AST和一个显式协议fresh检查launch绑定，

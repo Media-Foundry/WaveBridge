@@ -4,7 +4,7 @@ import shutil
 import unittest
 
 from wavebridge.analysis.launch_facts import inspect
-from wavebridge.device_evidence import collect as collect_evidence
+from wavebridge.device_evidence import collect as collect_evidence, collect_rmsnorm
 from wavebridge.frontend.clang_ast import collect
 from wavebridge.verification.getter_returns import _hash
 
@@ -49,6 +49,13 @@ class DeviceEvidenceClangTests(unittest.TestCase):
         self.assertEqual("launch_binding_not_checked", result["reason"])
         self.assertNotIn("row_offsets", result["checks"])
         self.assertFalse(result["deployable"])
+
+    def test_rmsnorm_composition_does_not_upgrade_unknown_integer_path(self):
+        result = collect_rmsnorm(self.root, self.protocol)
+        self.assertEqual("integer_evidence_incomplete", result["reason"])
+        self.assertEqual("unknown", result["status"])
+        self.assertFalse(result["all_selected_relations_connected"])
+        self.assertNotIn("output_structure", result["checks"])
 
 
 if __name__ == "__main__":
