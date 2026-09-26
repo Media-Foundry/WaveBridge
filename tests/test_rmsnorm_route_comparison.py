@@ -17,7 +17,9 @@ class RMSNormRouteComparisonTests(unittest.TestCase):
         with patch("wavebridge.device_evidence.collect_rmsnorm",
                    side_effect=[evidence(32), evidence(64)]) as collect, \
                 patch("wavebridge.device_evidence.compare_local_structure", return_value={
-                    "status": "evidence", "remaining_obligations": ["entry_values"]}) as local:
+                    "status": "evidence", "checks": {"source": {}, "target": {}},
+                    "remaining_obligations": ["entry_values"]}) as local, \
+                patch("wavebridge.device_evidence._local_entry_signature", return_value={}) as entry:
             result = compare_rmsnorm_routes({"src": 1}, {"int_bits": 32}, {"dst": 1}, {"int_bits": 32},
                                             max_ast_nodes=123)
         self.assertEqual(2, collect.call_count)
@@ -32,6 +34,21 @@ class RMSNormRouteComparisonTests(unittest.TestCase):
                           "local_structure": ["entry_values"]},
                          result["remaining_obligations"])
         self.assertFalse(result["deployable"])
+        self.assertEqual(2, entry.call_count)
+        self.assertTrue(result["checks"]["local_entry_binding"]["relation_signatures_equal"])
+
+    def test_entry_missing_or_different_cannot_be_upgraded_to_equal_values(self):
+        for signatures in ([{}, {"different_domain": True}], KeyError("missing_entry")):
+            with patch("wavebridge.device_evidence.collect_rmsnorm",
+                       side_effect=[evidence(32), evidence(64)]), \
+                    patch("wavebridge.device_evidence.compare_local_structure", return_value={
+                        "status": "evidence", "checks": {"source": {}, "target": {}},
+                        "remaining_obligations": ["entry_values"]}), \
+                    patch("wavebridge.device_evidence._local_entry_signature", side_effect=signatures):
+                result = compare_rmsnorm_routes({}, {"int_bits": 32}, {}, {"int_bits": 32})
+            self.assertEqual("unknown", result["status"])
+            self.assertEqual("not_established", result["leaf_value_correspondence"])
+            self.assertFalse(result["deployable"])
 
     def test_incomplete_or_rejected_side_cannot_be_upgraded(self):
         for status in ("unknown", "rejected"):

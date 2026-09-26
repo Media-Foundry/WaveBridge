@@ -240,6 +240,13 @@ launch域或源/目标等价。source_program_checked/deployable始终false。�
 
 ## 初始化域与选定launch的线程起点组合
 
+双侧 `device_evidence.compare_rmsnorm_routes` 的 v3 还将 fresh 局部计算模板
+同本次 row/thread/prefix 证据连接。局部恢复结果必须与前缀内的同一恢复结果
+完全一致，input/start/bound/accumulator 精确绑定，再比较两侧条件入口关系
+签名。缺证据、角色错接、不同区间或 ABI 均不能沿用已有 route evidence 放行。
+这里的 evidence 仅是结构/条件关系，不是运行实参或指针内容相等；报告显式
+保留两侧 host guard 模式，签名相等不声称两侧前提集合相等。
+
 坐标值组合只支持 kernel 直接块作用域中唯一的普通自动 `const int` 声明。
 `static`、TLS、未知声明属性、全局或嵌套作用域起点保持 unknown；初始化调用
 结构存在，不意味着本次 invocation 执行了该初始化。行前缀的 row/start 同样

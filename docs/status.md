@@ -2,6 +2,28 @@
 
 更新日期：2026-09-26。
 
+## 局部模板与条件入口关系连接
+
+双侧归约入口升级 v3：在已有 route 和 typed-local 检查之后，核对局部恢复
+同本次 fresh prefix 的 local_contribution 完全一致，精确连接 input/start/
+bound/accumulator 身份与自动存储期证据。两侧入口签名比较参数位置/类型、
+整数 ABI、row/start/count 域、外部坐标语义及源指针的整数偏移关系。
+缺失、错接或不支持的不同签名保持 unknown，不继承此前 route 的成功状态。
+
+运行实参、输入指针内容、叶值及 FP 等价仍未建立，部署标记仍 false。
+签名相等不表示前提集合相等；两侧 host guard 模式分别记录，两侧嵌套前提
+均需满足。本轮没有增加接受旧子报告的公共验证接口，也没有执行 GPU。
+
+807 项完整测试通过（65.987 秒，匹配 native 插件启用），demo 与 diff 检查通过。
+新增 4 项私有连接单元测试及 1 项编排方法；它们采用结构 fixture/mock，不能
+称为源码恢复证明。测试日志与可重放脚本位于 `artifacts/wb-entry-binding-7zmON3/`。
+固定真实 HIP 源/目标 AST 完整重放 319.728 秒退出 0：v3 为 evidence，入口
+关系签名相同；运行实参、指针内容及叶值对应仍 not_established，实现哈希
+前后稳定。报告为 `artifacts/wb-local-structure-hfn1Di/report-entry-binding.json`，
+SHA256 `231b52ad9b0627676c92498e69c2dafbab183773aed1aa3d72d190a17dbde2c5`。
+实际调用沿用旧 run.py（stdout 的 v2 标签是历史文案，JSON 已核实为 v3）；
+本轮工件目录的重放脚本已同步 v3 标签和入口签名断言。
+
 ## 坐标入口的自动存储期门控
 
 连接局部模板与入口关系前，发现 row/start 的持久存储期尚未受限：

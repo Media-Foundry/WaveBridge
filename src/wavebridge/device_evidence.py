@@ -246,12 +246,64 @@ def collect_rmsnorm(root, protocol, *, max_ast_nodes=1_000_000):
     return result
 
 
+def _local_entry_signature(root, protocol, side, snapshot):
+    """Join only fresh children from compare_rmsnorm_routes, never a report API.
+
+    A common signature describes conditional index relations, not equal runtime
+    arguments, pointer contents, getter effects or floating-point values.
+    """
+    kernel = side["kernel_declaration_id"]
+    integers = side["checks"]["integers"]
+    offsets = integers["checks"]["row_offsets"]
+    row, thread = offsets["checks"]["row"], offsets["checks"]["thread"]
+    prefix = row["prefix_recovery"]
+    local = snapshot["local_recovery"]
+    roles = snapshot["role_bindings"]
+    automatic = "automatic_on_each_passage_through_declaration"
+    if (snapshot["input_sha256"] != _hash({"root": root, "kernel": kernel,
+                                           "int_bits": protocol["int_bits"]})
+            or prefix["function_id"] != kernel
+            or prefix["status"] != "recovered"
+            or any(item["status"] != "checked" for item in (offsets, row, thread))
+            or prefix.get("declaration_evaluation") != automatic
+            or thread.get("declaration_evaluation") != automatic
+            or local != prefix["normalization_output"]["local_contribution"]):
+        raise ValueError("fresh_prefix_local_or_coordinate_evidence_not_bound")
+    expected = {"input": prefix["source_parameter_id"],
+                "start": prefix["start_declaration_id"],
+                "bound": prefix["count_parameter_id"],
+                "accumulator": thread["recovery"]["chain"]["accumulator_declaration_id"]}
+    if (any(roles[role]["declaration_id"] != identifier for role, identifier in expected.items())
+            or expected["start"] != thread["start_declaration_id"]
+            or expected["bound"] != offsets["count_parameter_id"]
+            or prefix["row_declaration_id"] != offsets["row_declaration_id"]):
+        raise ValueError("local_roles_do_not_match_fresh_entry_relations")
+    # Exact local recovery equality above also binds the selected loop, its
+    # induction and loaded-value declarations to the checked prefix/output path.
+    def coordinate(name):
+        value = protocol[name]["coordinate"]
+        return {key: value[key] for key in ("semantics", "axis", "return_type")}
+
+    return {
+        "parameter_roles": {role: {key: roles[role][key] for key in
+                                    ("kind", "type", "parameter_position")}
+                            for role in ("input", "bound")},
+        "integer_types": protocol["integer_types"],
+        "row_coordinate": coordinate("row_binding"),
+        "thread_coordinate": coordinate("thread_binding"),
+        "row_interval": offsets["row_interval"], "count_interval": offsets["count_interval"],
+        "start_interval": thread["start_interval"],
+        "source_offset": {key: offsets["checks"]["source_offset"][key]
+                          for key in ("symbolic_relation", "result_type")},
+    }
+
+
 def compare_rmsnorm_routes(source_root, source_protocol, target_root, target_protocol,
                            *, max_ast_nodes=1_000_000):
     """Fresh two-sided route evidence; leaves are NOT proven equivalent values."""
     result = {
-        "schema_version": "rmsnorm-route-comparison/v2", "status": "unknown", "reason": None,
-        "scope": "fresh_two_sided_conditional_block_routes_and_typed_local_templates",
+        "schema_version": "rmsnorm-route-comparison/v3", "status": "unknown", "reason": None,
+        "scope": "fresh_two_sided_conditional_block_routes_typed_local_templates_and_entry_bindings",
         "source_program_checked": False, "deployable": False,
         "leaf_value_correspondence": "not_established",
         "floating_point_equivalence": "not_checked", "checks": {},
@@ -283,4 +335,25 @@ def compare_rmsnorm_routes(source_root, source_protocol, target_root, target_pro
     result["remaining_obligations"]["local_structure"] = local["remaining_obligations"]
     if local["status"] != "evidence":
         result.update(status=local["status"], reason="local_structure_not_matched")
+        return result
+    entry = {"status": "unknown", "signatures": {}, "relation_signatures_equal": None,
+             "premise_scope": "both_sides_nested_premises_required_not_proven_equal",
+             "host_guard_assumption_modes": {
+                 "source": source_protocol.get("use_host_guard_assumptions"),
+                 "target": target_protocol.get("use_host_guard_assumptions")},
+             "runtime_argument_correspondence": "not_established",
+             "pointer_contents_correspondence": "not_established"}
+    result["checks"]["local_entry_binding"] = entry
+    try:
+        for name, root, protocol in (("source", source_root, source_protocol),
+                                      ("target", target_root, target_protocol)):
+            entry["signatures"][name] = _local_entry_signature(
+                root, protocol, result["checks"][name], local["checks"][name])
+    except (KeyError, TypeError, ValueError, RecursionError) as error:
+        result.update(status="unknown", reason="local_entry_not_bound:" + str(error))
+        return result
+    equal = entry["signatures"]["source"] == entry["signatures"]["target"]
+    entry.update(status="evidence" if equal else "unknown", relation_signatures_equal=equal)
+    if not equal:
+        result.update(status="unknown", reason="different_entry_relation_signatures_not_supported")
     return result
