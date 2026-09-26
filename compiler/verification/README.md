@@ -962,3 +962,18 @@ coroutine/function-try-body、具名或传出的receiver等不支持，返回unk
 递归调用返回后，原始立即closure仍引用当前外层调用的source，递归本身不拒绝；
 存储旧closure后在另一调用中使用则不满足原始receiver形状。生命周期、初始化
 完成及值保持仍不能由同次调用关系推出。CPU递归回归只是有限执行验证。
+## 原生 builtin 调用结构入口
+
+`wavebridge.verification.builtin_calls.inspect_structure(payload, call_expression_id)`
+接收同次 native envelope 和精确调用 ID，不接收生成器提供的通过结论。检查
+唯一 native 记录、唯一 AST 调用/声明、原生 callee ID 与 DeclRef 对应、有序
+参数 ID、BuiltinAttr、函数签名及完整受限表达式形状。当前只覆盖 compiler
+识别的 `__builtin_huge_valf()` 和 `__builtin_nanf("")` 这两个结构。
+
+`checked` 仅表示上述结构一致；依赖可信 Clang/plugin envelope，不认证文件
+来源、不证明 builtin 值、纯度、正常返回、外围表达式效果或机器码行为。
+`value_semantics`/`effect_semantics` 仍 `not_established`，不进入循环放行或部署。
+名字用来选择受限结构，不能单独建立 builtin 身份或语义；数字 builtin ID
+不跨编译器版本解释。缺失、重复、错绑和不支持结构均 `unknown`。
+调用者须将完整 envelope 与实际采集报告的编译器、插件、源码/依赖协议绑定；
+成功报告保存 envelope/选点哈希，旧 AST ID 不可跨采集复用。

@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## builtin 身份与实参结构检查
+
+新增独立 builtin_calls.inspect_structure，fresh 核对 native envelope 中的
+唯一调用/声明/参数身份与受限 AST 类型链；仅支持 huge_valf 零参及 nanf 空
+字符串。真实 Clang 非空字符串、普通/间接调用和缺失/错绑 metadata 保持 unknown。
+固定 CUDA 探针三个 builtin 子表达式结构 checked，包括写内存负对照中的调用；
+这不意味着其包围函数无写。值/效果语义、循环接受与部署均未升级。
+详见 [实录](../experiments/builtin-structure-evidence-20260927.md)。
+匹配 native 插件下完整 986 项测试通过（65.854 秒，无跳过）；demo/diff
+通过。GPT-5.6 Sol 扩展真实 Clang 回归并复核；远端 CI 未核验，无新 GPU。
+
 ## 原生 builtin 调用身份
 
 Clang 插件新增可选 builtin_calls，由原生 direct callee / builtin ID 记录同次

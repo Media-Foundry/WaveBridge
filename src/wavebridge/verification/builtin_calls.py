@@ -1,0 +1,154 @@
+"""Bind narrow builtin call shapes to trusted same-context native observations.
+
+`checked` is structural only. No builtin return value or effect is assumed.
+"""
+from __future__ import annotations
+
+from wavebridge.verification.getter_returns import _hash
+
+MAX_AST_NODES = 1_000_000
+HARD_MAX_AST_NODES = 10_000_000
+
+
+class _Unknown(Exception):
+    pass
+
+
+def _children(node):
+    children = node.get("inner", [])
+    if not isinstance(children, list) or any(not isinstance(c, dict) or not c for c in children):
+        raise _Unknown("malformed_selected_children")
+    return children
+
+
+def _typed(node, kind, spelling, category):
+    if (node.get("kind") != kind or node.get("type") != {"qualType": spelling} or
+            node.get("valueCategory") != category):
+        raise _Unknown("selected_expression_shape_mismatch")
+
+
+def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    report = {
+        "schema_version": "builtin-call-structure/v1", "status": "unknown", "reason": None,
+        "scope": "same_context_native_builtin_identity_and_restricted_argument_structure",
+        "source_program_checked": False, "deployable": False,
+        "value_semantics": "not_established", "effect_semantics": "not_established",
+        "assumptions": ["native envelope and embedded AST faithfully describe one compiler ASTContext",
+                        "compiler and native plugin are trusted frontend components"],
+        "remaining_obligations": ["builtin value and effect semantics under the actual compilation protocol",
+                                  "source validity and normal return", "enclosing expression effects"],
+        "budget": {"max_ast_nodes": budget},
+    }
+    try:
+        if type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES:
+            raise _Unknown("invalid_ast_budget")
+        if (not isinstance(payload, dict) or not isinstance(call_expression_id, str) or
+                not call_expression_id):
+            raise _Unknown("invalid_inputs")
+        if (payload.get("schema_version") != "clang-native-captures/v1" or
+                payload.get("builtin_call_coverage") != "visited_direct_builtin_calls_not_exhaustive" or
+                payload.get("builtin_call_semantics") != "compiler_identity_not_value_or_effect_proof" or
+                any(not isinstance(payload.get(k), str) or not payload[k]
+                    for k in ("plugin_build_clang_version", "ast_target_triple"))):
+            raise _Unknown("native_envelope_evidence_missing")
+        root = payload.get("ast")
+        records = payload.get("builtin_calls")
+        if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
+                not isinstance(records, list) or len(records) > budget or
+                any(not isinstance(r, dict) for r in records)):
+            raise _Unknown("native_payload_malformed")
+        selected = [r for r in records if r.get("call_expression_id") == call_expression_id]
+        if len(selected) != 1:
+            raise _Unknown("native_call_observation_not_unique")
+        observed = selected[0]
+        if type(observed.get("builtin_id")) is not int or observed["builtin_id"] <= 0:
+            raise _Unknown("native_builtin_id_invalid")
+        name = observed.get("builtin_name")
+        if name not in {"__builtin_huge_valf", "__builtin_nanf"}:
+            raise _Unknown("builtin_structure_not_supported")
+        declaration_id = observed.get("callee_declaration_id")
+        if not isinstance(declaration_id, str) or not declaration_id:
+            raise _Unknown("native_callee_id_missing")
+        nodes, pending, count = {}, [root], 0
+        while pending:
+            node = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            if not isinstance(node, dict):
+                raise _Unknown("ast_node_malformed")
+            identifier = node.get("id")
+            if isinstance(identifier, str) and identifier:
+                nodes.setdefault(identifier, []).append(node)
+            children = node.get("inner", [])
+            if not isinstance(children, list):
+                raise _Unknown("ast_children_malformed")
+            pending.extend(children)
+
+        def unique(identifier):
+            matches = nodes.get(identifier, [])
+            if len(matches) != 1:
+                raise _Unknown("selected_ast_identity_not_unique")
+            return matches[0]
+
+        call, declaration = unique(call_expression_id), unique(declaration_id)
+        _typed(call, "CallExpr", "float", "prvalue")
+        arguments = "const char *" if name == "__builtin_nanf" else ""
+        signature = f"float ({arguments})"
+        declaration_type = declaration.get("type")
+        if declaration_type == {"qualType": signature + " noexcept"}:
+            suffix = " noexcept"
+        elif declaration_type == {"qualType": signature}:
+            suffix = ""
+        else:
+            raise _Unknown("builtin_declaration_type_mismatch")
+        if (declaration.get("kind") != "FunctionDecl" or declaration.get("name") != name or
+                declaration.get("variadic")):
+            raise _Unknown("builtin_declaration_mismatch")
+        declaration_children = _children(declaration)
+        if (sum(c.get("kind") == "BuiltinAttr" for c in declaration_children) != 1 or
+                any(c.get("kind") not in {"ParmVarDecl", "BuiltinAttr", "NoThrowAttr", "ConstAttr", "PureAttr"}
+                    or _children(c) for c in declaration_children)):
+            raise _Unknown("builtin_declaration_structure_unsupported")
+        parameters = [c for c in declaration_children if c.get("kind") == "ParmVarDecl"]
+        expected_count = 1 if arguments else 0
+        if (len(parameters) != expected_count or
+                any(p.get("type") != {"qualType": "const char *"} for p in parameters)):
+            raise _Unknown("builtin_parameters_mismatch")
+        parts = _children(call)
+        if len(parts) != expected_count + 1:
+            raise _Unknown("call_arity_mismatch")
+        decay = parts[0]
+        _typed(decay, "ImplicitCastExpr", f"float (*)({arguments})" + suffix, "prvalue")
+        if decay.get("castKind") != "BuiltinFnToFnPtr" or len(_children(decay)) != 1:
+            raise _Unknown("builtin_callee_decay_mismatch")
+        callee = _children(decay)[0]
+        _typed(callee, "DeclRefExpr", "<builtin fn type>", "prvalue")
+        ref = callee.get("referencedDecl")
+        if (_children(callee) or not isinstance(ref, dict) or ref.get("kind") != "FunctionDecl" or
+                ref.get("id") != declaration_id or ref.get("name") != name or
+                ref.get("type") != declaration_type):
+            raise _Unknown("callee_reference_mismatch")
+        ids = observed.get("argument_expression_ids")
+        if (not isinstance(ids, list) or any(not isinstance(i, str) or not i for i in ids) or
+                ids != [a.get("id") for a in parts[1:]]):
+            raise _Unknown("native_argument_identity_mismatch")
+        for identifier, arg in zip(ids, parts[1:]):
+            if unique(identifier) is not arg:
+                raise _Unknown("argument_identity_mismatch")
+            _typed(arg, "ImplicitCastExpr", "const char *", "prvalue")
+            if arg.get("castKind") != "ArrayToPointerDecay" or len(_children(arg)) != 1:
+                raise _Unknown("argument_not_literal_decay")
+            literal = _children(arg)[0]
+            _typed(literal, "StringLiteral", "const char[1]", "lvalue")
+            if _children(literal) or literal.get("value") != '""':
+                raise _Unknown("argument_not_empty_string")
+        report["input_sha256"] = {"native_envelope": _hash(payload), "call_expression_id": _hash(call_expression_id)}
+        report.update(status="checked", observation=dict(observed),
+                      argument_structure="empty_string_literal" if arguments else "no_arguments")
+    except _Unknown as error:
+        report["reason"] = str(error)
+    except (TypeError, ValueError, RecursionError):
+        report["reason"] = "unsupported_input_representation"
+    return report
