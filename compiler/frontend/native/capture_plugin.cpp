@@ -55,6 +55,30 @@ class CaptureVisitor : public RecursiveASTVisitor<CaptureVisitor> {
 public:
   explicit CaptureVisitor(ASTContext &Context) : Context(Context) {}
 
+  // JSON dumping includes instantiated definitions. Observe those same bodies,
+  // rather than leaving their local objects and calls absent from the metadata.
+  bool shouldVisitTemplateInstantiations() const { return true; }
+
+  bool VisitCXXConstructExpr(CXXConstructExpr *Expression) {
+    if (!Expression || !SeenConstructorCalls.insert(Expression).second)
+      return true;
+    const CXXConstructorDecl *Constructor = Expression->getConstructor();
+    if (!Constructor)
+      return true;
+    llvm::json::Object Item;
+    Item["expression_id"] = pointerID(Expression);
+    Item["constructor_declaration_id"] = pointerID(Constructor);
+    Item["record_declaration_id"] = pointerID(Constructor->getParent());
+    Item["is_trivial"] = Constructor->isTrivial();
+    Item["is_default_constructor"] = Constructor->isDefaultConstructor();
+    llvm::json::Array Arguments;
+    for (const Expr *Argument : Expression->arguments())
+      Arguments.push_back(pointerID(Argument));
+    Item["argument_expression_ids"] = std::move(Arguments);
+    ConstructorCalls.push_back(std::move(Item));
+    return true;
+  }
+
   bool VisitCallExpr(CallExpr *Expression) {
     if (!Expression || !SeenBuiltinCalls.insert(Expression).second)
       return true;
@@ -228,6 +252,7 @@ public:
 
   llvm::json::Array takeCaptures() { return std::move(Captures); }
   llvm::json::Array takeBuiltinCalls() { return std::move(BuiltinCalls); }
+  llvm::json::Array takeConstructorCalls() { return std::move(ConstructorCalls); }
   llvm::json::Array takeExpressionCleanups() {
     return std::move(ExpressionCleanups);
   }
@@ -239,6 +264,8 @@ private:
   ASTContext &Context;
   llvm::DenseSet<const CallExpr *> SeenBuiltinCalls;
   llvm::json::Array BuiltinCalls;
+  llvm::DenseSet<const CXXConstructExpr *> SeenConstructorCalls;
+  llvm::json::Array ConstructorCalls;
   std::vector<const LambdaExpr *> LambdaStack;
   llvm::DenseSet<const LambdaExpr *> SeenLambdas;
   llvm::DenseSet<const ExprWithCleanups *> SeenExpressionCleanups;
@@ -265,6 +292,9 @@ public:
                     "\"local_record_object_semantics\":\"lexical_declarations_not_runtime_destructor_events\","
                     "\"builtin_call_coverage\":\"visited_direct_builtin_calls_not_exhaustive\","
                     "\"builtin_call_semantics\":\"compiler_identity_not_value_or_effect_proof\","
+                    "\"visits_template_instantiations\":true,"
+                    "\"constructor_call_coverage\":\"visited_construct_expressions_not_exhaustive\","
+                    "\"constructor_call_semantics\":\"compiler_identity_not_effect_or_lifetime_proof\","
                     "\"source_program_checked\":false,"
                     "\"deployable\":false,\"plugin_build_clang_version\":"
                  << llvm::formatv("{0}", llvm::json::Value(CLANG_VERSION_STRING))
@@ -287,6 +317,9 @@ public:
                  << ",\"builtin_calls\":"
                  << llvm::formatv("{0}", llvm::json::Value(
                         Visitor.takeBuiltinCalls()))
+                 << ",\"constructor_calls\":"
+                 << llvm::formatv("{0}", llvm::json::Value(
+                        Visitor.takeConstructorCalls()))
                  << "}\n";
   }
 };

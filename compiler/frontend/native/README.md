@@ -94,3 +94,21 @@ calls in the column-loop checker. Consumers must bind the exact same-context
 call, declaration, argument AST and compiler evidence before applying any
 separate explicit semantics protocol. Indirect calls and unresolved/dependent
 calls are not covered; syntactic visitation is not runtime reachability.
+
+The observer now explicitly visits template instantiations, recorded by
+`visits_template_instantiations=true`. Earlier artifacts may contain instantiated
+JSON AST bodies without the corresponding native observations. They are not
+retrospectively complete. Coverage labels remain non-exhaustive; visiting an
+instantiation does not prove it is dynamically reachable.
+
+The optional `constructor_calls` extension binds each visited `CXXConstructExpr`
+to `expression_id`, the exact `constructor_declaration_id` selected by Clang,
+its `record_declaration_id`, and ordered `argument_expression_ids`. Native
+`is_trivial` and `is_default_constructor` flags describe the selected declaration,
+not the whole initialization expression or its argument effects. Entries are
+deduplicated by expression pointer. Coverage is
+`visited_construct_expressions_not_exhaustive`, with semantics
+`compiler_identity_not_effect_or_lifetime_proof`. Missing observations, a null
+destructor ID, or a trivial constructor flag alone cannot authorize preservation
+or deployment. All IDs must be rebound within the new capture; never join them
+to IDs from an older compiler invocation.

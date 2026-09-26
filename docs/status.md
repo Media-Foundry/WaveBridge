@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 模板实例的原生构造与对象证据
+
+实际发现旧softmax AST中r存在，但原生局部对象清单缺该模板实例。插件现
+显式遍历模板实例，并记录constructor_calls的精确构造声明/record/实参ID。
+重采同一harness后，选中Max<float>的自动对象、trivial默认构造及非trivial
+析构标志已关联，见[实录](../experiments/native-template-evidence-20260927.md)。
+这是同次编译观测，不是效果/生命周期证明；旧四项pending不变，旧ID不能
+与新AST混用。下一步独立检查构造与生命周期，再处理shuffle/defaultarg。
+最终1095项测试通过（73.200秒，新native插件启用，无跳过），demo/diff通过。
+首轮测试草稿对模板record kind的6个错误断言及失败日志保留；已修正并全量
+重跑。GPT-5.6 Sol新增5项真实native回归。无GPU，远端CI未核验。
+
 ## 数组helper中的实际标量operator
 
 复用scalar_expression_effects支持比较、bool与标量条件表达式，条件及两支
