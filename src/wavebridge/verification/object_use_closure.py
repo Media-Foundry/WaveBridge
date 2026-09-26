@@ -26,6 +26,56 @@ HARD_MAX_AST_NODES = 10_000_000
 MAX_EXPLICIT_USES = 256
 
 
+def _reference_use_effects(variable_id, root_hash, copy_paths, copies, captures):
+    """Compose fresh copy access classifications, not dynamic preservation."""
+    result = {
+        "schema_version": "source-reference-use-effects/v1",
+        "status": "unknown", "reason": None, "copies": [],
+        "scope": "closed_explicit_references_and_selected_copy_AST_role_effects",
+        "source_declaration_id": variable_id, "root_sha256": root_hash,
+        "source_program_checked": False, "deployable": False,
+        "source_object_preservation": "not_established",
+        "source_destination_nonoverlap": "not_established",
+        "opaque_call_and_implicit_lifetime_effects": "not_established",
+        "capture_identity": "conditional_on_existing_capture_protocols",
+    }
+    reports = [(report, "direct") for report in copies]
+    reports.extend((report.get("copy_check", {}), "captured") for report in captures)
+    seen = set()
+    for report, route in reports:
+        copy_id = report.get("expression_id")
+        if (copy_id not in copy_paths or copy_id in seen or
+                bool(copy_paths[copy_id]) != (route == "captured") or
+                report.get("status") != "checked" or
+                report.get("source_declaration_id") != variable_id or
+                report.get("input_sha256", {}).get("root") != root_hash):
+            result["reason"] = "fresh_copy_effect_binding_mismatch"
+            return result
+        seen.add(copy_id)
+        effects = report.get("local_copy_effects", {})
+        supported = (
+            effects.get("status") == "checked" and
+            effects.get("source_parameter_accesses") == "direct_integer_field_reads_only" and
+            effects.get("destination_accesses") == "direct_field_initializations_only" and
+            effects.get("additional_address_publication") ==
+            "not_observed_beyond_selected_const_reference_binding")
+        result["copies"].append({
+            "copy_expression_id": copy_id, "route": route,
+            "constructor_declaration_id": report.get("constructor_declaration_id"),
+            "status": "checked" if supported else "unknown",
+            "reason": None if supported else "fresh_local_copy_effects_not_checked",
+            "local_effect_reason": effects.get("reason"),
+        })
+    if seen != set(copy_paths):
+        result["reason"] = "fresh_copy_effect_set_incomplete"
+    elif any(row["status"] != "checked" for row in result["copies"]):
+        result["reason"] = "one_or_more_copy_effects_unknown"
+    else:
+        result.update(status="checked", reference_capture_storage=
+                      "only_exact_native_reference_captures_in_fresh_checked_immediate_lambdas")
+    return result
+
+
 def _false_do_condition(condition):
     """Only literal false or the exact builtin int-zero-to-bool conversion."""
     if (condition.get("type") not in ({"qualType": "bool"},
@@ -208,6 +258,7 @@ def check(payload: object, variable_id: object, integer_types: object,
         "source_object_preservation": "not_established",
         "source_mutation_history": "not_established",
         "source_order": {"status": "unknown", "reason": "explicit_use_closure_not_checked"},
+        "source_reference_use_effects": {"status": "unknown", "reason": "explicit_use_closure_not_checked"},
         "prior_aliases": "not_established",
         "untracked_memory_effects": "not_established",
         "opaque_call_effects": "not_established",
@@ -515,6 +566,8 @@ def check(payload: object, variable_id: object, integer_types: object,
         result.update(
             status="checked",
             source_order=_source_order(variable, semantic_paths, semantic_ids, copy_paths, invocation_checks),
+            source_reference_use_effects=_reference_use_effects(
+                variable_id, root_hash, copy_paths, copy_checks, capture_checks),
             explicit_source_references=reference_reports,
             capture_initializers=capture_summaries,
             direct_copy_expression_ids=sorted(direct_copy_ids),

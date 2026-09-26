@@ -579,3 +579,17 @@ unknown。原先闭合扫描拒绝的空AST placeholder仍然拒绝，不为顺�
 执行可达性/次数、source动态lifetime、非局部外部控制效果及历史值保持仍未知；
 原有capture协议中的活跃对象和same-activation假设不会自动删除。
 主引用闭合可以checked而source_order未知，调用者必须检查所需的子报告范围。
+
+## 显式源引用的复制效果组合
+
+`object_use_closure.source_reference_use_effects` 只消费本次fresh执行的
+`record_copy_check.local_copy_effects`，包括direct copy及capture-source报告内部
+的copy检查。每条记录须匹配同一root hash、源声明ID、copy ID及其捕获路径类别；
+复制集合必须完整且不重复。任何copy效果未知，整个效果子报告保持unknown。
+by-reference capture只按已检查的原生边及立即调用路径分类，不建立动态非逃逸。
+
+该子报告描述copy中按AST角色区分的源字段读取、目标字段初始化及额外地址发布
+分类；不证明source/destination动态不重叠、隐式生命周期效果或历史值保持。
+普通局部copy无需绑定按值形参才能进入此效果分类；`parameter_target`是独立义务。
+主v1状态仍只表示显式引用闭合，不因新增效果未知而改写。未来历史组合必须分别
+要求效果和顺序子报告checked，并另行处理尚未解除的动态义务。

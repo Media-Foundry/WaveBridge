@@ -2,6 +2,17 @@
 
 更新日期：2026-09-26。
 
+## 显式源引用的复制效果组合
+
+`object_use_closure.source_reference_use_effects` 汇总所有fresh direct/captured
+copy的局部效果，核对root hash、源声明、copy集合及捕获路径类别。引用闭合成功
+不再能被误当作该效果子报告成功；任一copy效果未知则整个效果子报告unknown。
+真实带未支持参数属性的copy已覆盖direct和captured两条路径，旧引用闭合与
+顺序仍checked，新效果保持unknown。普通局部copy和按值调用正例继续支持。
+661项CPU、185项Clang专项与demo通过；不建立动态非重叠、lifetime或历史保持。
+固定vLLM完整TU新重放正在执行，尚不记为通过；执行期间冻结src。
+句柄和工件见 `.agents/handoffs/wb04-use-effects-20260926.md`。
+
 ## 源声明、复制语句与立即调用链的结构顺序
 
 `object_use_closure.source_order` 在fresh子检查之后，基于真实语义祖先路径和

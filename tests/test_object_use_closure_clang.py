@@ -10,7 +10,7 @@ from unittest.mock import patch
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.frontend.native_captures import collect
 from wavebridge.verification.integer_selection import _hash
-from wavebridge.verification.object_use_closure import check
+from wavebridge.verification.object_use_closure import _reference_use_effects, check
 
 PLUGIN = os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -202,6 +202,55 @@ class ObjectUseClosureClangTests(unittest.TestCase):
                 self.assertEqual(order["source_lifetime"], "not_established")
                 self.assertEqual(order["source_value_preservation"], "not_established")
                 self.assertFalse(order["deployable"])
+
+    def test_all_fresh_copy_effects_are_required_for_use_effects(self):
+        for name in ("plain_copy", "three_branches", "by_value_flow", "captured_by_value_flow"):
+            with self.subTest(name=name):
+                report = self.run_check(name)
+                effects = report["source_reference_use_effects"]
+                self.assertEqual(effects["status"], "checked", report)
+                self.assertEqual({row["copy_expression_id"] for row in effects["copies"]},
+                                 set(report["direct_copy_expression_ids"] + report["captured_copy_expression_ids"]))
+                self.assertEqual(effects["source_object_preservation"], "not_established")
+                self.assertEqual(effects["source_destination_nonoverlap"], "not_established")
+                self.assertFalse(effects["deployable"])
+
+    def test_real_unknown_copy_effect_does_not_inherit_reference_closure_success(self):
+        for name in ("attributed_copy_flow", "captured_attributed_copy_flow"):
+            with self.subTest(name=name):
+                report = self.run_check(name)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["source_order"]["status"], "checked")
+                effects = report["source_reference_use_effects"]
+                self.assertEqual(effects["status"], "unknown")
+                self.assertEqual(effects["reason"], "one_or_more_copy_effects_unknown")
+                self.assertEqual(effects["copies"][0]["status"], "unknown")
+
+    def test_unclosed_references_never_establish_use_effects(self):
+        for name in ("direct_write", "reference_alias", "address_escape", "named_closure"):
+            with self.subTest(name=name):
+                self.assertEqual(self.run_check(name)["source_reference_use_effects"]["status"], "unknown")
+
+    def test_use_effect_composition_rejects_incomplete_or_misbound_fresh_reports(self):
+        # Mutated child reports exercise composition binding, not compilable
+        # source counterexamples. Public check never accepts caller reports.
+        report = self.run_check("by_value_flow")
+        source_id = report["variable_id"]
+        root_hash = report["input_sha256"]["root"]
+        paths = {identifier: () for identifier in report["direct_copy_expression_ids"]}
+        for mutation in ("missing", "duplicate", "source", "root", "role", "effect_unknown", "effect_label"):
+            copies = copy.deepcopy(report["copy_checks"])
+            captures = []
+            if mutation == "missing": copies.pop()
+            elif mutation == "duplicate": copies.append(copy.deepcopy(copies[0]))
+            elif mutation == "source": copies[0]["source_declaration_id"] = "wrong"
+            elif mutation == "root": copies[0]["input_sha256"]["root"] = "wrong"
+            elif mutation == "role": captures.append({"copy_check": copies.pop()})
+            elif mutation == "effect_unknown": copies[0]["local_copy_effects"]["status"] = "unknown"
+            else: copies[0]["local_copy_effects"]["source_parameter_accesses"] = "unmodeled"
+            with self.subTest(mutation=mutation):
+                result = _reference_use_effects(source_id, root_hash, paths, copies, captures)
+                self.assertEqual(result["status"], "unknown", result)
 
     def test_switch_must_be_contained_after_source_declaration(self):
         positive = self.run_check("switch_flow")["source_order"]

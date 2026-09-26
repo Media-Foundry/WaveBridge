@@ -150,6 +150,19 @@ void case_into_do(int branch) {
   switch (branch) { do { case 0: observe_value(source); break; } while (false); }
 }
 
+// A real declaration outside the local effect subset; no claim that the
+// diagnostic attribute itself changes runtime semantics.
+typedef struct AttributedCopy {
+  unsigned x;
+  AttributedCopy(unsigned value) : x(value) {}
+  AttributedCopy(const AttributedCopy& other [[maybe_unused]]) : x(other.x) {}
+} AttributedCopy;
+void attributed_copy_flow() { AttributedCopy source(3); AttributedCopy target(source); }
+void captured_attributed_copy_flow() {
+  AttributedCopy source(3);
+  [&]() { AttributedCopy target(source); }();
+}
+
 #ifdef WAVEBRIDGE_OBJECT_USES_EXECUTION
 void opaque_call() {}
 int main() {
