@@ -2,6 +2,16 @@
 
 更新日期：2026-09-26。
 
+## 生命周期前提审计：禁止循环解除alive
+
+真实CPU/Clang反例确认：外层source仅作为两个copy实参，但copy ctor可经自己的
+const引用参数析构并placement-new重建source。CPU两次copy字段和为102（3+99）；
+当前初始化checked、显式source引用数2，最终因copy构造器非空body正确unknown。
+这不是当前checker错误放行，而是否定“仅靠外层引用闭合即可解除alive”的捷径。
+下一项应先独立检查不依赖live/readable值前提的copy构造器结构效果，避免用带
+alive假设的copy成功报告反向证明alive。源码未改、没有GPU执行，详见
+`.agents/handoffs/wb04-lifetime-audit-20260926.md`。v3完整TU重放仍在运行。
+
 ## 从源码绑定同次包围函数求值
 
 capture-source-assumptions/v3移除same-activation布尔，严格绑定自动块局部
