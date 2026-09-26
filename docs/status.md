@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 数组helper中的实际标量operator
+
+复用scalar_expression_effects支持比较、bool与标量条件表达式，条件及两支
+均检查。array_call_effects显式use_scalar_operators模式精确绑定const
+float(float,float) operator的单return方法体；实际实参仍遍历，生命周期不放宽。
+固定softmax的Max::operator()返回表达式条件无内存写入检查通过；pending
+从5项减少为4项，整体仍unknown。见
+[实录](../experiments/array-operators-evidence-20260927.md)。无数值或历史域升级。
+完整1090项测试通过（73.695秒，native启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增5项真实Clang回归并复核，另增加2项数组组合回归。
+无GPU，远端CI未核验；下一步为构造/生命周期与shuffle/defaultarg。
+
 ## 数组调用的显式写入范围
 
 array_call_effects.check从同次完整AST绑定void(float*)调用、自动float[N]

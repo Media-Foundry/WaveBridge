@@ -78,6 +78,24 @@ void other_protected() {
   int protected_value = 11;
   (void)protected_value;
 }
+
+struct Select {
+  float operator()(float a, float b) const { return a < b ? b : a; }
+};
+struct Writes {
+  float operator()(float a, float b) const { return global_value = a + b; }
+};
+struct Calls {
+  float operator()(float a, float b) const { return unknown_scalar(); }
+};
+void select_helper(float* data) { Select r; data[0] = r(data[0], 1.0f); }
+void writes_helper(float* data) { Writes r; data[0] = r(data[0], 1.0f); }
+void calls_helper(float* data) { Calls r; data[0] = r(data[0], 1.0f); }
+void argument_helper(float* data) { Select r; data[0] = r(global_value = 2.0f, 1.0f); }
+void select_caller() { int protected_value = 7; float buffer[8] = {}; select_helper(buffer); }
+void writes_caller() { int protected_value = 7; float buffer[8] = {}; writes_helper(buffer); }
+void calls_caller() { int protected_value = 7; float buffer[8] = {}; calls_helper(buffer); }
+void argument_caller() { int protected_value = 7; float buffer[8] = {}; argument_helper(buffer); }
 """
 
 
@@ -172,6 +190,30 @@ class ArrayCallEffectsClangTests(unittest.TestCase):
                 result = check(
                     self.root, call["id"], protected["id"], max_ast_nodes=budget)
                 self.assertEqual(result["status"], "unknown", result)
+
+    def test_scalar_operator_body_is_checked_without_closing_lifecycle(self):
+        original = self.check("select_caller")
+        self.assertIn("CXXOperatorCallExpr", [e["kind"] for e in original["pending_effects"]])
+        result = self.check("select_caller", use_scalar_operators=True)
+        self.assertEqual(result["status"], "unknown", result)
+        self.assertTrue(result["explicit_write_targets_checked"])
+        self.assertEqual(len(result["scalar_operator_checks"]), 1)
+        self.assertEqual(result["scalar_operator_checks"][0]["body_no_memory_write"]["status"], "checked")
+        self.assertNotIn("CXXOperatorCallExpr", [e["kind"] for e in result["pending_effects"]])
+        self.assertIn("local_object_lifecycle", [e["kind"] for e in result["pending_effects"]])
+        self.assertFalse(result["protected_storage_preserved"])
+
+    def test_scalar_operator_effects_and_argument_writes_fail_closed(self):
+        for name in ("writes_caller", "calls_caller"):
+            with self.subTest(name=name):
+                result = self.check(name, use_scalar_operators=True)
+                self.assertEqual(result["status"], "unknown", result)
+                self.assertEqual(result["scalar_operator_checks"], [])
+                self.assertIn("CXXOperatorCallExpr", [e["kind"] for e in result["pending_effects"]])
+        result = self.check("argument_caller", use_scalar_operators=True)
+        self.assertEqual(result["status"], "unknown", result)
+        self.assertFalse(result["explicit_write_targets_checked"])
+        self.assertFalse(result["protected_storage_preserved"])
 
 
 if __name__ == "__main__":

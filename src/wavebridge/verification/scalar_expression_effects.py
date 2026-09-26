@@ -22,7 +22,7 @@ def _type(node):
 
 
 def _object_type(spelling):
-    match = re.fullmatch(r"(const )?(float|int)((?:\[[1-9][0-9]{0,8}\]){0,8})", spelling)
+    match = re.fullmatch(r"(const )?(float|int|bool)((?:\[[1-9][0-9]{0,8}\]){0,8})", spelling)
     if not match:
         raise _Unknown("object_type_unsupported")
     return (match[1] or "") + match[2], re.findall(r"\[[0-9]+\]", match[3])
@@ -91,6 +91,10 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None):
             if node.get("kind") == "ParenExpr" and len(children) == 1:
                 if lvalue(children[0], depth + 1) != (base, dimensions):
                     raise _Unknown("paren_type_mismatch")
+            elif node.get("kind") == "ConditionalOperator" and len(children) == 3:
+                if (dimensions or value(children[0], depth + 1) != "bool" or
+                        any(lvalue(child, depth + 1) != (base, dimensions) for child in children[1:])):
+                    raise _Unknown("conditional_lvalue_type_mismatch")
             elif node.get("kind") == "DeclRefExpr":
                 ref = node.get("referencedDecl")
                 if children or not isinstance(ref, dict) or not isinstance(ref.get("id"), str) or not ref["id"]:
@@ -124,7 +128,7 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None):
 
         def value(node, depth):
             spelling, children = prepare(node, depth, "prvalue")
-            if spelling not in {"float", "int"}:
+            if spelling not in {"float", "int", "bool"}:
                 raise _Unknown("scalar_value_type_unsupported")
             kind = node.get("kind")
             if kind == "ParenExpr" and len(children) == 1:
@@ -134,16 +138,29 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None):
                 base, dimensions = lvalue(children[0], depth + 1)
                 if dimensions or base.removeprefix("const ") != spelling:
                     raise _Unknown("scalar_load_type_mismatch")
+            elif kind == "ConditionalOperator" and len(children) == 3:
+                if (value(children[0], depth + 1) != "bool" or
+                        any(value(child, depth + 1) != spelling for child in children[1:])):
+                    raise _Unknown("conditional_value_type_mismatch")
+            elif kind == "BinaryOperator" and node.get("opcode") in {"<", "<=", ">", ">=", "==", "!="} and len(children) == 2:
+                operands = [value(child, depth + 1) for child in children]
+                if spelling != "bool" or operands[0] not in {"int", "float"} or operands[0] != operands[1]:
+                    raise _Unknown("comparison_operand_type_mismatch")
             elif kind == "BinaryOperator" and node.get("opcode") in {"+", "-", "*", "/", "%"} and len(children) == 2:
+                if spelling == "bool":
+                    raise _Unknown("arithmetic_type_unsupported")
                 if node.get("opcode") == "%" and spelling != "int":
                     raise _Unknown("remainder_not_int")
                 if any(value(child, depth + 1) != spelling for child in children):
                     raise _Unknown("arithmetic_operand_type_mismatch")
             elif kind == "UnaryOperator" and node.get("opcode") in {"+", "-"} and len(children) == 1:
-                if value(children[0], depth + 1) != spelling:
+                if spelling == "bool" or value(children[0], depth + 1) != spelling:
                     raise _Unknown("unary_operand_type_mismatch")
+            elif kind == "CXXBoolLiteralExpr" and not children:
+                if spelling != "bool" or type(node.get("value")) is not bool:
+                    raise _Unknown("literal_type_or_value_missing")
             elif kind in {"IntegerLiteral", "FloatingLiteral"} and not children:
-                if (kind == "IntegerLiteral") != (spelling == "int") or not isinstance(node.get("value"), str):
+                if spelling != ("int" if kind == "IntegerLiteral" else "float") or not isinstance(node.get("value"), str):
                     raise _Unknown("literal_type_or_value_missing")
             else:
                 raise _Unknown("unsupported_scalar_expression")
