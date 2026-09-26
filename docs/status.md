@@ -2,6 +2,27 @@
 
 更新日期：2026-09-27。
 
+## 常量表达式子集扩展及真实 AST 开发回放
+
+现有integer_constants新增具体signed int模板替换literal、非负signed移位、
+比较与短路条件表达式；不按变量名或kernel名字赋值。非法移位数、unsigned、
+负移位操作数、signed范围外结果及未知转换继续unknown。比C++17完整语义更窄，
+不把拒绝的sign-bit转换一概称为UB；模板替换仍信任Clang观测，checked不升级。
+
+从固定PyTorch softmax真实CUDA AST开发回放，自动求出128/32/4/2四项常量。
+8个循环依然unknown，首拒绝从边界常量无法解析前移到increment_not_plus_equal；
+归约仍0候选、12个未解析调用。原冻结评估不改写，不计新的holdout、整核支持
+或已验收corpus案例。本轮未重新编译kernel或运行GPU。
+
+详见 [实录](../experiments/constant-expressions-evidence-20260927.md)。报告位于
+artifacts/wb-constant-expressions-RkmZqE/replay/report.json，SHA256：
+`63cb6212ff3b3e1087e24047088e634eaf02688565c090b448b99a236eaa3525`。
+
+新增16项测试：7项小域/AST边界、5项真实Clang/合法CPU对照、4项回放绑定。
+完整919项CPU测试通过（66.723秒，匹配native插件启用，无跳过）；demo与diff
+检查通过。新增真实表达式测试在Clang17及SDK Clang23均通过，远端Clang18
+结果尚待CI，不将本机结果替代。GPT-5.6 Sol负责独立真实源码测试及只读复核。
+
 ## PyTorch persistent softmax 新 target 冻结评估
 
 以ee10c5d冻结全部源码分析实现，实际采集PyTorch v2.5.1固定提交的未修改

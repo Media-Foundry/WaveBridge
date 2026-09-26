@@ -1,5 +1,28 @@
 # 关系恢复
 
+## 受限整数常量表达式
+
+`integer_constants.evaluate`按精确声明ID求值，不按width/warp等变量名赋值。
+除既有signed int加减乘除模外，支持以下明确子集：
+
+- 具体Clang `SubstNonTypeTemplateParmExpr`中的signed int literal。接受带参数声明
+  或仅replacement子节点的观测形式；依赖可信前端的替换语义，不独立证明模板实例化。
+- signed int `<<`/`>>`，两操作数须为signed int、左值非负、移位数在`[0,int_bits)`；
+  左移结果必须仍处于signed范围。负数右移、unsigned和符号位转换不支持。
+  因此`1 << 31`在int_bits=32时unknown，不代表所有C++版本都将该表达式定义为UB。
+- signed int结果的`?:`，两分支类型须同属受支持signed int；仅求值实际选中分支。
+  谓词支持bool literal、signed int的IntegralToBoolean、signed比较、`!`及短路`&&/||`。
+  不支持用户转换、bool变量引用、未知调用或unsigned比较；死分支不求值不等于验证
+  整份程序在语法/类型上有效，源有效性仍依赖前端和外部前提。
+
+报告保留选中分支及template literal来源，`evaluated`不升级为`checked`或整核保证。
+位宽仍由调用者提供；sign-bit转换、浮点、任意constexpr函数、enum和复杂模板不在
+本子集中。短路测试的非法移位仅采集AST；CPU oracle使用独立的合法源码，避免
+含未定义行为的全局初始化污染执行对照。
+
+该扩展来自softmax开发反馈；旧冻结评估不修改。真实保存AST可求出四项常量，
+不意味着循环、functor归约、exp/log或softmax算子已恢复。
+
 ## 局部贡献的声明求值边界
 
 `local_contribution.recover`的逐列平方和子集要求accumulator和每次迭代加载的

@@ -6,6 +6,8 @@ from typing import Any
 
 WRAPPERS = {"ParenExpr", "ConstantExpr", "ExprWithCleanups", "FullExpr"}
 ARITHMETIC = {"+", "-", "*", "/", "%"}
+SHIFTS = {"<<", ">>"}
+COMPARISONS = {"<", "<=", ">", ">=", "==", "!="}
 
 
 class _Unknown(Exception):
@@ -38,6 +40,10 @@ def _signed_int_type(qual_type: str | None) -> bool:
     return words == ["int"] and "unsigned" not in qual_type
 
 
+def _bool_type(qual_type: str | None) -> bool:
+    return isinstance(qual_type, str) and qual_type.split() in (["bool"], ["const", "bool"])
+
+
 def _checked(value: int, int_bits: int) -> int:
     if not -(1 << (int_bits - 1)) <= value <= (1 << (int_bits - 1)) - 1:
         raise _Unknown("signed_overflow")
@@ -64,6 +70,7 @@ def evaluate(root: object, declaration_id: str, int_bits: int) -> dict[str, Any]
         "declaration_id": declaration_id, "int_bits": int_bits, "value": None,
         "expression_range": None, "sources": [], "checked": False,
         "relation_recovery": "incomplete",
+        "selected_branches": [], "template_substitutions": [],
     }
     if not isinstance(root, dict):
         result["reason"] = "root_not_object"
@@ -76,6 +83,67 @@ def evaluate(root: object, declaration_id: str, int_bits: int) -> dict[str, Any]
                     isinstance(node.get("kind"), str) and node["kind"].endswith("Decl")}
     active: set[str] = set()
     sources: list[dict[str, Any]] = []
+
+    def predicate_value(node: dict[str, Any]) -> bool:
+        """Only typed builtin predicates; never execute a call or user conversion."""
+        kind, children = node.get("kind"), _children(node)
+        if not _bool_type(_qual_type(node)):
+            raise _Unknown("unsupported_condition_type")
+        if kind == "CXXBoolLiteralExpr" and type(node.get("value")) is bool and not children:
+            return node["value"]
+        if kind in WRAPPERS and len(children) == 1 and _bool_type(_qual_type(children[0])):
+            return predicate_value(children[0])
+        if kind == "ImplicitCastExpr" and len(children) == 1:
+            if node.get("castKind") == "IntegralToBoolean" and _signed_int_type(_qual_type(children[0])):
+                return expression_value(children[0]) != 0
+            if node.get("castKind") == "NoOp" and _bool_type(_qual_type(children[0])):
+                return predicate_value(children[0])
+        if kind == "UnaryOperator" and node.get("opcode") == "!" and len(children) == 1:
+            return not predicate_value(children[0])
+        if kind == "BinaryOperator" and len(children) == 2:
+            opcode = node.get("opcode")
+            if opcode in {"&&", "||"}:
+                if not all(_bool_type(_qual_type(child)) for child in children):
+                    raise _Unknown("unsupported_condition_operand_type")
+                left = predicate_value(children[0])
+                # Short-circuiting is semantic: the other operand is not evaluated.
+                return (left and predicate_value(children[1]) if opcode == "&&"
+                        else left or predicate_value(children[1]))
+            if opcode in COMPARISONS:
+                if not all(_signed_int_type(_qual_type(child)) for child in children):
+                    raise _Unknown("unsupported_comparison_operand_type")
+                left, right = expression_value(children[0]), expression_value(children[1])
+                return {"<": left < right, "<=": left <= right, ">": left > right,
+                        ">=": left >= right, "==": left == right, "!=": left != right}[opcode]
+        raise _Unknown("unsupported_condition_expression")
+
+    def template_replacement(node: dict[str, Any]) -> int:
+        children = _children(node)
+        if not _signed_int_type(_qual_type(node)):
+            raise _Unknown("unsupported_template_substitution")
+        parameter = None
+        if len(children) == 2 and children[0].get("kind") == "NonTypeTemplateParmDecl":
+            parameter, replacement = children
+            if (not _signed_int_type(_qual_type(parameter)) or
+                    not isinstance(parameter.get("id"), str) or parameter.get("isParameterPack")):
+                raise _Unknown("unsupported_template_parameter")
+        elif len(children) == 1:
+            # Some Clang versions omit the parameter-declaration child. The
+            # trusted typed substitution node still supplies its concrete value;
+            # this branch does not claim to independently bind the template arg.
+            replacement = children[0]
+        else:
+            raise _Unknown("unsupported_template_substitution")
+        if (replacement.get("kind") != "IntegerLiteral" or
+                not _signed_int_type(_qual_type(replacement)) or _children(replacement) or
+                replacement.get("valueCategory", "prvalue") != "prvalue"):
+            raise _Unknown("nonliteral_template_substitution")
+        value = expression_value(replacement)
+        result["template_substitutions"].append({
+            "range": node.get("range"), "parameter_id": parameter.get("id") if parameter else None,
+            "value": value, "origin": "trusted_clang_substitution_literal",
+        })
+        return value
 
     def declaration_value(clang_id: str) -> int:
         declaration = declarations.get(clang_id)
@@ -100,6 +168,16 @@ def evaluate(root: object, declaration_id: str, int_bits: int) -> dict[str, Any]
 
     def expression_value(node: dict[str, Any]) -> int:
         kind, children = node.get("kind"), _children(node)
+        if kind == "SubstNonTypeTemplateParmExpr":
+            return template_replacement(node)
+        if kind == "ConditionalOperator":
+            if (len(children) != 3 or not _signed_int_type(_qual_type(node)) or
+                    not all(_signed_int_type(_qual_type(child)) for child in children[1:])):
+                raise _Unknown("unsupported_conditional_type_or_shape")
+            selected = 1 if predicate_value(children[0]) else 2
+            result["selected_branches"].append({"range": node.get("range"),
+                                                "selected_operand": selected})
+            return expression_value(children[selected])
         if kind == "IntegerLiteral":
             if not _signed_int_type(_qual_type(node)):
                 raise _Unknown("unsupported_or_unsigned_type")
@@ -126,10 +204,20 @@ def evaluate(root: object, declaration_id: str, int_bits: int) -> dict[str, Any]
             return _checked(operand if node["opcode"] == "+" else -operand, int_bits)
         if kind == "BinaryOperator":
             opcode = node.get("opcode")
-            if (len(children) != 2 or opcode not in ARITHMETIC or
+            if (len(children) != 2 or opcode not in ARITHMETIC | SHIFTS or
                     not _signed_int_type(_qual_type(node))):
                 raise _Unknown("unsupported_binary_operator")
+            if opcode in SHIFTS and not all(_signed_int_type(_qual_type(child)) for child in children):
+                raise _Unknown("unsupported_shift_operand_type")
             left, right = expression_value(children[0]), expression_value(children[1])
+            if opcode in SHIFTS:
+                if not 0 <= right < int_bits:
+                    raise _Unknown("shift_count_out_of_range")
+                # Deliberately narrower than C++17: no negative LHS and no
+                # signed sign-bit conversion, even where a compiler defines it.
+                if left < 0:
+                    raise _Unknown("negative_shift_operand_unsupported")
+                return _checked(left << right if opcode == "<<" else left >> right, int_bits)
             if opcode == "+": value = left + right
             elif opcode == "-": value = left - right
             elif opcode == "*": value = left * right
