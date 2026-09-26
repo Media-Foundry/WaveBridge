@@ -63,6 +63,48 @@ class CaptureSourceClangTests(unittest.TestCase):
                 self.assertFalse(report["source_program_checked"])
                 self.assertFalse(report["deployable"])
 
+    def v2_protocol(self, name, payload=None):
+        expression, protocol = self.inputs(name, payload)
+        protocol["schema_version"] = "capture-source-assumptions/v2"
+        del protocol["closure_instances_from_recorded_lambdas_assumed"]
+        return expression, protocol
+
+    def test_v2_derives_origin_from_fresh_immediate_receiver_paths(self):
+        for name, depth in (("immediate_reference", 1), ("immediate_nested", 2),
+                            ("initializer_evaluation", 1)):
+            expression, protocol = self.v2_protocol(name)
+            with self.subTest(name=name):
+                report = check(self.payload, expression, ABI, protocol)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["schema_version"], "capture-source-check/v2")
+                self.assertEqual(report["closure_origin"]["status"], "checked")
+                self.assertEqual(len(report["closure_origin"]["invocation_checks"]), depth)
+                self.assertNotIn("closure_instances_from_recorded_lambdas_assumed",
+                                 report["identity_completion"]["premises"])
+                self.assertIn("source_initialized_alive_assumed", report["identity_completion"]["premises"])
+                self.assertIn("source_and_closures_share_recorded_activation_assumed",
+                              report["identity_completion"]["premises"])
+                self.assertEqual(report["source_object_preservation"], "not_established")
+
+    def test_v2_rejects_named_passed_returned_and_nonimmediate_outer(self):
+        for name in ("one_reference", "nested_references", "passed_reference",
+                     "returned_reference", "named_outer_immediate_inner"):
+            expression, protocol = self.v2_protocol(name)
+            with self.subTest(name=name):
+                report = check(self.payload, expression, ABI, protocol)
+                self.assertEqual(report["status"], "unknown", report)
+                self.assertEqual(report["reason"], "fresh_closure_origin_invocation_not_checked")
+                self.assertEqual(report["closure_origin"]["status"], "unknown")
+
+    def test_v2_does_not_accept_old_origin_boolean_or_missing_remaining_premises(self):
+        expression, protocol = self.v2_protocol("immediate_reference")
+        changed = dict(protocol, closure_instances_from_recorded_lambdas_assumed=True)
+        self.assertEqual(check(self.payload, expression, ABI, changed)["status"], "unknown")
+        for key in ("source_initialized_alive_assumed", "source_and_closures_share_recorded_activation_assumed"):
+            changed = dict(protocol)
+            del changed[key]
+            self.assertEqual(check(self.payload, expression, ABI, changed)["status"], "unknown")
+
     def test_identity_does_not_imply_value_preservation(self):
         report = self.run_check("changed_source")
         self.assertEqual(report["status"], "checked", report)
@@ -85,7 +127,7 @@ class CaptureSourceClangTests(unittest.TestCase):
     def test_missing_misbound_or_nonboolean_protocol(self):
         expression, protocol = self.inputs()
         for key in protocol:
-            for value in (None, False, 1, ""):
+            for value in (None, False, 1, "", [], {}):
                 changed = dict(protocol, **{key: value})
                 with self.subTest(key=key, value=value):
                     self.assertNotEqual(check(self.payload, expression, ABI, changed)["status"], "checked")

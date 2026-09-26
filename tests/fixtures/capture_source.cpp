@@ -80,3 +80,25 @@ void direct_without_capture() {
   Plain source(3, 5);
   Plain target(source);
 }
+void immediate_reference() {
+  Plain source(3, 5);
+  [&source]() { Plain target(source); }();
+}
+void immediate_nested() {
+  Plain source(3, 5);
+  [&]() { [&]() { Plain target(source); }(); }();
+}
+void named_outer_immediate_inner() {
+  Plain source(3, 5);
+  auto outer = [&]() { [&]() { Plain target(source); }(); };
+  outer();
+}
+template<class F> void consume_capture(F function) { function(); }
+void passed_reference() {
+  Plain source(3, 5);
+  consume_capture([&]() { Plain target(source); });
+}
+auto returned_reference() {
+  Plain source(3, 5);
+  return [&]() { Plain target(source); }; // never executed by tests
+}

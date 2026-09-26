@@ -593,3 +593,19 @@ by-reference capture只按已检查的原生边及立即调用路径分类，不
 普通局部copy无需绑定按值形参才能进入此效果分类；`parameter_target`是独立义务。
 主v1状态仍只表示显式引用闭合，不因新增效果未知而改写。未来历史组合必须分别
 要求效果和顺序子报告checked，并另行处理尚未解除的动态义务。
+
+## 以源码调用链替代 closure 来源假设
+
+`capture_source_check.check` 新增 `capture-source-assumptions/v2` 输入协议，
+输出 `capture-source-check/v2`。与v1唯一的协议键差异是移除
+`closure_instances_from_recorded_lambdas_assumed`；v2若仍携带此键则unknown。
+root/copy/source绑定、ABI，以及alive、same-activation、source-valid前提仍必需。
+v1保持原条件身份结论，不自动迁移或冒充源码证明。
+
+v2对原生reference capture链的每层lambda重新执行立即调用检查，核对closure
+声明和root hash，并在该copy唯一语义祖先路径上确认call→lambda→body关系。
+不遍历closure record中的重复body作为额外执行，不把捕获初始化器当成新lambda
+的body；具名、传出、返回或嵌套外层非立即调用的closure不在支持范围。
+成功时identity_completion不再列出origin布尔，来源由closure_origin子报告承载。
+该结论以copy被求值为条件；不证明该copy可达、执行次数、对象仍活着或值保持。
+现有object_use_closure可直接消费v2协议，不接受外部成功子报告替代fresh检查。

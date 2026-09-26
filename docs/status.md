@@ -2,6 +2,17 @@
 
 更新日期：2026-09-26。
 
+## 用真实调用链替代closure来源假设
+
+capture-source-assumptions/v2不再接受closure来源布尔。既有checker在copy的
+唯一语义祖先链上逐层fresh核验立即lambda receiver与closure声明，才给出
+条件来源结论；alive、same-activation和source-valid仍为外部前提。
+v1保持原含义。真实具名/传出/返回及外层非立即调用均unknown，捕获初始化器
+与lambda body明确区分；object_use_closure已用v2做真实跨层回归。
+665项CPU、189项Clang专项及demo通过。固定完整vLLM TU的v2重放正在执行，
+尚未取得终态，不把历史v1结果计入本次成功。见
+`.agents/handoffs/wb04-capture-origin-20260926.md`；运行期间冻结src。
+
 ## 显式源引用的复制效果组合
 
 `object_use_closure.source_reference_use_effects` 汇总所有fresh direct/captured

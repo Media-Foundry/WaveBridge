@@ -80,6 +80,22 @@ class ObjectUseClosureClangTests(unittest.TestCase):
                              "direct_copies": 0, "captured_copies": 3, "lambdas": 4})
                 self.assertEqual(report["counts"], expected)
 
+    def test_composition_accepts_source_checked_origin_without_origin_boolean(self):
+        for name in ("three_branches", "captured_by_value_flow"):
+            source, protocols = self.inputs(name, self.payload)
+            for protocol in protocols.values():
+                protocol["schema_version"] = "capture-source-assumptions/v2"
+                del protocol["closure_instances_from_recorded_lambdas_assumed"]
+            with self.subTest(name=name):
+                report = check(self.payload, source["id"], ABI, {}, protocols)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["source_order"]["status"], "checked")
+                self.assertEqual(report["source_reference_use_effects"]["status"], "checked")
+                for capture in report["capture_checks"]:
+                    self.assertEqual(capture["closure_origin"]["status"], "checked")
+                    self.assertNotIn("closure_instances_from_recorded_lambdas_assumed",
+                                     capture["identity_completion"]["premises"])
+
     def test_writes_aliases_and_addresses_are_not_closed_uses(self):
         for name in ("direct_write", "write_inside_lambda", "write_in_other_branch",
                      "reference_alias", "cast_alias", "address_escape"):

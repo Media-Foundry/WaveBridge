@@ -1,8 +1,9 @@
 """Conditionally bind a copied object lvalue through native reference captures.
 
 The native capture envelope is trusted frontend evidence from one ASTContext.
-This checker does not establish that a lambda is invoked, that the source value
-is preserved, or that any launch has the claimed semantics.
+V2 checks the immediate receiver paths conditional on copy evaluation instead
+of assuming closure origin. Neither version proves reachability, source value
+preservation, or launch semantics.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from typing import Any
 from wavebridge.record_copy_check import check as check_record_copy
 from wavebridge.verification.integer_selection import _hash
 from wavebridge.verification.kernel_arguments import _Unknown
+from wavebridge.verification.lambda_invocation import check as check_lambda_invocation
 
 
 MAX_AST_NODES = 1_000_000
@@ -25,6 +27,7 @@ _PROTOCOL_KEYS = {
     "source_and_closures_share_recorded_activation_assumed",
     "source_program_valid_assumed", "evidence_reference",
 }
+_ORIGIN_PREMISE = "closure_instances_from_recorded_lambdas_assumed"
 
 
 def _children(node: object, *, strict: bool = False) -> list[dict[str, Any]]:
@@ -79,8 +82,10 @@ def _template_markers(node: dict[str, Any]) -> bool:
 def check(payload: object, copy_expression_id: object, integer_types: object,
           protocol: object, *, max_ast_nodes: int | None = None) -> dict[str, Any]:
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    source_origin = isinstance(protocol, dict) and protocol.get("schema_version") == "capture-source-assumptions/v2"
     result: dict[str, Any] = {
-        "schema_version": "capture-source-check/v1", "status": "unknown", "reason": None,
+        "schema_version": "capture-source-check/v2" if source_origin else "capture-source-check/v1",
+        "status": "unknown", "reason": None,
         "copy_expression_id": copy_expression_id, "source_declaration_id": None,
         "copy_check": None, "capture_chain": [],
         "source_object_identity": "not_established",
@@ -106,6 +111,10 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
             "note": "node limits bound individual fresh AST scans, not total execution time",
         },
     }
+    if source_origin:
+        result["assumptions"].remove("the evaluated closure instances originate from the recorded lambda expressions")
+        result["closure_origin"] = {"status": "unknown", "invocation_checks": [],
+                                    "scope": "recorded_lambda_receivers_on_copy_evaluation_path"}
     if type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES:
         result["reason"] = "invalid_ast_node_budget"
         return result
@@ -159,13 +168,15 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
 
     try:
         evidence = protocol.get("evidence_reference")
-        if (set(protocol) != _PROTOCOL_KEYS or
-                protocol.get("schema_version") != "capture-source-assumptions/v1" or
+        expected_keys = _PROTOCOL_KEYS - {_ORIGIN_PREMISE} if source_origin else _PROTOCOL_KEYS
+        expected_version = "capture-source-assumptions/v2" if source_origin else "capture-source-assumptions/v1"
+        if (set(protocol) != expected_keys or
+                protocol.get("schema_version") != expected_version or
                 protocol.get("root_sha256") != root_hash or
                 protocol.get("copy_expression_id") != copy_expression_id or
                 protocol.get("source_declaration_id") != source_id or
                 protocol.get("source_initialized_alive_assumed") is not True or
-                protocol.get("closure_instances_from_recorded_lambdas_assumed") is not True or
+                (not source_origin and protocol.get(_ORIGIN_PREMISE) is not True) or
                 protocol.get("source_and_closures_share_recorded_activation_assumed") is not True or
                 protocol.get("source_program_valid_assumed") is not True or
                 not isinstance(evidence, str) or not evidence.strip()):
@@ -192,14 +203,16 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
         target_occurrences: list[tuple[dict[str, Any], tuple[str, ...], str | None, bool]] = []
         source_occurrences: list[tuple[dict[str, Any], tuple[str, ...], str | None, bool]] = []
         path_nodes = 0
+        target_paths = []
 
         def walk(node: dict[str, Any], lambda_path: tuple[str, ...],
-                 function_id: str | None, template_context: bool) -> None:
+                 function_id: str | None, template_context: bool, ancestors=()) -> None:
             nonlocal path_nodes
             path_nodes += 1
             if path_nodes > budget:
                 raise _Unknown("body_path_node_budget_exceeded")
             kind = node.get("kind")
+            path = ancestors + (node,)
             here_template = template_context or str(kind).endswith("TemplateDecl") or _template_markers(node)
             here_function = function_id
             if kind in {"FunctionDecl", "CXXMethodDecl", "CXXConstructorDecl",
@@ -208,13 +221,14 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
                 here_function = node_id if isinstance(node_id, str) else None
             if node.get("id") == copy_expression_id:
                 target_occurrences.append((node, lambda_path, here_function, here_template))
+                target_paths.append(path)
             if node.get("id") == source_id and kind == "VarDecl":
                 source_occurrences.append((node, lambda_path, here_function, here_template))
 
             children = _children(node)
             if kind != "LambdaExpr":
                 for child in children:
-                    walk(child, lambda_path, here_function, here_template)
+                    walk(child, lambda_path, here_function, here_template, path)
                 return
             lambda_id = node.get("id")
             if not isinstance(lambda_id, str) or not lambda_id:
@@ -228,8 +242,8 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
             for child in children:
                 if child is closures[0] or child is bodies[0]:
                     continue
-                walk(child, lambda_path, here_function, here_template)
-            walk(bodies[0], lambda_path + (lambda_id,), here_function, here_template)
+                walk(child, lambda_path, here_function, here_template, path)
+            walk(bodies[0], lambda_path + (lambda_id,), here_function, here_template, path)
 
         walk(root, (), None, False)
         if not target_occurrences:
@@ -333,6 +347,34 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
                 "relation": "conditional_reference_to_same_source_dynamic_object",
             })
 
+        if source_origin:
+            if len(target_paths) != 1:
+                raise _Unknown("closure_origin_copy_path_not_unique")
+            path = target_paths[0]
+            previous_body = -1
+            for edge in chain:
+                invocation = check_lambda_invocation(root, edge["lambda_id"], max_ast_nodes=budget)
+                result["closure_origin"]["invocation_checks"].append(invocation)
+                if (invocation.get("status") != "checked" or
+                        invocation.get("lambda_id") != edge["lambda_id"] or
+                        invocation.get("closure_declaration_id") != edge["closure_declaration_id"] or
+                        invocation.get("input_sha256", {}).get("root") != root_hash):
+                    raise _Unknown("fresh_closure_origin_invocation_not_checked")
+                positions = [i for i, node in enumerate(path) if node.get("kind") == "LambdaExpr"
+                             and node.get("id") == edge["lambda_id"]]
+                if len(positions) != 1:
+                    raise _Unknown("closure_origin_lambda_not_on_unique_copy_path")
+                position = positions[0]
+                calls = [i for i, node in enumerate(path[:position])
+                         if node.get("kind") == "CXXOperatorCallExpr" and
+                         node.get("id") == invocation.get("call_expression_id")]
+                if (len(calls) != 1 or calls[0] <= previous_body or
+                        position + 1 >= len(path) or path[position + 1].get("kind") != "CompoundStmt"):
+                    raise _Unknown("closure_origin_call_not_on_copy_body_path")
+                previous_body = position + 1
+            result["closure_origin"]["status"] = "checked"
+            result["lambda_invocation"] = "fresh_immediate_receiver_paths_conditioned_on_copy_evaluation"
+
         result.update(
             status="checked", capture_chain=chain,
             source_object_identity="conditional_same_dynamic_object_at_copy_evaluation",
@@ -342,7 +384,7 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
                 "copy_expression_id": copy_expression_id,
                 "premises": [
                     "source_initialized_alive_assumed",
-                    "closure_instances_from_recorded_lambdas_assumed",
+                    *([] if source_origin else [_ORIGIN_PREMISE]),
                     "source_and_closures_share_recorded_activation_assumed",
                     "source_program_valid_assumed",
                 ],
