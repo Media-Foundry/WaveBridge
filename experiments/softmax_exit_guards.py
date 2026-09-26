@@ -4,13 +4,13 @@ import json
 from pathlib import Path
 
 from experiments.pytorch_softmax_intake import implementation_hashes, sha, walk
-from wavebridge.verification.loop_exit_guards import inspect_structure
+from wavebridge.verification.loop_exit_guards import inspect_structure, check_prefix_values
 
 NATIVE_SHA = "317b1a438bc13845cf76b5aa7461db4db2081b402c457a85c4160fdd7257c027"
 RECOVERY_SHA = "31a6570762225ea247f24b799be28ebd51f3dab13e562e32cccb8e305d764f67"
 
 
-def run(native, recovery, output):
+def run(native, recovery, output, *, prefix_values=False):
     if sha(native) != NATIVE_SHA or sha(recovery) != RECOVERY_SHA:
         raise ValueError("fixed_input_mismatch")
     if output.exists():
@@ -34,7 +34,8 @@ def run(native, recovery, output):
         matches = [node for node in loops if node.get("range") == previous["range"]]
         if len(matches) != 1:
             raise ValueError("loop_selection_not_unique")
-        checked = inspect_structure(root, matches[0]["id"])
+        checker = check_prefix_values if prefix_values else inspect_structure
+        checked = checker(root, matches[0]["id"])
         checks.append({"loop_range": previous["range"], "check": checked})
     if not checks:
         raise ValueError("no_remaining_exit_loops")
@@ -47,9 +48,12 @@ def run(native, recovery, output):
               "driver_dependencies": helpers,
               "inputs_unchanged": before == after and sha(native) == NATIVE_SHA and sha(recovery) == RECOVERY_SHA
               and all(sha(path) == digest for path, digest in helpers.items())}
+    if prefix_values:
+        report["schema_version"] = "softmax-exit-prefix-development/v1"
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"checks": [{"status": item["check"]["status"], "reason": item["check"]["reason"],
-                                  "pattern": item["check"].get("pattern")} for item in checks],
+                                  "pattern": item["check"].get("pattern", item["check"].get("partition_check", {}).get("pattern"))}
+                                 for item in checks],
                       "sha256": sha(output), "inputs_unchanged": report["inputs_unchanged"]}))
 
 
@@ -58,5 +62,6 @@ if __name__ == "__main__":
     parser.add_argument("--native", type=Path, required=True)
     parser.add_argument("--recovery", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--prefix-values", action="store_true")
     args = parser.parse_args()
-    run(args.native, args.recovery, args.output)
+    run(args.native, args.recovery, args.output, prefix_values=args.prefix_values)

@@ -2,6 +2,16 @@
 
 更新日期：2026-09-27。
 
+## 退出guard的前缀值关系
+
+check_prefix_values从完整AST重新检查退出分区和纯自动int初始化链，将guard
+引用连接到有序值DAG，不做代数重排。固定softmax内层element_index已连接到
+local_idx + it * WARP_SIZE，外层空prefix同样checked；结论仅为prefix后的
+条件值关系及已有对象不被prefix写入。header/work/溢出域与跨迭代稳定性仍
+未建立，历史6/8循环恢复不升级。见[实录](../experiments/exit-prefix-evidence-20260927.md)。
+完整1039项测试通过（69.163秒，native插件启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增4项真实Clang回归并复核；无GPU，远端CI未核验。
+
 ## 提前退出结构与上下文绑定
 
 新增loop_exit_guards检查直接退出guard分区，区分首句true-break与末句else-break，

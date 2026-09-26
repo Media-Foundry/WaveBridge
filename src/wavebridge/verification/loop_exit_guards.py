@@ -2,7 +2,7 @@
 from wavebridge.verification.builtin_calls import _children, _typed, _Unknown
 from wavebridge.verification.getter_returns import _hash
 from wavebridge.verification.scalar_expression_effects import (
-    check_no_memory_write, MAX_AST_NODES, HARD_MAX_AST_NODES)
+    check_no_memory_write, _type, MAX_AST_NODES, HARD_MAX_AST_NODES)
 
 BREAK_OWNERS = {"ForStmt", "WhileStmt", "DoStmt", "CXXForRangeStmt", "SwitchStmt"}
 UNSUPPORTED_JUMPS = {"ContinueStmt", "ReturnStmt", "GotoStmt", "IndirectGotoStmt",
@@ -149,5 +149,112 @@ def inspect_structure(root, loop_id, *, max_ast_nodes=None):
     except _Unknown as error:
         result["reason"] = str(error)
     except (TypeError, ValueError, KeyError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
+def check_prefix_values(root, loop_id, *, max_ast_nodes=None):
+    """Connect pure scalar prefix initializers to guard values, without a loop proof."""
+    partition = inspect_structure(root, loop_id, max_ast_nodes=max_ast_nodes)
+    result = {"schema_version": "loop-exit-prefix-values/v1", "status": "unknown", "reason": None,
+              "scope": "exit_guard_values_after_restricted_prefix", "partition_check": partition,
+              "prefix_values": [], "prefix_preserves_existing_objects": "not_established",
+              "source_program_checked": False, "deployable": False,
+              "full_iteration_domain_established": False, "loop_header_checked": False,
+              "work_effects_checked": False, "cross_iteration_stability_checked": False,
+              "assumptions": list(partition["assumptions"]),
+              "limitations": ["typed expression DAG preserves operation order; it is not unbounded-integer algebra",
+                              "external reads are values at prefix entry, not proven constant across iterations",
+                              "prefix executes even on a break iteration; header, work and overflow domains remain unproved"],
+              "budget": {"max_prefix_declarations": 64, "max_expression_depth": 64}}
+    if partition["status"] != "checked":
+        result["reason"] = "exit_partition_not_checked"
+        return result
+    try:
+        # The fresh partition already bounded and validated this entire AST.
+        index, pending = {}, [root]
+        while pending:
+            node = pending.pop()
+            if isinstance(node.get("id"), str):
+                index.setdefault(node["id"], []).append(node)
+            pending.extend(node.get("inner", []))
+        loop = index[loop_id][0]
+
+        def unique(node):
+            identifier = node.get("id")
+            if not isinstance(identifier, str) or len(index.get(identifier, [])) != 1 or index[identifier][0] is not node:
+                raise _Unknown("prefix_identity_not_unique")
+            return identifier
+
+        declarations = []
+        for binding in partition["prefix_statement_bindings"]:
+            node = loop
+            for position in binding["loop_relative_child_path"]:
+                node = node["inner"][position]
+            if node.get("kind") != "DeclStmt" or len(_children(node)) != 1:
+                raise _Unknown("prefix_not_single_declaration_statement")
+            variable = _children(node)[0]
+            if (variable.get("kind") != "VarDecl" or _type(variable) not in {"int", "const int"}
+                    or variable.get("storageClass") not in (None, "auto", "register")
+                    or variable.get("tls") is not None or variable.get("thread_local") is not None
+                    or variable.get("init") is None or len(_children(variable)) != 1):
+                raise _Unknown("prefix_not_automatic_initialized_int")
+            unique(variable)
+            declarations.append(variable)
+        if len(declarations) > 64:
+            raise _Unknown("prefix_declaration_budget_exceeded")
+        prefix_ids = {node["id"] for node in declarations}
+        available, external_reads = set(), set()
+
+        def term(node, depth=0):
+            if depth > 64:
+                raise _Unknown("prefix_expression_depth_exceeded")
+            children = _children(node)
+            kind = node.get("kind")
+            if kind == "ParenExpr" and len(children) == 1:
+                return term(children[0], depth + 1)
+            if (kind == "ImplicitCastExpr" and node.get("castKind") == "LValueToRValue"
+                    and len(children) == 1):
+                value = children[0]
+                while value.get("kind") == "ParenExpr" and len(_children(value)) == 1:
+                    value = _children(value)[0]
+                if value.get("kind") != "DeclRefExpr" or _children(value):
+                    raise _Unknown("prefix_value_read_not_scalar_declaration")
+                identifier = value["referencedDecl"]["id"]
+                if identifier in prefix_ids:
+                    if identifier not in available:
+                        raise _Unknown("prefix_reads_self_or_later_declaration")
+                    return {"kind": "prefix_value", "type": "int", "declaration_id": identifier}
+                external_reads.add(identifier)
+                return {"kind": "read", "type": "int", "declaration_id": identifier}
+            if kind == "IntegerLiteral" and not children:
+                return {"kind": "literal", "type": "int", "value": int(node["value"])}
+            if kind == "BinaryOperator" and node.get("opcode") in {"+", "-", "*", "/", "%"} and len(children) == 2:
+                return {"kind": "binary", "type": "int", "opcode": node["opcode"],
+                        "operands": [term(child, depth + 1) for child in children]}
+            if kind == "UnaryOperator" and node.get("opcode") in {"+", "-"} and len(children) == 1:
+                return {"kind": "unary", "type": "int", "opcode": node["opcode"],
+                        "operands": [term(children[0], depth + 1)]}
+            raise _Unknown("prefix_value_expression_unsupported")
+
+        for variable in declarations:
+            initializer = _children(variable)[0]
+            checked = check_no_memory_write(root, unique(initializer), max_ast_nodes=max_ast_nodes)
+            item = {"declaration_id": variable["id"], "initializer_id": initializer["id"], "initializer_check": checked}
+            result["prefix_values"].append(item)
+            if checked["status"] != "checked" or checked.get("result_type") != "int":
+                raise _Unknown("prefix_initializer_not_checked_int")
+            item["expression"] = term(initializer)
+            result["assumptions"].extend(checked["assumptions"])
+            available.add(variable["id"])
+        guard = partition["guard_ast"]
+        expression = {"opcode": guard["opcode"], "operands": [term(node) for node in _children(guard)]}
+        result.update(status="checked", guard_value_expression=expression,
+                      prefix_preserves_existing_objects="conditional", external_read_declaration_ids=sorted(external_reads),
+                      input_sha256=partition["input_sha256"], break_when=partition["break_when"],
+                      work_when=partition["work_when"])
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, KeyError, RecursionError, IndexError):
         result["reason"] = "unsupported_input_representation"
     return result

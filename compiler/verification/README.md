@@ -1074,3 +1074,17 @@ break/prefix/work语句绑定为`完整root哈希 + 唯一loop ID + loop_relativ
 （路径索引包括AST的空占位），statement ID只作为辅助信息，不能独立定位。
 这个语句位置规则不放宽guard、操作数和变量声明的语义身份检查，也不把不同
 实例的变量或动态迭代合并。任何下游消费必须保留上下文绑定。
+
+`loop_exit_guards.check_prefix_values(root, loop_id)` fresh执行分区检查，再连接
+guard前最多64条单变量自动int/const int初始化。每个initializer单独检查无写，
+拒绝reference/static/TLS/volatile、赋值、自增、调用、自读取及后定义读取。
+空prefix同样支持；一条DeclStmt多个变量暂不支持。
+
+报告prefix_values保存有序值定义，guard_value_expression使用prefix_value
+引用形成DAG；外部read以精确声明ID绑定prefix入口值。加减乘除/余数等保留
+源码的typed操作树，不折叠或重排为无界整数代数，也不复制展开成指数大小。
+每个定义检查完成后才可被后续定义引用；guard使用本次重新推导的定义。
+
+成功仅在声明的正常、有效求值前提下建立prefix后的guard值关系，以及不写入
+已有对象（只初始化新局部对象）。不证明工作分支保持状态、循环头正确、整数
+范围/溢出安全或跨迭代常量性，更不能据此直接推出完整访问覆盖或删除break。
