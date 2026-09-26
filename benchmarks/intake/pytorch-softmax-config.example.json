@@ -1,0 +1,15 @@
+{
+  "compiler": "/opt/AMD/aocc-compiler-5.1.0/bin/clang-17",
+  "torch_include": "artifacts/wb03-vllm-holdout-GqLQJo/torch251/torch/include",
+  "compiler_args": [
+    "-std=c++17", "-DC10_CUDA_NO_CMAKE_CONFIGURE_FILE",
+    "--cuda-device-only", "--cuda-gpu-arch=sm_80",
+    "--cuda-path=artifacts/toolchains/cuda-view-Zt5WBj",
+    "-Iartifacts/wb03-vllm-holdout-GqLQJo/torch251/torch/include",
+    "-Iartifacts/toolchains/cuda-12.1-wheels/nvidia/cuda_nvcc/include",
+    "-Iartifacts/toolchains/curand-10.3.2.56-wheel/nvidia/curand/include",
+    "-Iartifacts/toolchains/cccl-12.1.55-wheel/nvidia/cuda_cccl/include",
+    "-Iartifacts/toolchains/libcudacxx-1.9.0/include",
+    "-ferror-limit=3"
+  ]
+}

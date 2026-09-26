@@ -2,6 +2,30 @@
 
 更新日期：2026-09-27。
 
+## PyTorch persistent softmax 新 target 冻结评估
+
+以ee10c5d冻结全部源码分析实现，实际采集PyTorch v2.5.1固定提交的未修改
+PersistentSoftmax.cuh加公开实例化harness。原dispatch不变，预选float/128/
+nonmasked/nonlog一个实例；仅声明外部warp_size，不提供返回值。完整harness
+TU CUDA AST、518项同次依赖和toolchain trace均采集成功，但不是生产SoftMax.cu。
+
+真实恢复：8个循环均unknown（边界常量无法解析）；归约发现0候选、12个
+未解析调用；launch仅发现1个语法site，不建立host配置值或整核语义。追加
+诊断定位`<<`及条件常量表达式尚不支持；不是源码错误。本轮没有修改分析器
+以迁就结果，没有GPU/候选/数值实验，corpus已验收案例数保持1。
+
+PyTorch headers此前作为vLLM依赖暴露，不能称blind holdout或严格谱系隔离。
+这是新target首次冻结评估；G1/G2及完整适配仍未通过。首次报告保留，复核后
+加强driver/config/protocol与实际header依赖绑定再重放，结论一致。
+详见 [实录](../experiments/pytorch-softmax-evidence-20260927.md)，最终报告
+artifacts/wb-pytorch-softmax-KhwXBa/attempt-02/report.json，SHA256：
+`3a39162609eddcdd6a144749bc59b1e3fa895d7fe144cef7f7ef8d3db728d5cc`。
+
+新增10项评估driver单元测试（fixture不算真实语料）；完整903项CPU测试通过
+（65.559秒，匹配native插件启用，无跳过），demo及diff检查通过。
+GPT-5.6 Sol只读核查来源/暴露边界及执行记录；不能据本次unknown声称新方法
+已具备跨算子泛化。下一步优先针对通用常量表达式缺口，保留本次冻结负结果。
+
 ## 固定设备对象的显式 HIP module 回放
 
 新增一次性固定工件入口 `experiments/module_replay.py`，仅接受已封存的

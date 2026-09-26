@@ -10,6 +10,10 @@
 [intake协议](intake/vllm-rmsnorm-protocol.md)及原始工件中。此后它已反复用于
 分析器开发和调试，当前属于开发反馈输入，不能把后续结果算作新的未见holdout。
 它尚未以完备执行案例收入corpus.json；当前登记数量不因此增加。
+PyTorch persistent softmax的[首次冻结评估](intake/pytorch-softmax-protocol.md)
+已记录新target的8个循环unknown、0归约候选和1个launch语法site。
+其依赖树此前已用于vLLM编译，不能称blind/严格谱系隔离；输入为未修改上游
+header加实例化harness，不是完整生产TU，也未构成第二个可执行corpus案例。
 `intake/`记录是人工筛选资料，不是自动恢复器的关系输入或oracle。
 
 ## 纳入语料
