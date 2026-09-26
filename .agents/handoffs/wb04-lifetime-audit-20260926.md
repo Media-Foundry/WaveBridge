@@ -1,7 +1,8 @@
 # 生命周期前提审计
 
 - 2026-09-26，wb03-source-ast，基线f665cd2；源码冻结不变。
-- 原v3重放session2874/PID231726仍存活，约6分35秒；未重启，终态仍待收取。
+- 审计时原v3重放session2874/PID231726存活；随后已退出0，终态及hash见
+  wb04-capture-activation-20260926.md。未重启，源码冻结已解除。
 - 与Sol只读复核共同定位：外层source引用闭合不约束copy ctor内部经参数产生
   的析构/重建；当前local_copy_effects在值checker之后且以live/readable为条件，
   不能循环用其checked解除alive。先前“只凭外层引用闭合、作用域和初始化”
@@ -51,5 +52,5 @@ copy_constructor_body_or_member_shape_unsupported。当前工具正确拒绝，�
 已证明不重叠。不透明调用的非标准栈探测/伪造地址能力仍未建模；普通source-valid
 条件不能自动排除所有实现扩展。不得添加value_preserved/noalias同义假设。
 
-本轮只写证据和状态文档，git diff --check；未改src，未运行GPU。下一轮先
-收取v3原任务终态与77个实现hash，再开始结构效果重构。
+本轮只写证据和状态文档，git diff --check；未改src，未运行GPU。
+v3原任务终态与77个实现hash已核验，可开始结构效果重构。

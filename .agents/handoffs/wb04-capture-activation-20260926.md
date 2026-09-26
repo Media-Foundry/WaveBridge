@@ -25,14 +25,21 @@ discover -s tests -p '*clang*.py'。
 coroutine形状是合成AST边界测试，不计为真实C++20 coroutine执行。顶层
 object_use_closure跨层正例分别用v2/v3执行。没有GPU执行。
 
-## 完整TU重放（待收取）
+## 完整TU重放结果
 
 命令WAVEBRIDGE_JSON_HASH_MODE=one-shot PYTHONPATH=src python3 artifacts/wb-capture-activation-AunFA6/check.py。
-exec session2874；已核实PID231726存活。run.log为日志，report.json为终态工件。
+exec session2874已退出0，PID231726已结束。run.log为日志，report.json为终态工件。
 固定完整原生TU SHA256 f80432e744686fdc1390308073a3cd7e1b1d1ba5afd065198dcc292ab21ee9ee。
 从原协议仅迁移版本和删除origin/activation布尔，其余外部条件不改；不读取旧
-成功子报告。fresh检查全部链，前后核对77个实现文件哈希。当前尚无终态，不能
-把上一v2结果冒充v3通过。运行期间禁止改src，不因观察超时重启。
+成功子报告。fresh检查全部链，前后77个实现文件哈希一致，并通过sha256sum
+--check复核当前源码匹配。源码冻结已解除；没有重启任务。
+耗时662.0844317199953秒；主引用闭合、source_order、use-effects均checked。
+3个capture-source-check/v3及closure_origin全部checked；activation精确绑定
+function0x3736fa78、body0x373938c8、source DeclStmt0x37370ea0。
+每份最终premises仅保留source_initialized_alive_assumed/source_program_valid_assumed。
+报告SHA256：399c710c1478aceb8476f6fe0aad917d77c29f03afd1d8bbcb99b1d520566ff5。
+这是fresh v3结果，不是把旧v2结果改标签；未执行GPU。
+f665cd2的远端CI36232126716已success。
 
-下一步先核验该任务终态；之后才处理alive/初始化完成与生命周期义务，不直接
+任务终态已核验；下一步处理alive/初始化完成与生命周期义务，不直接
 删除剩余假设或把历史值保持宣称完成。中文、直接commit/push，无PR。

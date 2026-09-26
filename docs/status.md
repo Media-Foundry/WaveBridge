@@ -10,7 +10,7 @@ const引用参数析构并placement-new重建source。CPU两次copy字段和为1
 这不是当前checker错误放行，而是否定“仅靠外层引用闭合即可解除alive”的捷径。
 下一项应先独立检查不依赖live/readable值前提的copy构造器结构效果，避免用带
 alive假设的copy成功报告反向证明alive。源码未改、没有GPU执行，详见
-`.agents/handoffs/wb04-lifetime-audit-20260926.md`。v3完整TU重放仍在运行。
+`.agents/handoffs/wb04-lifetime-audit-20260926.md`。v3完整TU重放已结束，见下项。
 
 ## 从源码绑定同次包围函数求值
 
@@ -19,8 +19,11 @@ source、唯一普通函数的同一CompoundStmt body、reference capture链和f
 立即receiver祖先链。v1/v2不变，alive及源码有效性仍是外部前提。
 普通递归立即调用保持支持，CPU深度0～4均复制当前调用的source值；具名/传出/
 返回/外层by-copy等负例unknown，coroutine形状保守拒绝（此项为合成AST测试）。
-669项CPU、193项Clang及demo通过。完整vLLM v3重放已启动、尚未取得终态，
-执行期间冻结src。见 `.agents/handoffs/wb04-capture-activation-20260926.md`。
+669项CPU、193项Clang及demo通过。完整vLLM v3重放退出0，三个配置复制点
+的来源/同次调用检查均checked，顺序及效果组合仍checked；最终仅保留alive
+和source-valid前提。耗时662.08秒，77个实现哈希前后一致并与当前源码匹配，
+源码冻结解除。f665cd2远端CI已success；未运行GPU。见
+`.agents/handoffs/wb04-capture-activation-20260926.md`。
 
 ## 用真实调用链替代closure来源假设
 
