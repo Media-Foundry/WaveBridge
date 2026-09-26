@@ -169,8 +169,9 @@ def _local_record_cleanup_scopes(payload, root_hash, semantic_paths, semantic_id
     return result
 
 
-def _copy_cleanup_observations(payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget):
-    """Bind native flags for enclosing wrappers, not all destructor events."""
+def _copy_cleanup_observations(payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget,
+                               *, selected_wrapper_paths=None):
+    """Bind native flags for selected wrappers (ancestors by default)."""
     result = {
         "schema_version": "copy-enclosing-cleanup-observations/v1",
         "status": "unknown", "reason": None, "copies": [], "wrappers": [],
@@ -185,6 +186,10 @@ def _copy_cleanup_observations(payload, root_hash, semantic_paths, semantic_ids,
             "getNumObjects is not the number of C++ temporary destructor events",
         ],
     }
+    if selected_wrapper_paths is not None:
+        result.update(schema_version="preceding-expression-cleanups/v1",
+                      scope="native_flags_for_selected_lexically_preceding_ExprWithCleanups",
+                      execution_order_and_reachability="not_established")
     try:
         wrappers = {}
         for copy_id in sorted(copy_paths):
@@ -195,7 +200,9 @@ def _copy_cleanup_observations(payload, root_hash, semantic_paths, semantic_ids,
             if not path or path[-1].get("id") != copy_id:
                 raise _Unknown("cleanup_copy_semantic_path_missing")
             enclosing = []
-            for node in path[:-1]:
+            selected_path = (path[:-1] if selected_wrapper_paths is None else
+                             selected_wrapper_paths[copy_id])
+            for node in selected_path:
                 if node.get("kind") != "ExprWithCleanups":
                     continue
                 identifier = node.get("id")
@@ -208,7 +215,9 @@ def _copy_cleanup_observations(payload, root_hash, semantic_paths, semantic_ids,
                 enclosing.append(identifier)
             result["copies"].append({"copy_expression_id": copy_id, "wrapper_ids": enclosing})
         if not wrappers:
-            result.update(status="checked", relation="no_enclosing_ExprWithCleanups_on_selected_copy_paths",
+            result.update(status="checked", relation=(
+                "no_enclosing_ExprWithCleanups_on_selected_copy_paths" if selected_wrapper_paths is None else
+                "no_selected_preceding_ExprWithCleanups_in_supported_lexical_prefix"),
                           metadata_required=False)
             return result
         observations = payload.get("expression_cleanups")
@@ -248,12 +257,98 @@ def _copy_cleanup_observations(payload, root_hash, semantic_paths, semantic_ids,
                 "expression_id": identifier, "subexpression_id": children[0]["id"],
                 "num_objects": count, "cleanups_have_side_effects": effects,
             })
-        result.update(status="checked", relation="all_selected_enclosing_wrappers_have_supported_native_flags",
+        result.update(status="checked", relation=(
+            "all_selected_enclosing_wrappers_have_supported_native_flags" if selected_wrapper_paths is None else
+            "all_selected_preceding_wrappers_have_supported_native_flags"),
                       metadata_required=True)
     except _Unknown as error:
         result["reason"] = error.reason
     except (TypeError, ValueError, RecursionError):
         result["reason"] = "cleanup_input_hash_unsupported"
+    return result
+
+
+def _preceding_expression_cleanups(payload, root_hash, variable, semantic_paths,
+                                  semantic_ids, copy_paths, index, budget, source_order):
+    """Inspect lexical prefix wrappers; all other cleanup/effect duties remain."""
+    result = {
+        "schema_version": "preceding-expression-cleanups/v1", "status": "unknown", "reason": None,
+        "source_declaration_id": variable.get("id"), "root_sha256": root_hash,
+        "selection": [], "exclusions": [], "source_program_checked": False, "deployable": False,
+        "selection_semantics": "lexically_earlier_semantic_subtree_not_runtime_cleanup_order",
+        "all_destructor_events_covered": "not_established",
+        "execution_order_and_reachability": "not_established",
+        "source_value_preservation": "not_established",
+        "other_scope_destructors_and_cleanup_events": "not_established",
+        "callee_and_other_argument_effects": "not_established",
+    }
+    try:
+        if source_order.get("status") != "checked":
+            raise _Unknown("preceding_cleanup_source_order_not_checked")
+        source_path = semantic_paths[id(variable)]
+        declaration, scope = source_path[-2], source_path[-3]
+        statements = _children(scope, strict=True)
+        source_position = next(i for i, child in enumerate(statements) if child is declaration)
+        wrappers = [path for path in semantic_paths.values()
+                    if path[-1].get("kind") == "ExprWithCleanups"]
+        selected = {copy_id: [] for copy_id in copy_paths}
+        for copy_id in sorted(copy_paths):
+            occurrences = semantic_ids.get(copy_id, [])
+            if len(occurrences) != 1:
+                raise _Unknown("preceding_cleanup_copy_occurrence_not_unique")
+            copy_path = semantic_paths[id(occurrences[0])]
+            for wrapper_path in wrappers:
+                wrapper = wrapper_path[-1]
+                exclusion = {"copy_expression_id": copy_id, "wrapper_id": wrapper.get("id")}
+                if any(node is wrapper for node in copy_path):
+                    result["exclusions"].append({**exclusion, "reason": "selected_copy_ancestor",
+                                                  "separate_obligation": "copy_cleanup_observations"})
+                    continue # Dedicated ancestor cleanup child checks these.
+                scope_positions = [i for i, node in enumerate(wrapper_path) if node is scope]
+                if not scope_positions:
+                    result["exclusions"].append({**exclusion, "reason": "outside_source_declaration_scope"})
+                    continue # Outside the selected source declaration scope.
+                position = scope_positions[0]
+                if position + 1 >= len(wrapper_path):
+                    raise _Unknown("preceding_cleanup_wrapper_scope_path_invalid")
+                branch = wrapper_path[position + 1]
+                branch_position = next(i for i, child in enumerate(statements) if child is branch)
+                if branch_position <= source_position:
+                    result["exclusions"].append({**exclusion, "reason": (
+                        "source_initialization_scope" if branch_position == source_position else
+                        "before_source_declaration"), "separate_obligation": (
+                        "conditional_initialization" if branch_position == source_position else
+                        "prior_aliases_and_history_not_established")})
+                    continue # Source initialization has its own fresh check.
+                common = 0
+                while (common < min(len(wrapper_path), len(copy_path)) and
+                       wrapper_path[common] is copy_path[common]):
+                    common += 1
+                if (not common or common == len(wrapper_path) or common == len(copy_path) or
+                        wrapper_path[common - 1].get("kind") != "CompoundStmt"):
+                    result["unclassified_wrapper_id"] = wrapper.get("id")
+                    result["unclassified_copy_id"] = copy_id
+                    raise _Unknown("preceding_cleanup_relative_order_unsupported")
+                siblings = _children(wrapper_path[common - 1], strict=True)
+                left = next(i for i, child in enumerate(siblings) if child is wrapper_path[common])
+                right = next(i for i, child in enumerate(siblings) if child is copy_path[common])
+                if left < right:
+                    selected[copy_id].append(wrapper)
+                    result["selection"].append({"copy_expression_id": copy_id,
+                        "wrapper_id": wrapper.get("id"),
+                        "common_compound_id": wrapper_path[common - 1].get("id"),
+                        "wrapper_branch_position": left, "copy_branch_position": right})
+                else:
+                    result["exclusions"].append({**exclusion, "reason": "lexically_later"})
+        checked = _copy_cleanup_observations(
+            payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget,
+            selected_wrapper_paths=selected)
+        result.update(checked)
+        result["source_order_sha256"] = _hash(source_order)
+    except _Unknown as error:
+        result["reason"] = error.reason
+    except (TypeError, ValueError, KeyError, StopIteration, RecursionError):
+        result["reason"] = "preceding_cleanup_path_or_hash_invalid"
     return result
 
 
@@ -884,6 +979,8 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
             "status": "unknown", "reason": "explicit_use_structure_not_checked"},
         "local_record_cleanup_scopes": {
             "status": "unknown", "reason": "explicit_use_structure_not_checked"},
+        "preceding_expression_cleanups": {
+            "status": "unknown", "reason": "explicit_use_structure_not_checked"},
         "source_lifetime": "not_established",
         "source_object_preservation": "not_established",
         "reachability_and_execution_order": "not_established",
@@ -1016,6 +1113,7 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
             raise _Unknown("source_capture_set_not_exactly_covered_by_static_copy_chains")
 
         invocation_bindings = [invocation_by_lambda[key] for key in sorted(invocation_by_lambda)]
+        source_order = _source_order(variable, semantic_paths, semantic_ids, copy_paths, invocation_bindings)
         result.update(
             status="checked",
             explicit_source_references=reference_reports,
@@ -1026,8 +1124,7 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
             capture_structures=capture_structures,
             lambda_ids=sorted(covered_lambda_ids),
             lambda_invocation_bindings=invocation_bindings,
-            source_order=_source_order(
-                variable, semantic_paths, semantic_ids, copy_paths, invocation_bindings),
+            source_order=source_order,
             source_reference_use_effects=_reference_use_effects(
                 variable_id, root_hash, copy_paths, copy_structures,
                 capture_structures, structural=True),
@@ -1035,6 +1132,9 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
                 payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget),
             local_record_cleanup_scopes=_local_record_cleanup_scopes(
                 payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget),
+            preceding_expression_cleanups=_preceding_expression_cleanups(
+                payload, root_hash, variable, semantic_paths, semantic_ids, copy_paths, index, budget,
+                source_order),
             source_reference_count=len(reference_reports),
             capture_count=len(capture_summaries),
             copy_count=len(direct_copy_ids) + len(captured_copy_ids),

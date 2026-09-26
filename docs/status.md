@@ -2,6 +2,22 @@
 
 更新日期：2026-09-26。
 
+## 复制前词法表达式清理检查
+
+独立对象组合新增`preceding_expression_cleanups`，逐copy选择源声明之后的
+词法较早wrapper，复用祖先native标志检查；源初始化、祖先和较晚等排除项
+显式记录。standalone临时对象析构副作用不再仅落在祖先检查之外：新子项
+应保持unknown，父显式闭合与祖先子项仍可checked。无法按共同CompoundStmt
+判定位置时unknown，不按offset猜实参/分支执行顺序。
+此项不证明真实运行顺序、全部析构、生命周期、opaque调用效果或源值保持。
+未调用lambda的body也只是词法子树，不能被描述成析构已经执行。
+本轮未重新采集生产TU或运行GPU；生产前缀子项验收仍待完成。
+713项CPU、237项Clang专项和demo通过；46项对象闭合专项包含真实native正负例
+与CPU未调用lambda计数。49个真实源码函数×3协议共147份旧接口完整报告与
+d4ca05c相同；49份独立结构报告移除新增子项后也相同。最终实现SHA及完整比较
+保存于`artifacts/wb-prefix-cleanups-mT5eqr/compatibility.json`，不把fixture结果
+升级为生产覆盖或源码值保持。详见`.agents/handoffs/wb04-prefix-cleanups-20260926.md`。
+
 ## 局部record清理作用域的独立分类
 
 `object_use_closure.inspect_structure`新增`local_record_cleanup_scopes`子项：

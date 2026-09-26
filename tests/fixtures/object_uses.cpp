@@ -120,6 +120,32 @@ void standalone_temporary_before_copy() {
   SideEffectTemporary{};
   observe_value(source);
 }
+void scalar_cleanup_before_copy() {
+  Config source(3);
+  const int& scalar_temporary = 7;
+  (void)scalar_temporary;
+  observe_value(source);
+}
+void cleanup_between_two_copies() {
+  Config source(3);
+  observe_value(source);
+  const int& scalar_temporary = 7;
+  (void)scalar_temporary;
+  observe_value(source);
+}
+void cleanup_in_uncalled_lambda() {
+  Config source(3);
+  auto unused = [] { SideEffectTemporary{}; };
+  (void)unused;
+  observe_value(source);
+}
+void cleanup_in_opposite_if_branch(bool select_cleanup) {
+  Config source(3);
+  if (select_cleanup)
+    SideEffectTemporary{};
+  else
+    observe_value(source);
+}
 void ended_scope_before_copy() {
   Config source(3);
   { SideEffectTemporary local; }
@@ -234,6 +260,8 @@ int main() {
   if (cleanup_observation_count != 1 || observed_value != 3) return 5;
   ended_scope_before_copy();
   if (cleanup_observation_count != 2 || observed_value != 3) return 6;
+  cleanup_in_uncalled_lambda();
+  if (cleanup_observation_count != 2 || observed_value != 3) return 7;
   return 0;
 }
 #endif

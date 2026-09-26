@@ -57,6 +57,11 @@
 位置关系，不解除复制前清理、生命周期或历史值保持义务。旧工件缺字段时
 该子项unknown，不能推断无析构；清单完整性也未建立。
 
+`preceding_expression_cleanups`补充检查每个copy的词法前缀wrapper，复用相同
+native标志绑定逻辑。源初始化和copy祖先的排除项有显式记录，需消费其各自
+独立报告；不能因前缀子项checked覆盖祖先unknown。词法较早的lambda body
+不等于实际执行，非CompoundStmt分叉不猜先后，所有动态效果义务仍保留。
+
 ## 依赖规则
 
 - `ir` 只使用标准库，不能依赖候选生成、硬件或 CLI。

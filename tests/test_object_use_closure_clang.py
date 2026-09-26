@@ -181,6 +181,93 @@ class ObjectUseClosureClangTests(unittest.TestCase):
                                  "not_established")
                 self.assertEqual(report["source_object_preservation"], "not_established")
 
+    def test_preceding_cleanup_native_flags_are_independent_of_parent(self):
+        side_effect = self.run_structure("standalone_temporary_before_copy")
+        self.assertEqual(side_effect["status"], "checked", side_effect)
+        preceding = side_effect["preceding_expression_cleanups"]
+        self.assertEqual(preceding["status"], "unknown", preceding)
+        self.assertTrue(preceding["selection"])
+        self.assertEqual(side_effect["copy_cleanup_observations"]["status"], "checked")
+
+        scalar = self.run_structure("scalar_cleanup_before_copy")
+        self.assertEqual(scalar["status"], "checked", scalar)
+        preceding = scalar["preceding_expression_cleanups"]
+        self.assertEqual(preceding["status"], "checked", preceding)
+        self.assertTrue(preceding["selection"])
+        self.assertTrue(preceding["wrappers"])
+        self.assertTrue(all(row["cleanups_have_side_effects"] is False
+                            for row in preceding["wrappers"]))
+        for key in ("execution_order_and_reachability", "all_destructor_events_covered",
+                    "source_value_preservation"):
+            self.assertEqual(preceding[key], "not_established")
+
+    def test_preceding_cleanup_is_bound_per_copy(self):
+        report = self.run_structure("cleanup_between_two_copies")
+        self.assertEqual(report["status"], "checked", report)
+        preceding = report["preceding_expression_cleanups"]
+        self.assertEqual(preceding["status"], "checked", preceding)
+        self.assertEqual(len(report["direct_copy_expression_ids"]), 2)
+        selected_copies = {row["copy_expression_id"] for row in preceding["selection"]}
+        later_copies = {row["copy_expression_id"] for row in preceding["exclusions"]
+                        if row["reason"] == "lexically_later"}
+        self.assertEqual(len(selected_copies), 1)
+        self.assertEqual(len(later_copies), 1)
+        self.assertTrue(selected_copies.isdisjoint(later_copies))
+        self.assertEqual(selected_copies | later_copies,
+                         set(report["direct_copy_expression_ids"]))
+
+    def test_uncalled_lambda_cleanup_is_only_a_lexical_selection(self):
+        report = self.run_structure("cleanup_in_uncalled_lambda")
+        self.assertEqual(report["status"], "checked", report)
+        preceding = report["preceding_expression_cleanups"]
+        self.assertEqual(preceding["status"], "unknown", preceding)
+        self.assertTrue(preceding["selection"])
+        self.assertEqual(preceding["selection_semantics"],
+                         "lexically_earlier_semantic_subtree_not_runtime_cleanup_order")
+        self.assertEqual(preceding["execution_order_and_reachability"], "not_established")
+
+    def test_noncompound_cleanup_branch_is_unknown_without_offset_guessing(self):
+        report = self.run_structure("cleanup_in_opposite_if_branch")
+        self.assertEqual(report["status"], "checked", report)
+        preceding = report["preceding_expression_cleanups"]
+        self.assertEqual(preceding["status"], "unknown", preceding)
+        self.assertEqual(preceding["reason"], "preceding_cleanup_relative_order_unsupported")
+        self.assertIsInstance(preceding.get("unclassified_wrapper_id"), str)
+        self.assertIsInstance(preceding.get("unclassified_copy_id"), str)
+
+    def test_preceding_cleanup_metadata_is_freshly_bound(self):
+        function_name = "scalar_cleanup_before_copy"
+        function = next(n for n in _walk(self.payload["ast"])
+                        if n.get("kind") == "FunctionDecl" and n.get("name") == function_name)
+        wrappers = [n for n in _walk(function) if n.get("kind") == "ExprWithCleanups"]
+        self.assertEqual(len(wrappers), 1)
+        wrapper_id = wrappers[0]["id"]
+        for mutation in ("missing", "duplicate", "subexpression"):
+            payload = copy.deepcopy(self.payload)
+            records = payload["expression_cleanups"]
+            record = next(row for row in records if row["expression_id"] == wrapper_id)
+            if mutation == "missing":
+                records.remove(record)
+            elif mutation == "duplicate":
+                records.append(copy.deepcopy(record))
+            else:
+                record["subexpression_id"] = "unrelated"
+            with self.subTest(mutation=mutation):
+                report = self.run_structure(function_name, payload=payload)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["preceding_expression_cleanups"]["status"],
+                                 "unknown", report["preceding_expression_cleanups"])
+
+    def test_copy_ancestor_cleanup_remains_a_separate_obligation(self):
+        report = self.run_structure("side_effect_cleanup_copy")
+        self.assertEqual(report["status"], "checked", report)
+        self.assertEqual(report["copy_cleanup_observations"]["status"], "unknown")
+        preceding = report["preceding_expression_cleanups"]
+        self.assertEqual(preceding["status"], "checked", preceding)
+        self.assertTrue(any(row["reason"] == "selected_copy_ancestor" and
+                            row["separate_obligation"] == "copy_cleanup_observations"
+                            for row in preceding["exclusions"]))
+
     def test_independent_closure_never_calls_conditional_copy_or_identity(self):
         before = copy.deepcopy(self.payload)
         with patch("wavebridge.verification.object_use_closure.check_record_copy",

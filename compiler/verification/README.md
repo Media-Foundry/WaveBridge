@@ -588,6 +588,19 @@ one-shot会分配完整字符串与UTF-8字节缓冲区，仅适用于已评估�
 
 ## 包围复制点的原生清理观测
 
+独立入口还提供`preceding_expression_cleanups`：在fresh `source_order`成立后，
+逐copy选取源声明之后、在共同CompoundStmt的较早分支中的`ExprWithCleanups`。
+它复用祖先检查的native wrapper/subexpression精确绑定、count及布尔标志检查。
+源初始化、copy祖先wrapper、源声明前/域外以及词法较晚项分别记入exclusions，
+并保留相关独立义务；排除不是宣称它们已通过。缺metadata、错绑、native副作用
+标志true或无法按CompoundStmt排序的分叉保持unknown。
+
+“preceding”只指`lexically_earlier_semantic_subtree_not_runtime_cleanup_order`。
+例如未调用lambda里的wrapper可以被保守选入；不同调用实参、if/else分支或
+lambda创建与body之间不按AST child顺序猜测执行顺序。两个copy分别建立选择
+关系，不共享一个含混的全局前缀。即使子项checked，执行可达性、全部析构覆盖、
+其他作用域清理、callee效果及源值保持仍未建立；有限native标志不成为完整效果证明。
+
 独立`inspect_structure`另提供`local_record_cleanup_scopes`子报告，消费同次
 native局部record元数据并核对精确VarDecl、直接DeclStmt/CompoundStmt、完整
 record及直接析构声明。变量到record的类型关联仍是明确的可信前端假设，不是
