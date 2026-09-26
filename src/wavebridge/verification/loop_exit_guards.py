@@ -258,3 +258,50 @@ def check_prefix_values(root, loop_id, *, max_ast_nodes=None):
     except (TypeError, ValueError, KeyError, RecursionError, IndexError):
         result["reason"] = "unsupported_input_representation"
     return result
+
+
+def check_header_connection(root, loop_id, int_bits, *, max_ast_nodes=None):
+    """Bind original header induction to the guard DAG, not to its full domain."""
+    from wavebridge.analysis.column_loops import observe_header
+
+    header = observe_header(root, loop_id, int_bits, max_ast_nodes=max_ast_nodes)
+    result = {"schema_version": "loop-exit-header-connection/v1", "status": "unknown", "reason": None,
+              "scope": "header_induction_to_exit_guard", "header_check": header, "prefix_check": None,
+              "induction_guard_references": [], "source_program_checked": False, "deployable": False,
+              "full_iteration_domain_established": False, "work_effects_checked": False,
+              "cross_iteration_stability_checked": False,
+              "limitations": ["dependency identity alone does not imply monotonicity or an effective bound",
+                              "guard and header bound may be different objects",
+                              "body preservation, overflow and guarded iteration domain remain unproved"]}
+    if header["status"] != "observed":
+        result["reason"] = "header_not_observed"
+        return result
+    prefix = check_prefix_values(root, loop_id, max_ast_nodes=max_ast_nodes)
+    result["prefix_check"] = prefix
+    if prefix["status"] != "checked":
+        result["reason"] = "prefix_values_not_checked"
+        return result
+    if header["input_sha256"]["root"] != prefix["input_sha256"]["root"]:
+        result["reason"] = "input_changed_between_checks"
+        return result
+    induction = header["header"]["induction"]["declaration_id"]
+    definitions = {item["declaration_id"]: item["expression"] for item in prefix["prefix_values"]}
+    visited, pending = set(), [(prefix["guard_value_expression"], "guard", [])]
+    while pending:
+        node, owner, path = pending.pop()
+        if node.get("kind") == "read" and node["declaration_id"] == induction:
+            result["induction_guard_references"].append({"declaration_id": induction, "definition": owner,
+                                                       "operand_path": path})
+        if node.get("kind") == "prefix_value":
+            identifier = node["declaration_id"]
+            if identifier not in visited:
+                visited.add(identifier)
+                pending.append((definitions[identifier], identifier, []))
+        pending.extend((child, owner, path + [position]) for position, child in enumerate(node.get("operands", [])))
+    if not result["induction_guard_references"]:
+        result["reason"] = "guard_does_not_depend_on_induction"
+        return result
+    result.update(status="checked", induction_declaration_id=induction,
+                  input_sha256=header["input_sha256"],
+                  assumptions=header["assumptions"] + prefix["assumptions"])
+    return result

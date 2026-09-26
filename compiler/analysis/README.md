@@ -501,3 +501,15 @@ column-loop-recovery-with-external-calls/v1；body保持性及nested storage
 门槛。动态break、循环变量/边界写入、不透明调用仍不能因局部调用成功放行。
 数值与输入有效性前提保留在完整call_effect_checks子报告中；它们不是外部
 库性质证书，不能把recurrence恢复结果当作整核、数值或跨波宽保证。
+
+## 独立原始循环头观察
+
+`column_loops.observe_header(root, loop_id, int_bits)` 在完整TU选唯一ForStmt，
+复用既有header解析，成功返回observed而不是recovered。它不删除body或break，
+不构造修改后的AST，也不执行body保持性检查。起点、递增、严格小于边界与
+声明身份来自原header；int_bits是显式外部ABI前提。header里的声明引用必须
+唯一且类型对应，bound/step常量重新求值并核对依赖声明唯一性。
+
+报告有独立schema，body保持性仍not_established，完整迭代域/source/deploy
+标记均false。循环体即使修改induction也可能观察到合法header；观察不能作为
+后端覆盖检查的完整递推输入。默认recover和已有条件恢复入口行为不变。

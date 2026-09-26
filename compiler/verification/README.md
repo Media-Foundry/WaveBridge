@@ -1088,3 +1088,12 @@ guard前最多64条单变量自动int/const int初始化。每个initializer单�
 成功仅在声明的正常、有效求值前提下建立prefix后的guard值关系，以及不写入
 已有对象（只初始化新局部对象）。不证明工作分支保持状态、循环头正确、整数
 范围/溢出安全或跨迭代常量性，更不能据此直接推出完整访问覆盖或删除break。
+
+`loop_exit_guards.check_header_connection(root, loop_id, int_bits)` fresh观察原始
+header并重新检查prefix/guard值DAG，再核对相同root哈希。在guard可达的DAG
+定义中定位精确header induction读取，记录definition和operand_path；不会
+仅按变量名匹配，也不会把未被guard引用的prefix读取当作成功连接。
+
+checked仅为依赖身份连接。header bound与guard bound可以不同；依赖相同
+induction不证明单调性、有效bound、body保持或完整访问域。没有建立body保持
+的程序仍可能获得本结构连接结果，相关未证明标记必须由下游继续消费。

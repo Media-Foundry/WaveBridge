@@ -395,7 +395,7 @@ def _check_nested_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int
 
 
 def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int,
-                  *, allow_nested: bool = True, call_callback=None) -> dict[str, Any]:
+                  *, allow_nested: bool = True, call_callback=None, header_only=False) -> dict[str, Any]:
     item: dict[str, Any] = {
         "status": "unknown", "reason": None, "range": loop.get("range"),
         "induction": None, "start": None, "bound": None, "step": None,
@@ -442,7 +442,7 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int,
         item["coordinate_header_observation"] = _coordinate_header(
             root, induction, initializer, condition, increment)
         coordinate = item["coordinate_header_observation"]
-        if coordinate["status"] == "observed":
+        if coordinate["status"] == "observed" and not header_only:
             protected = {induction_id, coordinate["bound_parameter_id"]}
             for key in ("start_value_link", "step_value_link"):
                 protected.add(coordinate[key]["pseudo_object"]["receiver_declaration_id"])
@@ -554,6 +554,12 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int,
         step_source["value"] = step_value
         item["header_recurrence_observed"] = True
 
+        if header_only:
+            item.update(status="observed", induction={"declaration_id": induction_id,
+                        "range": induction.get("range")}, start=start, bound=bound,
+                        step=step_value, step_source=step_source, condition_ast=condition)
+            return item
+
         protected = {induction_id, bound_id}
         if start_id is not None:
             protected.add(start_id)
@@ -617,6 +623,70 @@ def _recover(root: object, function_id: str, int_bits: int, call_callback=None) 
 def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
     """Default recovery has no external-call effect assumptions."""
     return _recover(root, function_id, int_bits)
+
+
+def observe_header(root, loop_id, int_bits, *, max_ast_nodes=None):
+    """Observe an exact original loop header, never an edited/break-free loop."""
+    from wavebridge.verification.getter_returns import _hash
+
+    budget = 1_000_000 if max_ast_nodes is None else max_ast_nodes
+    result = {"schema_version": "column-loop-header-observation/v1", "status": "unknown", "reason": None,
+              "scope": "original_for_header_only", "header": None, "constant_checks": [],
+              "source_program_checked": False, "deployable": False, "full_iteration_domain_established": False,
+              "body_effects_checked": False, "int_bits": int_bits,
+              "assumptions": ["faithful valid translation unit", "int_bits is an externally supplied signed-int ABI"],
+              "limitations": ["body effects, exits, overflow domain and complete recurrence are not checked"],
+              "budget": {"max_ast_nodes": budget}}
+    if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
+            not isinstance(loop_id, str) or not loop_id or type(int_bits) is not int or not 2 <= int_bits <= 128 or
+            type(budget) is not int or not 1 <= budget <= 10_000_000):
+        result["reason"] = "invalid_inputs_or_budget"
+        return result
+    try:
+        index, pending, count = {}, [root], 0
+        while pending:
+            node = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            if not isinstance(node, dict) or not isinstance(node.get("inner", []), list):
+                raise _Unknown("malformed_ast")
+            if isinstance(node.get("id"), str):
+                index.setdefault(node["id"], []).append(node)
+            pending.extend(node.get("inner", []))
+        matches = index.get(loop_id, [])
+        if len(matches) != 1 or matches[0].get("kind") != "ForStmt":
+            raise _Unknown("loop_identity_not_unique")
+        loop = matches[0]
+        # All declaration lookups in the observed header must be unambiguous.
+        for component in loop.get("inner", [])[:-1]:
+            for node in _walk(component):
+                if node.get("kind") == "DeclRefExpr":
+                    reference = node.get("referencedDecl", {})
+                    definitions = index.get(reference.get("id"), [])
+                    if (len(definitions) != 1 or definitions[0].get("kind") != reference.get("kind")
+                            or definitions[0].get("type") != reference.get("type")):
+                        raise _Unknown("header_declaration_not_unique_or_mismatched")
+        header = _recover_loop(root, loop, int_bits, header_only=True)
+        result["header"] = header
+        if header["status"] != "observed":
+            raise _Unknown("unsupported_header:" + str(header["reason"]))
+        for source in (header["bound"], header["step_source"]):
+            if source.get("kind") != "constant_declaration":
+                continue
+            checked = evaluate(root, source["declaration_id"], int_bits)
+            result["constant_checks"].append(checked)
+            if checked["status"] != "evaluated" or checked["value"] != source["value"]:
+                raise _Unknown("header_constant_not_rechecked")
+            if any(len(index.get(item["declaration_id"], [])) != 1 for item in checked["sources"]):
+                raise _Unknown("header_constant_dependency_not_unique")
+        result.update(status="observed", loop_id=loop_id,
+                      input_sha256={"root": _hash(root), "loop_id": _hash(loop_id), "int_bits": _hash(int_bits)})
+    except _Unknown as error:
+        result["reason"] = error.reason
+    except (TypeError, ValueError, KeyError, RecursionError):
+        result["reason"] = "malformed_or_too_deep_input"
+    return result
 
 
 def recover_with_builtin_effects(payload, function_id, int_bits, call_protocols, *, max_ast_nodes=None):

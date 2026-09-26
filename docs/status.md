@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 原始循环头与退出guard连接
+
+新增observe_header复用原始header解析，不删除break、不检查body；独立报告
+observed而非recovered。check_header_connection fresh连接header induction
+与guard可达DAG，声明及常量依赖歧义保持unknown。
+固定softmax外层0..<2/step1、内层0..<4/step1已连接各自guard；这些是原header
+上界，不是提前退出后的有效域。body/work/溢出域与跨迭代保持性仍未建立，
+历史6/8恢复不提升。见[实录](../experiments/exit-header-evidence-20260927.md)。
+完整1044项测试通过（69.607秒，native插件启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增5项真实Clang回归并复核；无GPU，远端CI未核验。
+
 ## 退出guard的前缀值关系
 
 check_prefix_values从完整AST重新检查退出分区和纯自动int初始化链，将guard
