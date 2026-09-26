@@ -17,6 +17,64 @@ from wavebridge.verification.kernel_arguments import _abi_type, _Unknown
 MAX_CASTS = 32
 
 
+def check_nested_iteration_bounds(payload, declaration_id, outer_loop_id, inner_loop_id,
+                                   leaf_contract, integer_types, history_call_protocols,
+                                   work_call_protocols, inner_call_protocols, declaration_intervals, *,
+                                   max_ast_nodes=None, use_static_branches=False, use_source_constants=False):
+    """Use a freshly established nested-entry domain in guarded-loop bounds.
+
+    Other intervals remain explicit assumptions; callers cannot replace the
+    source interval or supply an old successful entry report.
+    """
+    from wavebridge.verification.loop_exit_guards import check_iteration_bounds
+
+    result = {"schema_version": "initializer-to-nested-iteration-bounds/v1", "status": "unknown", "reason": None,
+              "scope": "conditional_nested_work_count_bounds_with_one_initializer_derived_entry_domain",
+              "entry_check": None, "iteration_check": None, "iteration_bounds_established": False,
+              "value_preserved_to_nested_entry": False, "full_iteration_domain_established": False,
+              "source_program_checked": False, "deployable": False, "assumptions": [],
+              "limitations": ["remaining entry intervals are external assumptions, not launch facts",
+                              "bounds apply to one reached inner-loop invocation, not a sum across outer iterations",
+                              "not exact per-input counts, full coverage, termination or output equivalence"]}
+    try:
+        if (not isinstance(declaration_intervals, dict) or declaration_id in declaration_intervals or
+                type(use_source_constants) is not bool):
+            raise _Unknown("invalid_external_intervals_or_source_override")
+        entry = check_nested_entry(payload, declaration_id, outer_loop_id, inner_loop_id, leaf_contract,
+                                   integer_types, history_call_protocols, work_call_protocols,
+                                   max_ast_nodes=max_ast_nodes, use_static_branches=use_static_branches)
+        result["entry_check"] = entry
+        if entry["status"] != "checked" or entry.get("value_preserved_to_nested_entry") is not True:
+            raise _Unknown("nested_entry_domain_not_checked")
+        interval = entry["result_interval"]
+        combined = {**declaration_intervals, declaration_id: [interval["lower"], interval["upper"]]}
+        result.update(value_preserved_to_nested_entry=True, source_interval=interval,
+                      source_declaration_id=declaration_id,
+                      remaining_external_declaration_intervals=declaration_intervals,
+                      source_interval_origin="fresh_nested_entry_check_under_explicit_leaf_contract")
+        checked = check_iteration_bounds(payload, inner_loop_id, integer_types["int"]["bits"],
+                                          inner_call_protocols, combined, max_ast_nodes=max_ast_nodes,
+                                          use_static_branches=use_static_branches, use_nested_loops=True,
+                                          use_source_constants=use_source_constants)
+        result["iteration_check"] = checked
+        if checked["status"] != "checked" or checked.get("iteration_bounds_established") is not True:
+            raise _Unknown("nested_iteration_bounds_not_checked")
+        if entry["input_sha256"]["history"]["root"] != checked["input_sha256"]["root"]:
+            raise _Unknown("input_changed_between_checks")
+        result.update(status="checked", iteration_bounds_established=True,
+                      work_count_bounds=checked["work_count_bounds"],
+                      input_sha256={"entry": entry["input_sha256"], "iteration": checked["input_sha256"],
+                                    "remaining_external_intervals": _hash(declaration_intervals)})
+        result["assumptions"].extend(entry["assumptions"] + checked["assumptions"])
+        for child in checked["work_check"]["call_effect_checks"].values():
+            result["assumptions"].extend(child.get("assumptions", []))
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, KeyError, IndexError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
 def check_nested_entry(payload, declaration_id, outer_loop_id, inner_loop_id, leaf_contract,
                        integer_types, history_call_protocols, work_call_protocols, *,
                        max_ast_nodes=None, use_static_branches=False):

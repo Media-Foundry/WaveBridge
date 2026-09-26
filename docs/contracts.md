@@ -511,3 +511,18 @@ init/condition/increment、prefix/guard 和全部 work；内层前后兄弟语�
 仅表示：在显式前提下，每次实际到达该内层循环入口时保留初始化域。
 它不证明实际到达、执行次数、终止、整数溢出或完整迭代域；所有外部 leaf、
 有效执行、存活、无别名和无异步干扰条件仍须成立，source/deploy 保持 false。
+
+### 使用初始化入口域的次数边界
+
+`check_nested_iteration_bounds` fresh 执行上述嵌套入口检查，再把该精确源
+声明的区间注入 `check_iteration_bounds`。调用者只能提供其余入口区间，
+不能覆盖源声明域；缺失、额外或未消费域由独立边界 checker 拒绝。历史、
+外层工作、内层工作协议分别重新检查，root 哈希必须一致。
+
+`initializer-to-nested-iteration-bounds/v1` 同时保留 `entry_check` 和
+`iteration_check`；`source_interval_origin` 标记 fresh 入口链，
+`remaining_external_declaration_intervals` 明列仍需外部保证的域。子边界
+报告本身仍是条件命题，不因父级组合就被改写成“全部输入事实已证明”。
+`work_count_bounds` 仅针对每次实际到达的单次内层循环执行，不累计所有
+外层迭代；外部区间也须在该次内层入口成立。不宣称精确逐输入次数、完整
+覆盖、可达性、终止、浮点等价或部署安全，full-domain/source/deploy 仍 false。

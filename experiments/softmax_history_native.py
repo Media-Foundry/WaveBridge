@@ -6,7 +6,8 @@ from pathlib import Path
 from experiments.pytorch_softmax_intake import implementation_hashes, select_entry, sha, walk
 from wavebridge.analysis.column_loops import _hinted_loop, _static_bool_value, _Unknown
 from wavebridge.verification.getter_returns import _hash
-from wavebridge.verification.initializer_domain import check_to_statement, check_nested_entry
+from wavebridge.verification.initializer_domain import (
+    check_to_statement, check_nested_entry, check_nested_iteration_bounds)
 
 NATIVE_SHA = "a59c12247f796fe2034ba03ecc43782f77ac3942496b18a140ceacbb24c7ff45"
 LEAF_PROTOCOL_SHA = "c9a085aa07bf43e2e3a9221dc92bce58b5237e9ddc4a1b9568ca454b1f065996"
@@ -42,11 +43,20 @@ def direct_target(call):
     return node["referencedDecl"]["id"]
 
 
-def run(native, leaf_protocol, output, *, nested_entry=False):
+def run(native, leaf_protocol, output, *, nested_entry=False, iteration_domain_protocol=None):
     if sha(native) != NATIVE_SHA or sha(leaf_protocol) != LEAF_PROTOCOL_SHA or output.exists():
         raise ValueError("fixed_input_mismatch_or_output_exists")
     dependencies = {str(p): sha(p) for p in (Path(__file__), leaf_protocol,
                     Path(__file__).with_name("pytorch_softmax_intake.py"))}
+    external_domain = None
+    if iteration_domain_protocol is not None:
+        if not nested_entry:
+            raise ValueError("iteration_domain_requires_nested_entry")
+        dependencies[str(iteration_domain_protocol)] = sha(iteration_domain_protocol)
+        external_domain = json.loads(iteration_domain_protocol.read_text())
+        if (external_domain.get("schema_version") != "softmax-inner-external-domain/v1" or
+                external_domain.get("native_sha256") != NATIVE_SHA):
+            raise ValueError("external_domain_native_mismatch")
     before = implementation_hashes()
     capture = json.loads(native.read_text())
     if capture.get("status") != "collected":
@@ -139,8 +149,24 @@ def run(native, leaf_protocol, output, *, nested_entry=False):
                       "work_calls": list(work_protocols), "target": target["id"]}), flush=True)
     if nested_entry:
         inner, = [n for n in walk(target) if n.get("kind") == "ForStmt" and n is not target]
-        checked = check_nested_entry(payload, protected["id"], target["id"], inner["id"], contract, abi,
-                                     history_protocols, work_protocols, use_static_branches=True)
+        if external_domain is not None:
+            parameters = [n for n in entry["inner"] if n.get("kind") == "ParmVarDecl"]
+            position = external_domain.get("parameter_position")
+            if type(position) is not int or not 0 <= position < len(parameters):
+                raise ValueError("external_domain_parameter_position_invalid")
+            parameter = parameters[position]
+            if (parameter.get("name") != external_domain.get("parameter_name") or
+                    parameter.get("type", {}).get("qualType") != external_domain.get("parameter_type")):
+                raise ValueError("external_domain_parameter_binding_mismatch")
+            intervals = {parameter["id"]: external_domain["interval"]}
+            inner_ids = {n["id"] for n in calls_on_supported_paths(inner)}
+            inner_protocols = {k: v for k, v in work_protocols.items() if k in inner_ids}
+            checked = check_nested_iteration_bounds(payload, protected["id"], target["id"], inner["id"],
+                contract, abi, history_protocols, work_protocols, inner_protocols, intervals,
+                use_static_branches=True, use_source_constants=True)
+        else:
+            checked = check_nested_entry(payload, protected["id"], target["id"], inner["id"], contract, abi,
+                                         history_protocols, work_protocols, use_static_branches=True)
     else:
         checked = check_to_statement(payload, protected["id"], target["id"], contract, abi,
                                      history_protocols, use_static_branches=True)
@@ -148,6 +174,7 @@ def run(native, leaf_protocol, output, *, nested_entry=False):
     report = {"schema_version": "softmax-native-history-development/v1", "check": checked,
               "native_sha256": NATIVE_SHA, "call_protocols": history_protocols, "leaf_contract": contract,
               "nested_entry": nested_entry, "work_call_protocols": work_protocols,
+              "iteration_domain_protocol": external_domain,
               "integer_types": abi, "implementation_before": before, "implementation_after": after,
               "driver_dependencies": dependencies, "GPU_executed": False,
               "source_program_checked": False, "deployable": False,
@@ -166,5 +193,7 @@ if __name__ == "__main__":
     parser.add_argument("--leaf-protocol", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--nested-entry", action="store_true")
+    parser.add_argument("--iteration-domain-protocol", type=Path)
     args = parser.parse_args()
-    run(args.native, args.leaf_protocol, args.output, nested_entry=args.nested_entry)
+    run(args.native, args.leaf_protocol, args.output, nested_entry=args.nested_entry,
+        iteration_domain_protocol=args.iteration_domain_protocol)

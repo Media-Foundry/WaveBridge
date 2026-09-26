@@ -1,0 +1,9 @@
+{
+  "schema_version": "softmax-inner-external-domain/v1",
+  "native_sha256": "a59c12247f796fe2034ba03ecc43782f77ac3942496b18a140ceacbb24c7ff45",
+  "parameter_position": 4,
+  "parameter_name": "element_count",
+  "parameter_type": "int",
+  "interval": [0, 128],
+  "scope": "UNVERIFIED external example domain, unchanged from softmax-exit-external-domains-20260927.json; newly bound to the same parameter in the new AST, not inferred input validation or launch evidence"
+}

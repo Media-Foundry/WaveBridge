@@ -2,6 +2,19 @@
 
 更新日期：2026-09-27。
 
+## fresh 入口域接入内层次数边界
+
+新增 `check_nested_iteration_bounds`：重新执行入口保持链，再把该源声明的
+区间交给独立边界 checker；禁止 caller 覆盖源域，其余区间保持外部前提，
+缺失/额外域拒绝，root 哈希与调用协议重新核对。
+5 项真实 Clang 回归通过，正例精确核对每次 inner invocation 的 `[1,4]`
+次数界，int8 负例明确拒绝前缀溢出。完整 1132 项测试通过（76.736 秒，
+native 启用、无跳过），demo/diff 通过；GPT-5.6 Sol 只读复核无阻断。
+真实 softmax 的 derived-bounds 重放已启动，尚未记为完成；见
+[实录](../experiments/softmax-derived-bounds-evidence-20260927.md)。
+element_count `[0,128]` 仍是既有示例外部域，不是自动输入校验；无 GPU、
+完整覆盖、outer 总次数或整核等价结论。
+
 ## 初始化域到内层每次入口的组合检查
 
 新增 `initializer_domain.check_nested_entry`：fresh 建立初始化到外层首次入口，
@@ -10,8 +23,10 @@
 依赖集合；否则外层兄弟语句仍可能改变下一次内层入口值。
 5 项新增真实 Clang 回归通过，GPT-5.6 Sol 只读复核无阻断；完整 1127 项
 测试通过（75.954 秒，native 启用、无跳过），demo/diff 通过。
-真实 softmax 的 nested-entry 重放已启动，历史 4 项调用与工作区 1 项调用
-已绑定，尚未记为完成；见 [实录](../experiments/softmax-nested-entry-evidence-20260927.md)。
+`563da13` 的真实 softmax nested-entry 重放已完成：checked、
+inputs_unchanged=true、条件域 `[0,31]`，inner 路径 `[4,2,1]`；历史与工作
+协议均无未消费项，结束时核对逐文件实现哈希一致。
+见 [实录](../experiments/softmax-nested-entry-evidence-20260927.md)。
 本次未运行 GPU；完整迭代域和循环整数安全未由该入口建立。
 
 ## 真实 softmax 历史链的条件通过与数组初始化边界
