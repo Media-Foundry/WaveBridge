@@ -2,14 +2,26 @@
 
 更新日期：2026-09-26。
 
+## 独立复制结构效果入口
+
+`record_copy_check.inspect_effects` 已与条件字段值检查分离：复用同一私有结构
+解析器，直接核验所选构造器、const引用绑定及同字段初始化，不调用值checker，
+不假设源存活、字段可读或正常返回。原 `check` 另加动态前提才给出值相等；
+未知属性仍允许值checked、效果unknown，未放宽效果子集。
+真实析构并placement-new重建source的构造器保持unknown；CPU反例两次复制
+分别读3与99，不可用外层引用闭合推导历史值保持。capture的alive前提未删除。
+673项CPU、197项Clang专项及demo通过，匹配原生插件已启用。
+本轮验收记录见 `.agents/handoffs/wb04-independent-copy-effects-20260926.md`；
+未重新执行5GB完整生产TU或GPU，不将上一轮完整TU结果算作本轮新验证。
+
 ## 生命周期前提审计：禁止循环解除alive
 
 真实CPU/Clang反例确认：外层source仅作为两个copy实参，但copy ctor可经自己的
 const引用参数析构并placement-new重建source。CPU两次copy字段和为102（3+99）；
 当前初始化checked、显式source引用数2，最终因copy构造器非空body正确unknown。
 这不是当前checker错误放行，而是否定“仅靠外层引用闭合即可解除alive”的捷径。
-下一项应先独立检查不依赖live/readable值前提的copy构造器结构效果，避免用带
-alive假设的copy成功报告反向证明alive。源码未改、没有GPU执行，详见
+当时确定下一项为独立检查不依赖live/readable值前提的copy构造器结构效果，避免用带
+alive假设的copy成功报告反向证明alive；本轮已实现入口，见上项。该审计未改源码、没有GPU执行，详见
 `.agents/handoffs/wb04-lifetime-audit-20260926.md`。v3完整TU重放已结束，见下项。
 
 ## 从源码绑定同次包围函数求值

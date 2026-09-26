@@ -5,9 +5,10 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from wavebridge.frontend.clang_ast import collect, _walk
-from wavebridge.record_copy_check import check
+from wavebridge.record_copy_check import check, inspect_effects
 
 ABI = {"int": {"bits": 32, "signed": True}, "unsigned int": {"bits": 32, "signed": False}}
 
@@ -38,6 +39,51 @@ class RecordCopyClangTests(unittest.TestCase):
         root = self.root if root is None else root
         expression_id, _ = self.inputs(name, root)
         return check(root, expression_id, ABI, **kwargs)
+
+    def run_effects(self, name="implicit_copy", root=None, **kwargs):
+        root = self.root if root is None else root
+        expression_id, _ = self.inputs(name, root)
+        return inspect_effects(root, expression_id, ABI, **kwargs)
+
+    def test_independent_structure_effect_entry_accepts_exact_same_field_reads(self):
+        for name, count in (("implicit_copy", 3), ("manual_copy", 2),
+                            ("parameter_copy", 3)):
+            with self.subTest(name=name):
+                report = self.run_effects(name)
+                self.assertEqual(report["schema_version"], "record-copy-structure/v1")
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["local_copy_effects"]["status"], "checked")
+                self.assertEqual(len(report["field_mappings"]), count)
+                self.assertTrue(all(mapping["relation"] ==
+                                    "direct_same_field_read_initializer"
+                                    for mapping in report["field_mappings"]))
+                self.assertNotIn("source object is alive", " ".join(report["assumptions"]))
+                self.assertFalse(report["source_program_checked"])
+                self.assertFalse(report["deployable"])
+
+    def test_structure_effect_entry_does_not_call_conditional_value_check(self):
+        expression_id, _ = self.inputs()
+        with mock.patch("wavebridge.record_copy_check.check",
+                        side_effect=AssertionError("conditional check must not be called")):
+            report = inspect_effects(self.root, expression_id, ABI)
+        self.assertEqual(report["status"], "checked", report)
+        self.assertEqual(report["schema_version"], "record-copy-structure/v1")
+
+    def test_structure_effect_entry_rejects_wrong_mapping_and_binds_inputs(self):
+        rejected = self.run_effects("swapped_copy")
+        self.assertEqual(rejected["status"], "rejected", rejected)
+        self.assertEqual(rejected["local_copy_effects"]["status"], "unknown")
+
+        before = copy.deepcopy(self.root)
+        expression_id, _ = self.inputs()
+        for budget in (0, True, 1, 10_000_001):
+            with self.subTest(budget=budget):
+                self.assertEqual(inspect_effects(
+                    self.root, expression_id, ABI, max_ast_nodes=budget)["status"], "unknown")
+        report = inspect_effects(self.root, expression_id, ABI)
+        self.assertEqual(report["status"], "checked", report)
+        self.assertIn("input_sha256", report)
+        self.assertEqual(self.root, before)
 
     def test_implicit_manual_and_parameter_copies_preserve_same_field_ids(self):
         for name, count in (("implicit_copy", 3), ("manual_copy", 2), ("parameter_copy", 3)):
@@ -111,6 +157,28 @@ class RecordCopyClangTests(unittest.TestCase):
         result = self.run_check("parameter_attribute_copy")
         self.assertEqual(result["status"], "checked", result)
         self.assertEqual(result["local_copy_effects"]["status"], "unknown")
+        effects = self.run_effects("parameter_attribute_copy")
+        self.assertEqual(effects["schema_version"], "record-copy-structure/v1")
+        self.assertEqual(effects["status"], "unknown", effects)
+        self.assertEqual(effects["local_copy_effects"]["status"], "unknown")
+
+    def test_copy_constructor_cannot_end_and_rebuild_source_in_effect_subset(self):
+        report = self.run_effects("rebuilding_copy")
+        self.assertEqual(report["status"], "unknown", report)
+        self.assertEqual(report["local_copy_effects"]["status"], "unknown")
+
+        # CPU witness: the first copy reads 3, then rebuilds source as 99, so
+        # the second copy reads 99 even though both outer uses are copy args.
+        fixture = Path(__file__).parent / "fixtures/record_copy.cpp"
+        with tempfile.TemporaryDirectory(prefix="wb-rebuild-copy-") as directory:
+            executable = Path(directory) / "rebuild"
+            compiled = subprocess.run(
+                [shutil.which("clang++"), "-std=c++17", "-DWAVEBRIDGE_REBUILD_COPY_EXECUTION",
+                 str(fixture), "-o", str(executable)],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            executed = subprocess.run([str(executable)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(executed.returncode, 0, executed.stderr)
 
     def test_real_cuda_execution_attributes_are_supported_without_children(self):
         collected = collect(Path(__file__).parent / "fixtures/record_copy.cpp",

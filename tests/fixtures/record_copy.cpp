@@ -1,10 +1,12 @@
+#include <new>
+
 typedef struct Plain {
   unsigned x, y, z;
   Plain(unsigned a, unsigned b, unsigned c) : x(a), y(b), z(c) {}
 } Plain;
 void implicit_copy() { Plain source(3, 5, 7); Plain target(source); }
 void parameter_copy(Plain source) { Plain target(source); }
-#ifndef WAVEBRIDGE_CAPTURE_EXECUTION
+#if !defined(WAVEBRIDGE_CAPTURE_EXECUTION) && !defined(WAVEBRIDGE_REBUILD_COPY_EXECUTION)
 void accept_value(int prefix, Plain value);
 void differently_named(Plain value);
 void accept_reference(const Plain& value);
@@ -84,6 +86,31 @@ typedef struct Polymorphic {
   virtual ~Polymorphic() {}
 } Polymorphic;
 void polymorphic_copy() { Polymorphic source; Polymorphic target(source); }
+
+// A real, valid counterexample to treating outer DeclRef closure as a
+// lifetime proof: the copy constructor can reach the source through its own
+// const-reference parameter, end that lifetime, and rebuild the object in the
+// same storage without another outer reference to `source`.
+typedef struct Rebuilding {
+  unsigned x;
+  Rebuilding(unsigned value) : x(value) {}
+  Rebuilding(const Rebuilding& other) : x(other.x) {
+    Rebuilding* pointer = const_cast<Rebuilding*>(&other);
+    pointer->~Rebuilding();
+    ::new (pointer) Rebuilding(99);
+  }
+  ~Rebuilding() {}
+} Rebuilding;
+unsigned rebuilding_copy() {
+  Rebuilding source(3);
+  Rebuilding target(source);
+  Rebuilding second(source);
+  return target.x + second.x;
+}
+
+#ifdef WAVEBRIDGE_REBUILD_COPY_EXECUTION
+int main() { return rebuilding_copy() == 102 ? 0 : 1; }
+#endif
 
 #ifdef WAVEBRIDGE_CAPTURE_EXECUTION
 int main() {

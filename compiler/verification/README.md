@@ -527,8 +527,11 @@ one-shot会分配完整字符串与UTF-8字节缓冲区，仅适用于已评估�
 ## 复制构造的局部访问效果
 
 `record_copy_check.check` 的原 `record-copy-check/v1` 主status继续只描述字段
-整数值关系。新增 `local_copy_effects` 是单独的子报告：只有值关系checked且
-构造声明、参数、字段、record属于更窄的效果子集时，它才checked。
+整数值关系。`inspect_effects(root, expression_id, integer_types, *, max_ast_nodes=None)`
+新增独立 `record-copy-structure/v1` 入口，与值检查共用私有结构解析器，但不调用
+值检查，也不以值关系成功为前提。它要求构造声明、参数、字段、record属于更窄
+的效果子集；不支持的效果使其主状态unknown。字段映射只标记
+`direct_same_field_read_initializer`，不签发字段值相等结论。
 构造仅允许无子节点的CUDAHostAttr/CUDADeviceAttr；未知属性、参数默认值或
 参数/字段子节点、record直接属性、deleted/invalid标志均不能建立效果分类。
 这不是宣称这些属性都有副作用，而是未解释的语义不自动当作无效果。
@@ -537,13 +540,15 @@ one-shot会分配完整字符串与UTF-8字节缓冲区，仅适用于已评估�
 未观测到选定const-reference绑定以外的地址发布。引用绑定本身仍是地址使用。
 源/目标动态存储是否重叠、并发/先前别名、外围清理和析构、目标分配与生命周期
 尚未建立；因此它不证明源内存不变，也不能将初始化字段域直接搬到复制或launch。
-外部源码有效、字段有定义值、源活跃、ABI匹配和构造正常返回前提仍然保留。
+结构分类仅依赖忠实完整AST与外部整数ABI，不要求源活跃、字段可读或正常返回。
+值检查在同一次fresh结构解析后另加这些动态前提，才签发条件字段值相等结论；
+未知属性仍可出现值关系checked、局部效果unknown，保持原接口的支持范围。
 现有capture/use-closure消费者只保存该子报告，没有自动解除历史保持义务。
 
 ## 复制实参与按值形参的精确绑定
 
 同一 `record_copy_check.check` 还返回独立 `parameter_target` 子报告。先fresh
-完成字段值关系和局部效果检查，再从完整AST查找copy表达式的直接父CallExpr；
+完成复制结构和局部效果检查，再从完整AST查找copy表达式的直接父CallExpr；
 不需要调用者填写预期的callee或参数ID。相同ID的重复copy/call必须一致，所有
 副本必须对应同一个call ID和实参位置；不把重复dump当成执行次数。
 

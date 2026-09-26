@@ -1,4 +1,4 @@
-"""Check exact per-field integer copying for one direct record construction."""
+"""Inspect direct-copy structure, then check conditional integer field equality."""
 
 from __future__ import annotations
 
@@ -57,10 +57,8 @@ def _local_effects(record, declaration, parameter, fields, mappings):
         "field_ids": [],
         "source_program_checked": False, "deployable": False,
         "assumptions": [
-            "the parent value check and its input hashes bind this local classification",
-            "the AST faithfully describes a valid source program under the declared integer ABI",
-            "source fields are initialized and readable through the live evaluated argument",
-            "the selected constructor returns normally",
+            "the structural inspection and its input hashes bind this local classification",
+            "the AST faithfully describes the selected declarations and expressions under the declared integer ABI",
         ],
         "source_destination_nonoverlap": "not_established",
         "concurrent_or_prior_alias_effects": "not_established",
@@ -118,7 +116,7 @@ def _parameter_target(nodes, expressions, expression):
         "callee_body_effects": "not_established",
         "configuration_api_semantics": "not_established", "launch_semantics": "not_established",
         "assumptions": [
-            "the parent copy report binds the complete faithful valid C++ AST and declared integer ABI",
+            "the structural inspection binds the complete faithful C++ AST and declared integer ABI",
             "source-level syntax binding does not establish execution or dynamic object identity",
         ],
     }
@@ -201,20 +199,21 @@ def _parameter_target(nodes, expressions, expression):
     return result
 
 
-def check(root: object, expression_id: object, integer_types: object,
-          *, max_ast_nodes: int | None = None) -> dict[str, Any]:
+def _inspect_structure(root: object, expression_id: object, integer_types: object,
+                       *, max_ast_nodes: int | None = None) -> dict[str, Any]:
+    """Recover syntax and effects without assuming live/readable source fields."""
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result: dict[str, Any] = {
-        "schema_version": "record-copy-check/v1", "status": "unknown", "reason": None,
+        "schema_version": "record-copy-structure/v1", "status": "unknown", "reason": None,
         "expression_id": expression_id, "constructor_declaration_id": None,
         "expression_ast_occurrences": 0,
         "record_declaration_id": None, "source_declaration_id": None,
         "source_declaration_binding": "lexical_declref_only",
         "source_object_identity": "not_established",
         "constructor_arguments": None, "field_mappings": [],
-        "local_copy_effects": {"status": "unknown", "reason": "copy_value_relation_not_checked"},
-        "parameter_target": {"status": "unknown", "reason": "copy_value_and_effects_not_checked"},
-        "scope": "evaluated_copy_argument_per_field_integer_value_equality_at_direct_construction",
+        "local_copy_effects": {"status": "unknown", "reason": "copy_structure_not_checked"},
+        "parameter_target": {"status": "unknown", "reason": "copy_structure_and_effects_not_checked"},
+        "scope": "selected_copy_declarations_argument_binding_and_same_field_initializer_syntax",
         "source_program_checked": False, "deployable": False,
         "source_object_preservation": "not_established",
         "source_initialization_relation": "not_established",
@@ -222,10 +221,6 @@ def check(root: object, expression_id: object, integer_types: object,
         "assumptions": [
             "the AST is a faithful complete single translation unit",
             "the explicit integer ABI matches the compilation target",
-            "the source object is alive and valid while the constructor reads its fields",
-            "the copied integer fields are initialized and each field read has a defined value",
-            "the source program is valid",
-            "the constructor call returns normally",
             "the recorded source declaration ID is only the lexical DeclRef binding",
             "lambda capture resolution and the runtime origin or identity of the evaluated copy argument are not established",
         ],
@@ -451,7 +446,7 @@ def check(root: object, expression_id: object, integer_types: object,
                 "parameter_id": parameter_id,
                 "initializer_range": initializer.get("range"),
                 "read_range": read.get("range"),
-                "relation": "integer_value_equal_at_copy_evaluation",
+                "relation": "direct_same_field_read_initializer",
             })
         if target_ids != set(field_ids):
             raise _Rejected("copy_fields_not_exactly_covered")
@@ -466,4 +461,42 @@ def check(root: object, expression_id: object, integer_types: object,
             result["diagnostic"] = error.detail
     except _Unknown as error:
         result["reason"] = error.reason
+    return result
+
+
+def inspect_effects(root: object, expression_id: object, integer_types: object,
+                    *, max_ast_nodes: int | None = None) -> dict[str, Any]:
+    """Independently check the narrow constructor effect subset.
+
+    A checked result classifies AST-role accesses only. It neither establishes
+    source lifetime nor claims any value equality or dynamic storage separation.
+    The broader structural parser is shared with the conditional value checker;
+    unsupported declaration effects prevent this entry point from succeeding.
+    """
+    result = _inspect_structure(root, expression_id, integer_types,
+                                max_ast_nodes=max_ast_nodes)
+    if result["status"] == "checked" and result["local_copy_effects"]["status"] != "checked":
+        result.update(status="unknown", reason=result["local_copy_effects"]["reason"])
+    return result
+
+
+def check(root: object, expression_id: object, integer_types: object,
+          *, max_ast_nodes: int | None = None) -> dict[str, Any]:
+    """Add conditional integer value semantics to freshly inspected syntax.
+
+    Keep the value check's historical broader attribute tolerance: its checked
+    status does not imply that the independent local effect subset is checked.
+    """
+    result = _inspect_structure(root, expression_id, integer_types,
+                                max_ast_nodes=max_ast_nodes)
+    result.update(schema_version="record-copy-check/v1",
+                  scope="evaluated_copy_argument_per_field_integer_value_equality_at_direct_construction")
+    result["assumptions"][2:2] = [
+        "the source object is alive and valid while the constructor reads its fields",
+        "the copied integer fields are initialized and each field read has a defined value",
+        "the source program is valid",
+        "the constructor call returns normally",
+    ]
+    for mapping in result["field_mappings"]:
+        mapping["relation"] = "integer_value_equal_at_copy_evaluation"
     return result
