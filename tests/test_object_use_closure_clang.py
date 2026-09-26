@@ -186,3 +186,107 @@ class ObjectUseClosureClangTests(unittest.TestCase):
             self.assertEqual(built.returncode, 0, built.stderr)
             run = subprocess.run([str(executable)], capture_output=True, text=True, timeout=10)
             self.assertEqual(run.returncode, 0, run.stderr)
+
+    def test_source_statement_order_and_fresh_immediate_chains(self):
+        for name in ("plain_copy", "three_branches", "by_value_flow",
+                     "captured_by_value_flow", "nested_scope_flow", "switch_flow"):
+            with self.subTest(name=name):
+                result = self.run_check(name)
+                order = result["source_order"]
+                self.assertEqual(order["status"], "checked", result)
+                self.assertEqual(len(order["copies"]), result["copy_count"])
+                for row in order["copies"]:
+                    self.assertLess(row["source_statement_position"], row["copy_enclosing_statement_position"])
+                    expected = 2 if name == "three_branches" else 1 if name == "captured_by_value_flow" else 0
+                    self.assertEqual(len(row["immediate_invocation_chain"]), expected)
+                self.assertEqual(order["source_lifetime"], "not_established")
+                self.assertEqual(order["source_value_preservation"], "not_established")
+                self.assertFalse(order["deployable"])
+
+    def test_switch_must_be_contained_after_source_declaration(self):
+        positive = self.run_check("switch_flow")["source_order"]
+        self.assertEqual(positive["status"], "checked")
+        self.assertEqual(len(positive["structured_switch_ids"]), 1)
+        negative = self.run_check("switch_before_source")["source_order"]
+        self.assertEqual(negative["status"], "unknown")
+        self.assertEqual(negative["reason"], "source_order_switch_not_after_source_declaration")
+        for mutation in ("missing_switch_id", "orphan_break"):
+            payload = copy.deepcopy(self.payload)
+            function = next(n for n in _walk(payload["ast"]) if n.get("kind") == "FunctionDecl"
+                            and n.get("name") == "switch_flow")
+            if mutation == "missing_switch_id":
+                switch = next(n for n in _walk(function) if n.get("kind") == "SwitchStmt")
+                del switch["id"]
+            else:
+                body = next(n for n in function["inner"] if n.get("kind") == "CompoundStmt")
+                body["inner"].append({"kind": "BreakStmt"})
+            with self.subTest(mutation=mutation):
+                self.assertEqual(self.run_check("switch_flow", payload)["source_order"]["status"], "unknown")
+
+    def test_nonlocal_loop_and_exception_control_remain_unknown_for_order(self):
+        for name in ("loop_flow", "goto_flow", "try_flow"):
+            with self.subTest(name=name):
+                result = self.run_check(name)
+                self.assertEqual(result["source_order"]["status"], "unknown")
+                if result["status"] == "checked":
+                    self.assertEqual(result["source_order"]["reason"], "source_order_control_flow_unsupported")
+                else:
+                    self.assertEqual(result["status"], "unknown")
+                    self.assertEqual(result["reason"], "selected_ast_contains_empty_placeholder")
+                    self.assertEqual(result["source_order"]["reason"], "explicit_use_closure_not_checked")
+
+    def test_order_uses_ast_statements_not_source_offsets(self):
+        payload = copy.deepcopy(self.payload)
+        function = next(n for n in _walk(payload["ast"]) if n.get("kind") == "FunctionDecl"
+                        and n.get("name") == "by_value_flow")
+        body = next(n for n in function["inner"] if n.get("kind") == "CompoundStmt")
+        declaration = body["inner"].pop(0)
+        body["inner"].append(declaration)  # deliberate malformed AST; source offsets unchanged
+        result = self.run_check("by_value_flow", payload)
+        self.assertEqual(result["source_order"]["status"], "unknown", result)
+        self.assertEqual(result["source_order"]["reason"], "copy_statement_not_after_source_declaration")
+
+    def test_unrecognized_statement_cannot_establish_order(self):
+        payload = copy.deepcopy(self.payload)
+        function = next(n for n in _walk(payload["ast"]) if n.get("kind") == "FunctionDecl"
+                        and n.get("name") == "by_value_flow")
+        body = next(n for n in function["inner"] if n.get("kind") == "CompoundStmt")
+        body["inner"].append({"kind": "UnmodeledTransferStmt"})
+        result = self.run_check("by_value_flow", payload)
+        self.assertEqual(result["source_order"]["status"], "unknown")
+        self.assertEqual(result["source_order"]["reason"], "source_order_control_flow_unsupported")
+
+    def test_false_condition_do_wrappers_preserve_only_structural_order(self):
+        for name in ("do_false_flow", "do_zero_flow", "do_break_flow", "do_nested_switch"):
+            with self.subTest(name=name):
+                order = self.run_check(name)["source_order"]
+                self.assertEqual(order["status"], "checked", order)
+                self.assertEqual(len(order["false_condition_do_wrappers"]), 1)
+                self.assertEqual(order["source_lifetime"], "not_established")
+                self.assertEqual(order["execution_reachability_and_count"], "not_established")
+
+    def test_real_general_do_and_crossing_case_are_not_supported(self):
+        for name in ("do_dynamic_flow", "do_true_flow", "do_continue_flow", "do_before_source", "case_into_do"):
+            with self.subTest(name=name):
+                order = self.run_check(name)["source_order"]
+                self.assertEqual(order["status"], "unknown", order)
+
+    def test_do_condition_requires_exact_literal_and_shape(self):
+        for mutation in ("bool_integer", "bool_string", "hidden_child", "wrong_type",
+                         "wrong_category", "extra_child", "missing_id", "nonzero", "wrong_cast"):
+            payload = copy.deepcopy(self.payload)
+            name = "do_zero_flow" if mutation in {"nonzero", "wrong_cast"} else "do_false_flow"
+            function = next(n for n in _walk(payload["ast"]) if n.get("kind") == "FunctionDecl" and n.get("name") == name)
+            node = next(n for n in _walk(function) if n.get("kind") == "DoStmt")
+            condition = node["inner"][1]
+            if mutation == "bool_integer": condition["value"] = 0
+            elif mutation == "bool_string": condition["value"] = "false"
+            elif mutation == "hidden_child": condition["inner"] = [{"kind": "CallExpr"}]
+            elif mutation == "wrong_type": condition["type"] = {"qualType": "int"}
+            elif mutation == "wrong_category": condition["valueCategory"] = "lvalue"
+            elif mutation == "extra_child": node["inner"].append({"kind": "NullStmt"})
+            elif mutation == "missing_id": del node["id"]
+            elif mutation == "nonzero": condition["inner"][0]["value"] = "1"
+            else: condition["castKind"] = "NoOp"
+            with self.subTest(mutation=mutation):
+                self.assertEqual(self.run_check(name, payload)["source_order"]["status"], "unknown")

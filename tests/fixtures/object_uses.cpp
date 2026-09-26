@@ -105,6 +105,50 @@ void by_reference_flow() {
   change_reference(source);
   observe_value(source);
 }
+void nested_scope_flow() {
+  { Config source(3); observe_value(source); }
+}
+void loop_flow() {
+  Config source(3);
+  for (int i = 0; i < 2; ++i) observe_value(source);
+}
+void goto_flow() {
+  Config source(3);
+  goto after;
+after:
+  observe_value(source);
+}
+void try_flow() {
+  Config source(3);
+  try { observe_value(source); } catch (...) {}
+}
+void switch_flow(int branch) {
+  Config source(3);
+  switch (branch) {
+    case 0: observe_value(source); break;
+    default: observe_value(source); break;
+  }
+}
+void switch_before_source(int branch) {
+  switch (branch) { case 0: break; default: break; }
+  Config source(3);
+  observe_value(source);
+}
+void do_false_flow() { Config source(3); do { observe_value(source); } while (false); }
+void do_zero_flow() { Config source(3); do { observe_value(source); } while (0); }
+void do_break_flow() { Config source(3); do { observe_value(source); break; } while (false); }
+void do_dynamic_flow(bool repeat) { Config source(3); do { observe_value(source); } while (repeat); }
+void do_true_flow() { Config source(3); do { observe_value(source); break; } while (true); }
+void do_continue_flow() { Config source(3); do { observe_value(source); continue; } while (false); }
+void do_before_source() { do {} while (false); Config source(3); observe_value(source); }
+void do_nested_switch(int branch) {
+  Config source(3);
+  do { switch (branch) { case 0: observe_value(source); break; default: break; } } while (false);
+}
+void case_into_do(int branch) {
+  Config source(3);
+  switch (branch) { do { case 0: observe_value(source); break; } while (false); }
+}
 
 #ifdef WAVEBRIDGE_OBJECT_USES_EXECUTION
 void opaque_call() {}

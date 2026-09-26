@@ -1,6 +1,20 @@
 # 当前状态
 
-更新日期：2026-09-23。
+更新日期：2026-09-26。
+
+## 源声明、复制语句与立即调用链的结构顺序
+
+`object_use_closure.source_order` 在fresh子检查之后，基于真实语义祖先路径和
+CompoundStmt直接child顺序，检查源声明在复制语句之前、所有嵌套lambda沿
+对应立即调用链求值的语法结构。支持完整位于源作用域后续语句内的switch，
+以及条件精确为false或int字面量0转bool的do宏包装；case/default不得跨do
+跳入包装体，break须绑定最近的受支持switch/do且不跨lambda。一般循环、
+continue及其他未支持控制流保持unknown，不按宏名放行。
+657项CPU、181项Clang专项与demo通过。顺序子报告独立于主引用闭合结果，
+不自动解除capture协议的alive/same-activation、动态lifetime或历史保持义务。
+首轮完整vLLM重放的主引用闭合checked，但顺序子报告因DoStmt保持unknown；
+旧失败证据保留。新增受限do支持后的完整TU重放尚在执行，不记为通过。
+完整记录见 `.agents/handoffs/wb04-source-order-20260923.md`。
 
 ## 按值实参的跨层与CPU对照回归
 

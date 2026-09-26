@@ -26,6 +26,139 @@ HARD_MAX_AST_NODES = 10_000_000
 MAX_EXPLICIT_USES = 256
 
 
+def _false_do_condition(condition):
+    """Only literal false or the exact builtin int-zero-to-bool conversion."""
+    if (condition.get("type") not in ({"qualType": "bool"},
+                                      {"qualType": "bool", "desugaredQualType": "bool"}) or
+            condition.get("valueCategory") != "prvalue"):
+        return False
+    children = _children(condition, strict=True)
+    if condition.get("kind") == "CXXBoolLiteralExpr":
+        return condition.get("value") is False and not children
+    if (condition.get("kind") != "ImplicitCastExpr" or
+            condition.get("castKind") != "IntegralToBoolean" or len(children) != 1):
+        return False
+    literal = children[0]
+    return (literal.get("kind") == "IntegerLiteral" and literal.get("value") == "0" and
+            literal.get("type") == {"qualType": "int"} and
+            literal.get("valueCategory") == "prvalue" and not _children(literal, strict=True))
+
+
+def _source_order(variable, semantic_paths, semantic_ids, copy_paths, invocations):
+    """Check statement order and receiver paths, not dynamic lifetime."""
+    result = {
+        "schema_version": "source-copy-structural-order/v1",
+        "status": "unknown", "reason": None, "copies": [],
+        "scope": "ordered_compound_children_and_fresh_immediate_lambda_paths",
+        "source_program_checked": False, "deployable": False,
+        "source_lifetime": "not_established", "source_value_preservation": "not_established",
+        "execution_reachability_and_count": "not_established",
+        "external_nonlocal_control_effects": "not_established",
+    }
+    try:
+        forbidden = {"GotoStmt", "IndirectGotoStmt", "LabelStmt", "AddrLabelExpr",
+                     "ForStmt", "WhileStmt",
+                     "CXXForRangeStmt", "CXXTryStmt", "CXXCatchStmt",
+                     "CoroutineBodyStmt", "CoawaitExpr", "CoyieldExpr", "CoreturnStmt",
+                     "SEHTryStmt", "SEHExceptStmt", "SEHFinallyStmt", "StmtExpr",
+                     "DependentCoawaitExpr", "CoroutineSuspendExpr"}
+        statements_supported = {"CompoundStmt", "DeclStmt", "IfStmt", "ReturnStmt",
+                                "NullStmt", "SwitchStmt", "CaseStmt", "DefaultStmt", "BreakStmt", "DoStmt"}
+        # Every semantic node has its own path; the last element visits all
+        # nodes, not merely terminal leaves of the function.
+        for path in semantic_paths.values():
+            node = path[-1]
+            if (node.get("kind") in forbidden or
+                    (str(node.get("kind", "")).endswith("Stmt") and node["kind"] not in statements_supported)):
+                result["unsupported_node"] = {"id": node.get("id"), "kind": node.get("kind")}
+                raise _Unknown("source_order_control_flow_unsupported")
+        source_path = semantic_paths[id(variable)]
+        if (len(source_path) < 3 or source_path[-2].get("kind") != "DeclStmt" or
+                source_path[-3].get("kind") != "CompoundStmt"):
+            raise _Unknown("source_order_declaration_scope_unsupported")
+        declaration, scope = source_path[-2], source_path[-3]
+        statements = _children(scope, strict=True)
+        source_position = next(i for i, node in enumerate(statements) if node is declaration)
+        switches = []
+        do_wrappers = []
+        for path in semantic_paths.values():
+            node = path[-1]
+            kind = node.get("kind")
+            if kind not in {"SwitchStmt", "DoStmt"}:
+                continue
+            label = "switch" if kind == "SwitchStmt" else "do"
+            identifier = node.get("id")
+            occurrences = semantic_ids.get(identifier, []) if isinstance(identifier, str) else []
+            if not identifier or len(occurrences) != 1 or occurrences[0] is not node:
+                raise _Unknown(f"source_order_{label}_not_semantically_unique")
+            if kind == "DoStmt":
+                children = _children(node, strict=True)
+                if (len(children) != 2 or children[0].get("kind") != "CompoundStmt" or
+                        not _false_do_condition(children[1])):
+                    result["unsupported_node"] = {"id": identifier, "kind": kind}
+                    raise _Unknown("source_order_do_condition_unsupported")
+            scope_positions = [i for i, parent in enumerate(path) if parent is scope]
+            if len(scope_positions) != 1 or scope_positions[0] + 1 >= len(path):
+                raise _Unknown(f"source_order_{label}_outside_source_scope")
+            statement = path[scope_positions[0] + 1]
+            switch_position = next((i for i, child in enumerate(statements) if child is statement), -1)
+            if switch_position <= source_position:
+                raise _Unknown(f"source_order_{label}_not_after_source_declaration")
+            (switches if kind == "SwitchStmt" else do_wrappers).append(node)
+        control_objects = {id(node) for node in switches + do_wrappers}
+        for path in semantic_paths.values():
+            if path[-1].get("kind") in {"CaseStmt", "DefaultStmt", "BreakStmt"}:
+                enclosing = [node for node in path[:-1] if node.get("kind") in {"SwitchStmt", "DoStmt", "LambdaExpr"}]
+                if not enclosing or id(enclosing[-1]) not in control_objects:
+                    raise _Unknown("source_order_transfer_without_supported_control")
+                if path[-1].get("kind") != "BreakStmt" and enclosing[-1].get("kind") != "SwitchStmt":
+                    raise _Unknown("source_order_case_crosses_do_wrapper")
+        invocation_by_lambda = {r["lambda_id"]: r["call_expression_id"] for r in invocations}
+        rows = []
+        for copy_id, expected_lambdas in sorted(copy_paths.items()):
+            candidates = semantic_ids.get(copy_id, [])
+            if len(candidates) != 1:
+                raise _Unknown("source_order_copy_semantic_occurrence_not_unique")
+            path = semantic_paths[id(candidates[0])]
+            scope_positions = [i for i, node in enumerate(path) if node is scope]
+            if len(scope_positions) != 1 or scope_positions[0] + 1 >= len(path):
+                raise _Unknown("copy_not_within_source_compound_scope")
+            statement = path[scope_positions[0] + 1]
+            copy_position = next((i for i, node in enumerate(statements) if node is statement), -1)
+            if copy_position <= source_position:
+                raise _Unknown("copy_statement_not_after_source_declaration")
+            lambda_positions = [(i, node["id"]) for i, node in enumerate(path)
+                                if node.get("kind") == "LambdaExpr"]
+            if tuple(identifier for _, identifier in lambda_positions) != expected_lambdas:
+                raise _Unknown("source_order_lambda_path_mismatch")
+            previous_body = scope_positions[0]
+            chain = []
+            for position, lambda_id in lambda_positions:
+                call_id = invocation_by_lambda.get(lambda_id)
+                calls = [i for i, node in enumerate(path[:position])
+                         if node.get("id") == call_id and node.get("kind") == "CXXOperatorCallExpr"]
+                if len(calls) != 1 or calls[0] <= previous_body:
+                    raise _Unknown("source_order_immediate_invocation_path_mismatch")
+                if position + 1 >= len(path) or path[position + 1].get("kind") != "CompoundStmt":
+                    raise _Unknown("copy_not_in_invoked_lambda_body")
+                previous_body = position + 1
+                chain.append({"lambda_id": lambda_id, "call_expression_id": call_id})
+            rows.append({"copy_expression_id": copy_id, "source_statement_position": source_position,
+                         "source_declaration_statement_id": declaration.get("id"),
+                         "copy_enclosing_statement_id": statement.get("id"),
+                         "copy_enclosing_statement_position": copy_position,
+                         "immediate_invocation_chain": chain})
+        result.update(status="checked", copies=rows, source_scope_id=scope.get("id"),
+                      structured_switch_ids=[node.get("id") for node in switches],
+                      false_condition_do_wrappers=[{
+                          "id": node["id"], "body_id": node["inner"][0].get("id"),
+                          "condition_ast": node["inner"][1],
+                      } for node in do_wrappers])
+    except (_Unknown, KeyError, StopIteration) as error:
+        result["reason"] = error.reason if isinstance(error, _Unknown) else "source_order_path_missing"
+    return result
+
+
 def _children(node: object, *, strict: bool = False) -> list[dict[str, Any]]:
     if not isinstance(node, dict):
         raise _Unknown("ast_node_not_object")
@@ -74,6 +207,7 @@ def check(payload: object, variable_id: object, integer_types: object,
         "source_program_checked": False, "deployable": False,
         "source_object_preservation": "not_established",
         "source_mutation_history": "not_established",
+        "source_order": {"status": "unknown", "reason": "explicit_use_closure_not_checked"},
         "prior_aliases": "not_established",
         "untracked_memory_effects": "not_established",
         "opaque_call_effects": "not_established",
@@ -195,12 +329,18 @@ def check(payload: object, variable_id: object, integer_types: object,
         # visit the direct LambdaExpr body and capture initializers instead.
         semantic_refs: list[tuple[dict[str, Any], tuple[str, ...]]] = []
         semantic_nodes = 0
+        semantic_paths = {}
+        semantic_ids = {}
 
-        def walk(node: dict[str, Any], lambda_path: tuple[str, ...]) -> None:
+        def walk(node: dict[str, Any], lambda_path: tuple[str, ...], ancestors=()) -> None:
             nonlocal semantic_nodes
             semantic_nodes += 1
             if semantic_nodes > budget:
                 raise _Unknown("semantic_function_node_budget_exceeded")
+            path = ancestors + (node,)
+            semantic_paths[id(node)] = path
+            if isinstance(node.get("id"), str):
+                semantic_ids.setdefault(node["id"], []).append(node)
             kind = node.get("kind")
             if kind in {"GCCAsmStmt", "MSAsmStmt"}:
                 raise _Unknown("inline_assembly_in_source_function_unsupported")
@@ -217,7 +357,7 @@ def check(payload: object, variable_id: object, integer_types: object,
             children = _children(node, strict=True)
             if kind != "LambdaExpr":
                 for child in children:
-                    walk(child, lambda_path)
+                    walk(child, lambda_path, path)
                 return
             lambda_id = node.get("id")
             if not isinstance(lambda_id, str) or not lambda_id:
@@ -229,8 +369,8 @@ def check(payload: object, variable_id: object, integer_types: object,
             for child in children:
                 if child is closures[0] or child is bodies[0]:
                     continue
-                walk(child, lambda_path)  # capture initializers execute outside this closure body
-            walk(bodies[0], lambda_path + (lambda_id,))
+                walk(child, lambda_path, path)  # capture initializers execute outside this closure body
+            walk(bodies[0], lambda_path + (lambda_id,), path)
 
         walk(function, ())
         if not semantic_refs:
@@ -374,6 +514,7 @@ def check(payload: object, variable_id: object, integer_types: object,
 
         result.update(
             status="checked",
+            source_order=_source_order(variable, semantic_paths, semantic_ids, copy_paths, invocation_checks),
             explicit_source_references=reference_reports,
             capture_initializers=capture_summaries,
             direct_copy_expression_ids=sorted(direct_copy_ids),

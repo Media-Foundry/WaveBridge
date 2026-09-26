@@ -557,3 +557,25 @@ one-shot会分配完整字符串与UTF-8字节缓冲区，仅适用于已评估�
 就是最终参数对象；源/目标动态非重叠、其他实参顺序及效果、参数析构、callee
 body、配置API和launch语义仍未知。原v1主status仍仅描述字段值关系，不能因
 `parameter_target` checked自动解除source历史保持义务。
+
+## 源声明与复制的结构顺序
+
+`object_use_closure.check` 完成fresh引用闭合与立即调用检查后，单独返回
+`source_order`。它在同一函数的语义AST视图中记录实际祖先路径，跳过重复closure
+record body，使用source所在CompoundStmt的直接child对象顺序（非行号/offset）
+检查声明在复制所在语句之前。每层lambda必须沿该copy真实祖先路径，对应本次
+fresh检查得到的立即调用ID，且copy位于lambda body而非捕获初始化器内。
+
+支持完整处于source同一作用域后续语句中的switch，其Case/Default必须归属该
+支持的switch；不推导选择了哪一分支。source之前或作用域之外的switch不支持。
+同样支持完整位于source作用域后续child的 `do { ... } while(false/0)` 宏包装，
+body须为CompoundStmt，条件只接受childless bool false，或精确的
+IntegralToBoolean←childless int字面量0；不做任意常量折叠、不按宏名放行。
+Break绑定最近的受支持switch/do且不跨lambda，Case/Default不得越过do跳入体内。
+其他循环、continue、goto、label、try/coroutine、GNU statement-expression及未识别Stmt保持
+unknown。原先闭合扫描拒绝的空AST placeholder仍然拒绝，不为顺序子报告放宽。
+
+`source-copy-structural-order/v1` 的checked仅是结构顺序和立即调用路径证据。
+执行可达性/次数、source动态lifetime、非局部外部控制效果及历史值保持仍未知；
+原有capture协议中的活跃对象和same-activation假设不会自动删除。
+主引用闭合可以checked而source_order未知，调用者必须检查所需的子报告范围。
