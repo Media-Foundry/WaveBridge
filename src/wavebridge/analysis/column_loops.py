@@ -181,12 +181,53 @@ BODY_KINDS = {
 }
 
 
+def _check_bool_substitution(node: dict[str, Any]) -> None:
+    """Trust only Clang's concrete bool-literal replacement, not an arbitrary child."""
+    children = node.get("inner")
+    if (_type(node) != "bool" or node.get("valueCategory") != "prvalue" or
+            not isinstance(children, list) or len(children) not in (1, 2) or
+            any(not isinstance(child, dict) or not child for child in children)):
+        raise _Unknown("unsupported_body_template_substitution", node.get("range"))
+    if len(children) == 2:
+        parameter = children[0]
+        if (parameter.get("kind") != "NonTypeTemplateParmDecl" or _type(parameter) != "bool" or
+                not isinstance(parameter.get("id"), str) or not parameter["id"] or
+                parameter.get("isParameterPack") or parameter.get("inner", []) != []):
+            raise _Unknown("unsupported_body_template_parameter", node.get("range"))
+    literal = children[-1]
+    if (literal.get("kind") != "CXXBoolLiteralExpr" or _type(literal) != "bool" or
+            literal.get("valueCategory") != "prvalue" or type(literal.get("value")) is not bool or
+            literal.get("inner", []) != []):
+        raise _Unknown("nonliteral_body_template_substitution", node.get("range"))
+
+
+def _hinted_loop(node: dict[str, Any]) -> dict[str, Any]:
+    """Expose the original loop, never the effect of an optimized/unrolled program."""
+    children = node.get("inner")
+    if (not isinstance(children, list) or not 2 <= len(children) <= 9 or
+            any(not isinstance(child, dict) or not child for child in children) or
+            children[-1].get("kind") != "ForStmt"):
+        raise _Unknown("unsupported_body_attribute_wrapper", node.get("range"))
+    for attribute in children[:-1]:
+        expressions = attribute.get("inner", [])
+        if (attribute.get("kind") != "LoopHintAttr" or not isinstance(expressions, list) or
+                any(expression != {} for expression in expressions)):
+            raise _Unknown("unsupported_body_loop_hint", attribute.get("range"))
+    return children[-1]
+
+
 def _check_body(body: dict[str, Any], protected_ids: set[str],
                 property_callback=None, nested_callback=None) -> None:
     pending = [body]
     while pending:
         node = pending.pop()
         kind = node.get("kind")
+        if kind == "SubstNonTypeTemplateParmExpr":
+            _check_bool_substitution(node)
+            continue  # Only the validated literal has runtime expression meaning.
+        if kind == "AttributedStmt":
+            pending.append(_hinted_loop(node))
+            continue  # The loop still undergoes exactly the ordinary checks below.
         if kind == "PseudoObjectExpr" and property_callback is not None:
             if property_callback(node) is True:
                 # The callback is responsible for a fresh conditional effect

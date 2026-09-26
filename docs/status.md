@@ -2,6 +2,21 @@
 
 更新日期：2026-09-27。
 
+## 模板 bool、循环 hint 与首个 softmax 局部递推
+
+新增具体 bool literal 替换的受限 effect 检查，不删除未选分支；body 中无
+表达式 LoopHintAttr 包装回到原循环检查，不重置深度或猜测具体 hint 选项。
+顶层 pragma metadata 没有因此全部验证，编译后行为仍不在此保证范围内。
+
+固定 softmax AST 的 max 阶段内层循环现为 recovered（0 到 4，步长 1），
+其余 6 个循环卡在调用、1 个卡在 break，整核仍 unknown。一个外层循环
+保留内层 4 次迭代局部证据，但随后因调用失败，父级 body 保持性未建立；
+新增回归禁止用局部成功升级父级。不是新的 holdout 或整核接受率。
+详见 [实录与范围](../experiments/column-wrappers-evidence-20260927.md)。
+最终全套 959 项 CPU 测试通过（66.834 秒，native 插件启用，无跳过），demo/
+diff 通过。新增定向 11 项通过，Clang17/SDK23 新增源码测试各 6 项通过。
+本轮未重采前端或运行 GPU，远端 CI 未核验。
+
 ## 多层内建数组存储路径
 
 新增最多 8 层内建下标写入路径，要求完整 AST、lvalue/类型及精确非引用根

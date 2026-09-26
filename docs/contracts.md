@@ -289,6 +289,12 @@ condition、increment 和 body 检查外层受保护声明，不能用内层保�
 有限递推不证明内存有效、可达性、正常 body 执行或整核终止。默认副作用
 检查器仍拒绝嵌套循环；只有上述 fresh 组合路径使用内部回调建立外层保持性。
 
+body 的 bool SubstNonTypeTemplateParmExpr 只在替换为明确 typed bool literal
+时作为无写表达式处理，参数 metadata 不得藏其它子表达式。可信前端的替换
+关系仍属于假设，不独立检查模板实例化。if 两分支仍全遍历，不做死支删除。
+无表达式 LoopHintAttr 包装只暴露其单个原始 ForStmt，不能重置词法深度或
+绕过 body 检查。只针对变换前源码关系，具体 hint option/编译后效果不推断。
+
 声明类型的引用性质取自可信Clang声明的desugaredQualType，缺少别名展开证据
 不得按值存储放行；同一分类用于引用绑定及写入目标。仅支持自动存储期的
 induction，static/thread_local返回unknown。普通值类型别名不等于引用，

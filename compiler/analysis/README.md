@@ -217,6 +217,15 @@ literal、上界为非负已解析 const 声明、步长为支持的正整数。
 不擦除引用或猜解 typedef。所有下标和 wrapper 仍由 body 遍历检查副作用。
 conditional/comma/cast/重载基址仍未知。支持范围不包含 bounds、指针来源、
 别名或实际内存安全证明；原单层路径的类型支持不随此次扩展扩大。
+body 中具体 bool 模板替换仅接受 typed prvalue 的 bool literal，可带一个
+完整、非 pack、无默认表达式子节点的 bool 参数声明。它依赖可信 Clang 替换，
+只判断无运行时写入，不独立证明模板实例化，也不据此跳过 if/条件表达式分支。
+AttributedStmt 仅接受一个原始 ForStmt 与 1～8 个无表达式参数的 LoopHintAttr；
+将原循环送回同一深度/递推/body 检查。其它 attribute、缺失结构或 hint 表达式
+继续 unknown。JSON 不含具体 hint option 时不猜 unroll/vectorize 配置，不证明
+优化后的执行、编译器变换正确或 hint 的额外前提；原始 AST 始终保留。
+该包装门槛作用于 body 检查路径；函数顶层循环的平面 discovery 仍直接选取
+ForStmt，不据此声称已经验证全部外层 pragma metadata。
 起点保留源码表达式引用，不预设为线程 ID；额外循环变量/边界写入、可疑引用
 别名、调用或复杂控制流保守拒绝。普通 `output[i]` 下标读取不是对 `i` 的写入。
 递推仍以无溢出、合法域、未建立的别名前提为条件；没有证明输入覆盖、launch
