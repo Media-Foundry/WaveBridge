@@ -100,6 +100,13 @@ void captured_by_value_flow() {
   Config source(3);
   [&]() { change_value(source); observe_value(source); }();
 }
+unsigned unreachable_copy_count = 0;
+void unreachable_copy_flow() {
+  if (false) {
+    Config source(3);
+    [&]() { Config target(source); ++unreachable_copy_count; }();
+  }
+}
 unsigned cleanup_observation_count = 0;
 struct SideEffectTemporary {
   ~SideEffectTemporary() { ++cleanup_observation_count; }
@@ -174,6 +181,8 @@ void captured_attributed_copy_flow() {
 #ifdef WAVEBRIDGE_OBJECT_USES_EXECUTION
 void opaque_call() {}
 int main() {
+  unreachable_copy_flow();
+  if (unreachable_copy_count != 0) return 4;
   by_value_flow();
   if (observed_value != 3 || mutation_calls != 1) return 1;
   captured_by_value_flow();

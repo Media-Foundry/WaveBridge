@@ -10,7 +10,7 @@ from unittest.mock import patch
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.frontend.native_captures import collect
 from wavebridge.verification.integer_selection import _hash
-from wavebridge.verification.object_use_closure import _reference_use_effects, check
+from wavebridge.verification.object_use_closure import _reference_use_effects, check, inspect_structure
 
 PLUGIN = os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -62,6 +62,116 @@ class ObjectUseClosureClangTests(unittest.TestCase):
         payload = self.payload if payload is None else payload
         source, protocols = self.inputs(name, payload)
         return check(payload, source["id"], ABI, {}, protocols, **kwargs)
+
+    def run_structure(self, name="three_branches", payload=None, **kwargs):
+        payload = self.payload if payload is None else payload
+        source, _ = self.inputs(name, payload)
+        # No capture protocol, inferred value oracle, or earlier successful
+        # child report is passed to the independent structure entry point.
+        return inspect_structure(payload, source["id"], ABI, {}, **kwargs)
+
+    def test_independent_closure_never_calls_conditional_copy_or_identity(self):
+        before = copy.deepcopy(self.payload)
+        with patch("wavebridge.verification.object_use_closure.check_record_copy",
+                   side_effect=AssertionError("conditional copy used")), \
+                patch("wavebridge.verification.object_use_closure.check_capture_source",
+                      side_effect=AssertionError("conditional identity used")), \
+                patch("wavebridge.capture_source_check.check_record_copy",
+                      side_effect=AssertionError("nested conditional copy used")):
+            for name in ("plain_copy", "three_branches", "by_value_flow", "captured_by_value_flow"):
+                with self.subTest(name=name):
+                    report = self.run_structure(name)
+                    self.assertEqual(report["status"], "checked", report)
+                    self.assertEqual(report["schema_version"], "object-explicit-use-structure/v1")
+                    self.assertEqual(report["source_order"]["status"], "checked")
+                    self.assertEqual(report["source_reference_use_effects"]["status"], "checked")
+                    self.assertEqual(report["copy_cleanup_observations"]["status"], "checked")
+                    self.assertNotIn("capture_protocols", report["input_sha256"])
+                    self.assertNotIn("conditional_on_existing_capture_protocols",
+                                     report["source_reference_use_effects"].values())
+                    self.assertNotIn("copy_checks", report)
+                    self.assertNotIn("capture_checks", report)
+                    self.assertEqual(report["conditional_initialization"]["completion"]["status"], "conditional")
+                    for key in ("source_lifetime", "source_object_preservation",
+                                "reachability_and_execution_order", "opaque_call_effects"):
+                        self.assertEqual(report[key], "not_established")
+                    self.assertFalse(report["source_program_checked"])
+                    self.assertFalse(report["deployable"])
+                    for child in report["copy_structures"]:
+                        self.assertEqual(child["schema_version"], "record-copy-structure/v1")
+                    for child in report["capture_structures"]:
+                        self.assertEqual(child["schema_version"], "capture-source-structure/v1")
+                        self.assertNotIn("identity_completion", child)
+        self.assertEqual(self.payload, before)
+
+    def test_unreachable_structure_does_not_establish_completion_or_lifetime(self):
+        report = self.run_structure("unreachable_copy_flow")
+        self.assertEqual(report["status"], "checked", report)
+        self.assertEqual(report["conditional_initialization"]["completion"]["status"], "conditional")
+        self.assertEqual(report["source_lifetime"], "not_established")
+        self.assertEqual(report["reachability_and_execution_order"], "not_established")
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "unreachable-uses"
+            built = subprocess.run([COMPILER, "-std=c++17", "-DWAVEBRIDGE_OBJECT_USES_EXECUTION",
+                                    str(Path(__file__).parent / "fixtures/object_uses.cpp"),
+                                    "-o", str(executable)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(built.returncode, 0, built.stderr)
+            run = subprocess.run([str(executable)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(run.returncode, 0, run.stderr)
+
+    def test_independent_closure_rejects_writes_aliases_and_unsupported_effects(self):
+        for name in ("direct_write", "write_inside_lambda", "write_in_other_branch", "reference_alias",
+                     "cast_alias", "address_escape", "by_reference_flow", "by_value_capture",
+                     "named_closure", "passed_closure", "init_capture_alias", "static_source",
+                     "tls_source", "opaque_assembly", "attributed_copy_flow", "captured_attributed_copy_flow"):
+            with self.subTest(name=name):
+                self.assertEqual(self.run_structure(name)["status"], "unknown")
+        # The established conditional-value interface deliberately has wider
+        # attribute tolerance. The new path must not silently narrow that API.
+        for name in ("attributed_copy_flow", "captured_attributed_copy_flow"):
+            self.assertEqual(self.run_check(name)["status"], "checked")
+
+    def test_independent_parent_does_not_upgrade_unknown_children(self):
+        cleanup = self.run_structure("side_effect_cleanup_copy")
+        self.assertEqual(cleanup["status"], "checked", cleanup)
+        self.assertEqual(cleanup["copy_cleanup_observations"]["status"], "unknown")
+        order = self.run_structure("goto_flow")
+        self.assertEqual(order["status"], "checked", order)
+        self.assertEqual(order["source_order"]["status"], "unknown")
+        opaque = self.run_structure("ordinary_opaque_call")
+        self.assertEqual(opaque["status"], "checked", opaque)
+        self.assertEqual(opaque["opaque_call_effects"], "not_established")
+        for report in (cleanup, order, opaque):
+            self.assertEqual(report["source_lifetime"], "not_established")
+            self.assertEqual(report["source_object_preservation"], "not_established")
+            self.assertFalse(report["deployable"])
+
+    def test_independent_closure_rechecks_missing_or_misbound_native_capture(self):
+        for mutation in ("missing", "duplicate", "field", "initializer", "kind"):
+            payload = copy.deepcopy(self.payload)
+            source, _ = self.inputs("three_branches", payload)
+            edge = next(item for item in payload["captures"]
+                        if item["captured_declaration_id"] == source["id"])
+            if mutation == "missing":
+                payload["captures"].remove(edge)
+            elif mutation == "duplicate":
+                payload["captures"].append(copy.deepcopy(edge))
+            elif mutation == "field":
+                edge["field_declaration_id"] = "unrelated"
+            elif mutation == "initializer":
+                edge["initializer_expression_id"] = "unrelated"
+            else:
+                edge["capture_kind"] = "by_copy"
+            payload["capture_structures"] = [{"status": "checked"}]
+            with self.subTest(mutation=mutation):
+                self.assertEqual(self.run_structure(payload=payload)["status"], "unknown")
+
+    def test_independent_closure_rejects_invalid_inputs_and_budget(self):
+        for budget in (0, True, 1, 10_000_001):
+            self.assertEqual(self.run_structure(max_ast_nodes=budget)["status"], "unknown")
+        for payload in (None, {}, {"ast": self.payload["ast"]}):
+            self.assertEqual(inspect_structure(payload, "missing", ABI, {})["status"], "unknown")
+        self.assertEqual(inspect_structure(self.payload, "missing", ABI, {})["status"], "unknown")
 
     def test_plain_and_all_three_branches_are_checked(self):
         for name in ("plain_copy", "three_branches"):

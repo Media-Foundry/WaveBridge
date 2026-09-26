@@ -10,8 +10,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from wavebridge.capture_source_check import check as check_capture_source
-from wavebridge.record_copy_check import check as check_record_copy
+from wavebridge.capture_source_check import (
+    check as check_capture_source,
+    inspect_structure as inspect_capture_structure,
+)
+from wavebridge.record_copy_check import (
+    check as check_record_copy,
+    inspect_effects as inspect_record_copy_effects,
+)
 from wavebridge.verification.integer_selection import _hash
 from wavebridge.verification.kernel_arguments import _Unknown
 from wavebridge.verification.lambda_invocation import (
@@ -118,7 +124,7 @@ def _copy_cleanup_observations(payload, root_hash, semantic_paths, semantic_ids,
     return result
 
 
-def _reference_use_effects(variable_id, root_hash, copy_paths, copies, captures):
+def _reference_use_effects(variable_id, root_hash, copy_paths, copies, captures, *, structural=False):
     """Compose fresh copy access classifications, not dynamic preservation."""
     result = {
         "schema_version": "source-reference-use-effects/v1",
@@ -129,10 +135,12 @@ def _reference_use_effects(variable_id, root_hash, copy_paths, copies, captures)
         "source_object_preservation": "not_established",
         "source_destination_nonoverlap": "not_established",
         "opaque_call_and_implicit_lifetime_effects": "not_established",
-        "capture_identity": "conditional_on_existing_capture_protocols",
+        "capture_identity": ("static_capture_and_receiver_path_bindings_only"
+                             if structural else "conditional_on_existing_capture_protocols"),
     }
     reports = [(report, "direct") for report in copies]
-    reports.extend((report.get("copy_check", {}), "captured") for report in captures)
+    nested_key = "copy_structure" if structural else "copy_check"
+    reports.extend((report.get(nested_key, {}), "captured") for report in captures)
     seen = set()
     for report, route in reports:
         copy_id = report.get("expression_id")
@@ -163,8 +171,10 @@ def _reference_use_effects(variable_id, root_hash, copy_paths, copies, captures)
     elif any(row["status"] != "checked" for row in result["copies"]):
         result["reason"] = "one_or_more_copy_effects_unknown"
     else:
-        result.update(status="checked", reference_capture_storage=
-                      "only_exact_native_reference_captures_in_fresh_checked_immediate_lambdas")
+        result.update(status="checked", reference_capture_storage=(
+            "static_exact_native_reference_capture_and_immediate_receiver_paths"
+            if structural else
+            "only_exact_native_reference_captures_in_fresh_checked_immediate_lambdas"))
     return result
 
 
@@ -326,6 +336,198 @@ def _template_marker(node: dict[str, Any]) -> bool:
             } for child in children)))
 
 
+def _semantic_inventory(root, variable_id, captures, budget, *, partial_result=None):
+    """Recover the one shared static explicit-reference inventory."""
+    nodes: list[dict[str, Any]] = []
+    index: dict[str, list[dict[str, Any]]] = {}
+    parents: dict[int, list[dict[str, Any]]] = {}
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if not isinstance(node, dict):
+            raise _Unknown("ast_node_not_object")
+        nodes.append(node)
+        if len(nodes) > budget:
+            raise _Unknown("ast_node_budget_exceeded")
+        node_id = node.get("id")
+        if isinstance(node_id, str) and node_id:
+            index.setdefault(node_id, []).append(node)
+        children = _children(node)
+        for child in children:
+            parents.setdefault(id(child), []).append(node)
+        pending.extend(children)
+
+    variable_nodes = index.get(variable_id, [])
+    if (len(variable_nodes) != 1 or variable_nodes[0].get("kind") != "VarDecl"):
+        raise _Unknown("source_variable_not_unique")
+    variable = variable_nodes[0]
+    owner = variable
+    function = None
+    while True:
+        owners = parents.get(id(owner), [])
+        if len(owners) != 1:
+            break
+        owner = owners[0]
+        kind = owner.get("kind")
+        if kind == "LambdaExpr" or (isinstance(kind, str) and kind.endswith("TemplateDecl")):
+            raise _Unknown("source_variable_scope_unsupported")
+        if isinstance(kind, str) and kind.endswith("FunctionDecl"):
+            if kind != "FunctionDecl" or _template_marker(owner):
+                raise _Unknown("source_function_not_ordinary_nontemplate_function")
+            function = owner
+            break
+    if function is None:
+        raise _Unknown("source_function_not_found")
+    function_id = function.get("id")
+    if partial_result is not None:
+        partial_result["function_id"] = function_id
+    if (not isinstance(function_id, str) or not function_id or
+            len(index.get(function_id, [])) != 1 or index[function_id][0] is not function):
+        raise _Unknown("source_function_not_unique")
+
+    # Traverse the function's semantic bodies.  Lambda closure records
+    # contain a JSON copy of operator(), so skip those record subtrees and
+    # visit the direct LambdaExpr body and capture initializers instead.
+    semantic_refs: list[tuple[dict[str, Any], tuple[str, ...]]] = []
+    semantic_nodes = 0
+    semantic_paths = {}
+    semantic_ids = {}
+
+    def walk(node: dict[str, Any], lambda_path: tuple[str, ...], ancestors=()) -> None:
+        nonlocal semantic_nodes
+        semantic_nodes += 1
+        if semantic_nodes > budget:
+            raise _Unknown("semantic_function_node_budget_exceeded")
+        path = ancestors + (node,)
+        semantic_paths[id(node)] = path
+        if isinstance(node.get("id"), str):
+            semantic_ids.setdefault(node["id"], []).append(node)
+        kind = node.get("kind")
+        if kind in {"GCCAsmStmt", "MSAsmStmt"}:
+            raise _Unknown("inline_assembly_in_source_function_unsupported")
+        if kind == "DeclRefExpr":
+            referenced = node.get("referencedDecl")
+            if isinstance(referenced, dict) and referenced.get("id") == variable_id:
+                if (referenced.get("kind") != "VarDecl" or
+                        referenced.get("type") != variable.get("type") or
+                        not isinstance(node.get("id"), str) or not node["id"]):
+                    raise _Unknown("source_declref_binding_or_type_mismatch")
+                semantic_refs.append((node, lambda_path))
+                if len(semantic_refs) > MAX_EXPLICIT_USES:
+                    raise _Unknown("explicit_source_use_budget_exceeded")
+        children = _children(node, strict=True)
+        if kind != "LambdaExpr":
+            for child in children:
+                walk(child, lambda_path, path)
+            return
+        lambda_id = node.get("id")
+        if not isinstance(lambda_id, str) or not lambda_id:
+            raise _Unknown("lambda_id_missing_in_source_function")
+        closures = [child for child in children if child.get("kind") == "CXXRecordDecl"]
+        bodies = [child for child in children if child.get("kind") == "CompoundStmt"]
+        if len(closures) != 1 or len(bodies) != 1:
+            raise _Unknown("lambda_semantic_shape_unsupported")
+        for child in children:
+            if child is closures[0] or child is bodies[0]:
+                continue
+            walk(child, lambda_path, path)  # capture initializers execute outside this closure body
+        walk(bodies[0], lambda_path + (lambda_id,), path)
+
+    walk(function, ())
+    if not semantic_refs:
+        raise _Unknown("source_variable_has_no_explicit_references")
+
+    if len(captures) > budget or any(not isinstance(item, dict) for item in captures):
+        raise _Unknown("capture_metadata_shape_or_budget_unsupported")
+    source_captures = [item for item in captures
+                       if item.get("captured_declaration_id") == variable_id]
+    capture_initializer_ids: set[str] = set()
+    capture_lambda_ids: set[str] = set()
+    capture_summaries: list[dict[str, Any]] = []
+    for edge in source_captures:
+        initializer_id = edge.get("initializer_expression_id")
+        lambda_id = edge.get("lambda_id")
+        if (edge.get("support_status") != "observed" or
+                edge.get("unsupported_reason") is not None or
+                edge.get("capture_kind") != "by_reference" or
+                edge.get("is_init_capture") is not False or
+                edge.get("is_this_capture") is not False or
+                edge.get("is_vla_type_capture") is not False or
+                not isinstance(initializer_id, str) or not initializer_id or
+                not isinstance(lambda_id, str) or not lambda_id or
+                initializer_id in capture_initializer_ids or lambda_id in capture_lambda_ids):
+            raise _Unknown("source_native_capture_not_unique_plain_by_reference")
+        capture_initializer_ids.add(initializer_id)
+        capture_lambda_ids.add(lambda_id)
+        capture_summaries.append({
+            "lambda_id": lambda_id,
+            "initializer_expression_id": initializer_id,
+            "field_declaration_id": edge.get("field_declaration_id"),
+            "closure_declaration_id": edge.get("closure_declaration_id"),
+            "capture_kind": "by_reference",
+        })
+
+    semantic_by_id: dict[str, tuple[dict[str, Any], tuple[str, ...]]] = {}
+    for node, path in semantic_refs:
+        node_id = node["id"]
+        if node_id in semantic_by_id:
+            raise _Unknown("semantic_source_declref_id_duplicate")
+        occurrences = index.get(node_id, [])
+        if (not occurrences or
+                any(item.get("kind") != "DeclRefExpr" for item in occurrences) or
+                any(not _same_ast(item, occurrences[0]) for item in occurrences[1:])):
+            raise _Unknown("source_declref_ast_occurrences_conflict")
+        semantic_by_id[node_id] = (node, path)
+    if not capture_initializer_ids.issubset(semantic_by_id):
+        raise _Unknown("native_capture_initializer_not_in_semantic_source_references")
+
+    direct_copy_ids: set[str] = set()
+    captured_copy_ids: set[str] = set()
+    copy_paths: dict[str, tuple[str, ...]] = {}
+    reference_reports: list[dict[str, Any]] = []
+    for reference_id, (reference, lambda_path) in semantic_by_id.items():
+        if reference_id in capture_initializer_ids:
+            reference_reports.append({
+                "expression_id": reference_id, "role": "native_by_reference_capture_initializer",
+                "lambda_path": list(lambda_path),
+            })
+            continue
+        current = reference
+        constructor = None
+        while True:
+            owners = parents.get(id(current), [])
+            if len(owners) != 1:
+                break
+            current = owners[0]
+            kind = current.get("kind")
+            if kind == "CXXConstructExpr":
+                constructor = current
+                break
+            if kind in {"DeclStmt", "CompoundStmt", "LambdaExpr", "FunctionDecl"}:
+                break
+        if constructor is None or not isinstance(constructor.get("id"), str):
+            raise _Unknown("source_reference_not_capture_initializer_or_direct_copy_argument")
+        copy_id = constructor["id"]
+        if copy_id in copy_paths and copy_paths[copy_id] != lambda_path:
+            raise _Unknown("copy_expression_semantic_path_conflict")
+        copy_paths[copy_id] = lambda_path
+        (captured_copy_ids if lambda_path else direct_copy_ids).add(copy_id)
+        reference_reports.append({
+            "expression_id": reference_id, "role": "direct_record_copy_argument",
+            "copy_expression_id": copy_id, "lambda_path": list(lambda_path),
+        })
+
+    return {
+        "nodes": nodes, "index": index, "parents": parents,
+        "variable": variable, "function": function, "function_id": function_id,
+        "semantic_paths": semantic_paths, "semantic_ids": semantic_ids,
+        "reference_reports": reference_reports, "capture_summaries": capture_summaries,
+        "capture_lambda_ids": capture_lambda_ids,
+        "direct_copy_ids": direct_copy_ids, "captured_copy_ids": captured_copy_ids,
+        "copy_paths": copy_paths,
+    }
+
+
 def check(payload: object, variable_id: object, integer_types: object,
           initialization_selection_domains: object, capture_protocols: object,
           *, max_ast_nodes: int | None = None) -> dict[str, Any]:
@@ -422,184 +624,20 @@ def check(payload: object, variable_id: object, integer_types: object,
         return result
 
     try:
-        nodes: list[dict[str, Any]] = []
-        index: dict[str, list[dict[str, Any]]] = {}
-        parents: dict[int, list[dict[str, Any]]] = {}
-        pending = [root]
-        while pending:
-            node = pending.pop()
-            if not isinstance(node, dict):
-                raise _Unknown("ast_node_not_object")
-            nodes.append(node)
-            if len(nodes) > budget:
-                raise _Unknown("ast_node_budget_exceeded")
-            node_id = node.get("id")
-            if isinstance(node_id, str) and node_id:
-                index.setdefault(node_id, []).append(node)
-            children = _children(node)
-            for child in children:
-                parents.setdefault(id(child), []).append(node)
-            pending.extend(children)
-
-        variable_nodes = index.get(variable_id, [])
-        if (len(variable_nodes) != 1 or variable_nodes[0].get("kind") != "VarDecl"):
-            raise _Unknown("source_variable_not_unique")
-        variable = variable_nodes[0]
-        owner = variable
-        function = None
-        while True:
-            owners = parents.get(id(owner), [])
-            if len(owners) != 1:
-                break
-            owner = owners[0]
-            kind = owner.get("kind")
-            if kind == "LambdaExpr" or (isinstance(kind, str) and kind.endswith("TemplateDecl")):
-                raise _Unknown("source_variable_scope_unsupported")
-            if isinstance(kind, str) and kind.endswith("FunctionDecl"):
-                if kind != "FunctionDecl" or _template_marker(owner):
-                    raise _Unknown("source_function_not_ordinary_nontemplate_function")
-                function = owner
-                break
-        if function is None:
-            raise _Unknown("source_function_not_found")
-        function_id = function.get("id")
+        inventory = _semantic_inventory(
+            root, variable_id, payload["captures"], budget, partial_result=result)
+        variable = inventory["variable"]
+        function_id = inventory["function_id"]
         result["function_id"] = function_id
-        if (not isinstance(function_id, str) or not function_id or
-                len(index.get(function_id, [])) != 1 or index[function_id][0] is not function):
-            raise _Unknown("source_function_not_unique")
-
-        # Traverse the function's semantic bodies.  Lambda closure records
-        # contain a JSON copy of operator(), so skip those record subtrees and
-        # visit the direct LambdaExpr body and capture initializers instead.
-        semantic_refs: list[tuple[dict[str, Any], tuple[str, ...]]] = []
-        semantic_nodes = 0
-        semantic_paths = {}
-        semantic_ids = {}
-
-        def walk(node: dict[str, Any], lambda_path: tuple[str, ...], ancestors=()) -> None:
-            nonlocal semantic_nodes
-            semantic_nodes += 1
-            if semantic_nodes > budget:
-                raise _Unknown("semantic_function_node_budget_exceeded")
-            path = ancestors + (node,)
-            semantic_paths[id(node)] = path
-            if isinstance(node.get("id"), str):
-                semantic_ids.setdefault(node["id"], []).append(node)
-            kind = node.get("kind")
-            if kind in {"GCCAsmStmt", "MSAsmStmt"}:
-                raise _Unknown("inline_assembly_in_source_function_unsupported")
-            if kind == "DeclRefExpr":
-                referenced = node.get("referencedDecl")
-                if isinstance(referenced, dict) and referenced.get("id") == variable_id:
-                    if (referenced.get("kind") != "VarDecl" or
-                            referenced.get("type") != variable.get("type") or
-                            not isinstance(node.get("id"), str) or not node["id"]):
-                        raise _Unknown("source_declref_binding_or_type_mismatch")
-                    semantic_refs.append((node, lambda_path))
-                    if len(semantic_refs) > MAX_EXPLICIT_USES:
-                        raise _Unknown("explicit_source_use_budget_exceeded")
-            children = _children(node, strict=True)
-            if kind != "LambdaExpr":
-                for child in children:
-                    walk(child, lambda_path, path)
-                return
-            lambda_id = node.get("id")
-            if not isinstance(lambda_id, str) or not lambda_id:
-                raise _Unknown("lambda_id_missing_in_source_function")
-            closures = [child for child in children if child.get("kind") == "CXXRecordDecl"]
-            bodies = [child for child in children if child.get("kind") == "CompoundStmt"]
-            if len(closures) != 1 or len(bodies) != 1:
-                raise _Unknown("lambda_semantic_shape_unsupported")
-            for child in children:
-                if child is closures[0] or child is bodies[0]:
-                    continue
-                walk(child, lambda_path, path)  # capture initializers execute outside this closure body
-            walk(bodies[0], lambda_path + (lambda_id,), path)
-
-        walk(function, ())
-        if not semantic_refs:
-            raise _Unknown("source_variable_has_no_explicit_references")
-
-        captures = payload["captures"]
-        if len(captures) > budget or any(not isinstance(item, dict) for item in captures):
-            raise _Unknown("capture_metadata_shape_or_budget_unsupported")
-        source_captures = [item for item in captures
-                           if item.get("captured_declaration_id") == variable_id]
-        capture_initializer_ids: set[str] = set()
-        capture_lambda_ids: set[str] = set()
-        capture_summaries: list[dict[str, Any]] = []
-        for edge in source_captures:
-            initializer_id = edge.get("initializer_expression_id")
-            lambda_id = edge.get("lambda_id")
-            if (edge.get("support_status") != "observed" or
-                    edge.get("unsupported_reason") is not None or
-                    edge.get("capture_kind") != "by_reference" or
-                    edge.get("is_init_capture") is not False or
-                    edge.get("is_this_capture") is not False or
-                    edge.get("is_vla_type_capture") is not False or
-                    not isinstance(initializer_id, str) or not initializer_id or
-                    not isinstance(lambda_id, str) or not lambda_id or
-                    initializer_id in capture_initializer_ids or lambda_id in capture_lambda_ids):
-                raise _Unknown("source_native_capture_not_unique_plain_by_reference")
-            capture_initializer_ids.add(initializer_id)
-            capture_lambda_ids.add(lambda_id)
-            capture_summaries.append({
-                "lambda_id": lambda_id,
-                "initializer_expression_id": initializer_id,
-                "field_declaration_id": edge.get("field_declaration_id"),
-                "closure_declaration_id": edge.get("closure_declaration_id"),
-                "capture_kind": "by_reference",
-            })
-
-        semantic_by_id: dict[str, tuple[dict[str, Any], tuple[str, ...]]] = {}
-        for node, path in semantic_refs:
-            node_id = node["id"]
-            if node_id in semantic_by_id:
-                raise _Unknown("semantic_source_declref_id_duplicate")
-            occurrences = index.get(node_id, [])
-            if (not occurrences or
-                    any(item.get("kind") != "DeclRefExpr" for item in occurrences) or
-                    any(not _same_ast(item, occurrences[0]) for item in occurrences[1:])):
-                raise _Unknown("source_declref_ast_occurrences_conflict")
-            semantic_by_id[node_id] = (node, path)
-        if not capture_initializer_ids.issubset(semantic_by_id):
-            raise _Unknown("native_capture_initializer_not_in_semantic_source_references")
-
-        direct_copy_ids: set[str] = set()
-        captured_copy_ids: set[str] = set()
-        copy_paths: dict[str, tuple[str, ...]] = {}
-        reference_reports: list[dict[str, Any]] = []
-        for reference_id, (reference, lambda_path) in semantic_by_id.items():
-            if reference_id in capture_initializer_ids:
-                reference_reports.append({
-                    "expression_id": reference_id, "role": "native_by_reference_capture_initializer",
-                    "lambda_path": list(lambda_path),
-                })
-                continue
-            current = reference
-            constructor = None
-            while True:
-                owners = parents.get(id(current), [])
-                if len(owners) != 1:
-                    break
-                current = owners[0]
-                kind = current.get("kind")
-                if kind == "CXXConstructExpr":
-                    constructor = current
-                    break
-                if kind in {"DeclStmt", "CompoundStmt", "LambdaExpr", "FunctionDecl"}:
-                    break
-            if constructor is None or not isinstance(constructor.get("id"), str):
-                raise _Unknown("source_reference_not_capture_initializer_or_direct_copy_argument")
-            copy_id = constructor["id"]
-            if copy_id in copy_paths and copy_paths[copy_id] != lambda_path:
-                raise _Unknown("copy_expression_semantic_path_conflict")
-            copy_paths[copy_id] = lambda_path
-            (captured_copy_ids if lambda_path else direct_copy_ids).add(copy_id)
-            reference_reports.append({
-                "expression_id": reference_id, "role": "direct_record_copy_argument",
-                "copy_expression_id": copy_id, "lambda_path": list(lambda_path),
-            })
+        semantic_paths = inventory["semantic_paths"]
+        semantic_ids = inventory["semantic_ids"]
+        index = inventory["index"]
+        reference_reports = inventory["reference_reports"]
+        capture_summaries = inventory["capture_summaries"]
+        capture_lambda_ids = inventory["capture_lambda_ids"]
+        direct_copy_ids = inventory["direct_copy_ids"]
+        captured_copy_ids = inventory["captured_copy_ids"]
+        copy_paths = inventory["copy_paths"]
 
         if set(capture_protocols) != captured_copy_ids:
             raise _Unknown("capture_protocol_keys_do_not_match_all_captured_copies")
@@ -684,6 +722,196 @@ def check(payload: object, variable_id: object, integer_types: object,
             explicit_source_reference_closure={
                 "status": "checked",
                 "relation": "every_supported_explicit_reference_is_an_exact_native_reference_capture_initializer_or_fresh_checked_direct_copy_argument",
+                "function_id": function_id,
+            },
+        )
+    except _Unknown as error:
+        result["reason"] = error.reason
+    return result
+
+
+def inspect_structure(payload: object, variable_id: object, integer_types: object,
+                      initialization_selection_domains: object,
+                      *, max_ast_nodes: int | None = None) -> dict[str, Any]:
+    """Close supported explicit-use syntax without assuming a live object."""
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    result: dict[str, Any] = {
+        "schema_version": "object-explicit-use-structure/v1",
+        "status": "unknown", "reason": None,
+        "variable_id": variable_id, "function_id": None,
+        "conditional_initialization": None,
+        "explicit_source_references": [], "capture_initializers": [],
+        "direct_copy_expression_ids": [], "captured_copy_expression_ids": [],
+        "copy_structures": [], "capture_structures": [],
+        "lambda_ids": [], "lambda_invocation_bindings": [],
+        "source_order": {"status": "unknown", "reason": "explicit_use_structure_not_checked"},
+        "source_reference_use_effects": {
+            "status": "unknown", "reason": "explicit_use_structure_not_checked"},
+        "copy_cleanup_observations": {
+            "status": "unknown", "reason": "explicit_use_structure_not_checked"},
+        "source_lifetime": "not_established",
+        "source_object_preservation": "not_established",
+        "reachability_and_execution_order": "not_established",
+        "prior_aliases": "not_established",
+        "untracked_memory_effects": "not_established",
+        "opaque_call_effects": "not_established",
+        "source_mutation_history": "not_established",
+        "launch_semantics": "not_established",
+        "source_program_checked": False, "deployable": False,
+        "scope": "static_supported_explicit_source_reference_and_copy_capture_structure_closure",
+        "assumptions": [
+            "the embedded AST and native capture metadata faithfully describe the same complete translation unit",
+            "the explicit integer ABI matches the compilation target",
+            "conditional initialization normal completion is not established by this structure report",
+            "nested invocation reports are consumed only for exact static IDs and ancestor paths",
+            "static closure does not establish source lifetime, dynamic identity, reachability, or value preservation",
+        ],
+        "budget": {"max_ast_nodes_per_fresh_scan": budget,
+                   "max_explicit_uses": MAX_EXPLICIT_USES,
+                   "note": "fresh subchecks rescan and rehash the complete AST independently"},
+    }
+    if type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES:
+        result["reason"] = "invalid_ast_node_budget"
+        return result
+    if (not isinstance(payload, dict) or
+            payload.get("schema_version") != "clang-native-captures/v1" or
+            payload.get("capture_coverage") !=
+            "visited_lambda_initializers_and_bodies_not_exhaustive" or
+            payload.get("source_program_checked") is not False or
+            payload.get("deployable") is not False or
+            not isinstance(payload.get("plugin_build_clang_version"), str) or
+            not payload["plugin_build_clang_version"] or
+            not isinstance(payload.get("ast_target_triple"), str) or
+            not payload["ast_target_triple"] or
+            not isinstance(payload.get("ast"), dict) or
+            payload["ast"].get("kind") != "TranslationUnitDecl" or
+            not isinstance(payload.get("captures"), list) or
+            not isinstance(variable_id, str) or not variable_id or
+            not isinstance(integer_types, dict) or
+            not isinstance(initialization_selection_domains, dict)):
+        result["reason"] = "invalid_inputs"
+        return result
+    root = payload["ast"]
+    initialization = check_object_initialization(
+        payload, variable_id, integer_types, initialization_selection_domains,
+        max_ast_nodes=budget)
+    result["conditional_initialization"] = initialization
+    root_hash = (initialization.get("input_sha256") or {}).get("root")
+    try:
+        result["input_sha256"] = {
+            "root": root_hash,
+            "variable_id": _hash(variable_id),
+            "integer_types": _hash(integer_types),
+            "initialization_selection_domains": _hash(initialization_selection_domains),
+            "capture_metadata": _hash({
+                "schema_version": payload.get("schema_version"),
+                "capture_coverage": payload.get("capture_coverage"),
+                "plugin_build_clang_version": payload.get("plugin_build_clang_version"),
+                "ast_target_triple": payload.get("ast_target_triple"),
+                "captures": payload.get("captures"),
+            }),
+        }
+    except (TypeError, ValueError, RecursionError):
+        result["reason"] = "input_hash_unsupported"
+        return result
+    if initialization.get("status") != "checked" or not isinstance(root_hash, str):
+        result["reason"] = "fresh_conditional_object_initialization_not_checked"
+        return result
+
+    try:
+        inventory = _semantic_inventory(root, variable_id, payload["captures"], budget)
+        variable = inventory["variable"]
+        function_id = inventory["function_id"]
+        result["function_id"] = function_id
+        semantic_paths = inventory["semantic_paths"]
+        semantic_ids = inventory["semantic_ids"]
+        index = inventory["index"]
+        reference_reports = inventory["reference_reports"]
+        capture_summaries = inventory["capture_summaries"]
+        capture_lambda_ids = inventory["capture_lambda_ids"]
+        direct_copy_ids = inventory["direct_copy_ids"]
+        captured_copy_ids = inventory["captured_copy_ids"]
+        copy_paths = inventory["copy_paths"]
+
+        copy_structures = []
+        result["copy_structures"] = copy_structures
+        for copy_id in sorted(direct_copy_ids):
+            report = inspect_record_copy_effects(
+                root, copy_id, integer_types, max_ast_nodes=budget)
+            copy_structures.append(report)
+            if (report.get("status") != "checked" or
+                    report.get("source_declaration_id") != variable_id):
+                raise _Unknown("fresh_direct_record_copy_structure_not_checked")
+
+        capture_structures = []
+        result["capture_structures"] = capture_structures
+        covered_lambda_ids = set()
+        invocation_by_lambda = {}
+        for copy_id in sorted(captured_copy_ids):
+            report = inspect_capture_structure(
+                payload, copy_id, integer_types, max_ast_nodes=budget)
+            capture_structures.append(report)
+            if (report.get("status") != "checked" or
+                    report.get("source_declaration_id") != variable_id):
+                raise _Unknown("fresh_capture_structure_not_checked")
+            chain = report.get("capture_chain")
+            if not isinstance(chain, list) or not chain:
+                raise _Unknown("fresh_capture_structure_chain_missing")
+            for edge in chain:
+                if (not isinstance(edge, dict) or
+                        not isinstance(edge.get("lambda_id"), str) or
+                        edge.get("captured_declaration_id") != variable_id):
+                    raise _Unknown("fresh_capture_structure_chain_binding_mismatch")
+                covered_lambda_ids.add(edge["lambda_id"])
+            origin = report.get("closure_origin", {})
+            invocations = origin.get("invocation_checks") if isinstance(origin, dict) else None
+            if not isinstance(invocations, list):
+                raise _Unknown("fresh_capture_structure_invocation_bindings_missing")
+            for invocation in invocations:
+                if (not isinstance(invocation, dict) or
+                        invocation.get("status") != "checked" or
+                        not isinstance(invocation.get("lambda_id"), str) or
+                        not isinstance(invocation.get("call_expression_id"), str)):
+                    raise _Unknown("fresh_capture_structure_invocation_binding_invalid")
+                previous = invocation_by_lambda.get(invocation["lambda_id"])
+                if previous is not None and previous != invocation:
+                    raise _Unknown("fresh_capture_structure_invocation_binding_conflict")
+                invocation_by_lambda[invocation["lambda_id"]] = invocation
+        if covered_lambda_ids != capture_lambda_ids or set(invocation_by_lambda) != covered_lambda_ids:
+            raise _Unknown("source_capture_set_not_exactly_covered_by_static_copy_chains")
+
+        invocation_bindings = [invocation_by_lambda[key] for key in sorted(invocation_by_lambda)]
+        result.update(
+            status="checked",
+            explicit_source_references=reference_reports,
+            capture_initializers=capture_summaries,
+            direct_copy_expression_ids=sorted(direct_copy_ids),
+            captured_copy_expression_ids=sorted(captured_copy_ids),
+            copy_structures=copy_structures,
+            capture_structures=capture_structures,
+            lambda_ids=sorted(covered_lambda_ids),
+            lambda_invocation_bindings=invocation_bindings,
+            source_order=_source_order(
+                variable, semantic_paths, semantic_ids, copy_paths, invocation_bindings),
+            source_reference_use_effects=_reference_use_effects(
+                variable_id, root_hash, copy_paths, copy_structures,
+                capture_structures, structural=True),
+            copy_cleanup_observations=_copy_cleanup_observations(
+                payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget),
+            source_reference_count=len(reference_reports),
+            capture_count=len(capture_summaries),
+            copy_count=len(direct_copy_ids) + len(captured_copy_ids),
+            lambda_count=len(covered_lambda_ids),
+            counts={
+                "explicit_source_references": len(reference_reports),
+                "capture_initializers": len(capture_summaries),
+                "direct_copies": len(direct_copy_ids),
+                "captured_copies": len(captured_copy_ids),
+                "lambdas": len(covered_lambda_ids),
+            },
+            explicit_source_reference_structure={
+                "status": "checked",
+                "relation": "every_supported_explicit_reference_has_an_exact_static_capture_initializer_or_copy_structure_binding",
                 "function_id": function_id,
             },
         )

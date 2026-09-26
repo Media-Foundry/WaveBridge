@@ -2,6 +2,19 @@
 
 更新日期：2026-09-26。
 
+## 独立显式引用结构组合
+
+`object_use_closure.inspect_structure`不接收capture/alive协议，使用独立复制与
+捕获结构入口，并与旧`check`共享严格的semantic inventory。初始化原报告保存为
+`conditional_initialization`，仍以有效构造正常返回为条件；可达性、生命周期、
+opaque调用和历史值保持均未建立。顺序/复制效果/祖先清理各自有状态，父级不能
+替unknown子项签发通过。原有空AST占位拒绝范围未放宽。
+693项CPU、217项Clang专项及demo通过；38个真实native样例×3协议共114份
+旧接口完整JSON与fdf3681一致。不可达if(false)样例结构checked但实际copy计数0；
+写入/逃逸拒绝、诊断属性新结构unknown而旧值checked、未知清理/顺序不升级均有回归。
+新独立组合的完整生产TU重放待完成，未运行GPU，不将旧条件重放计作本轮证据。
+见`.agents/handoffs/wb04-object-use-structure-20260926.md`。
+
 ## 独立捕获结构与条件身份拆分
 
 `capture_source_check.inspect_structure` fresh检查复制结构、native引用捕获链、

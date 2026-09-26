@@ -512,6 +512,27 @@ lambda 内对象或不支持的初始化形状。类型与表达式身份必须�
 
 ## 整函数显式源对象引用的闭合检查
 
+### 不依赖alive协议的结构组合
+
+`verification.object_use_closure.inspect_structure(payload, variable_id, integer_types,
+initialization_selection_domains, *, max_ast_nodes=None)` 不接收capture协议，直接复制
+调用`record_copy_check.inspect_effects`，捕获内复制调用`capture_source_check.inspect_structure`。
+与旧条件入口共享语义遍历和引用分类，不维护另一套可漂移的引用清单。它不能
+通过伪造alive协议后调用旧接口来建立结构结论。
+
+`object-explicit-use-structure/v1`的checked只说明完整受支持显式引用与复制/捕获
+结构闭合；`copy_structures`、`capture_structures`保存fresh子报告。
+`conditional_initialization`仍保留有效构造正常返回前提及conditional completion；
+其字段域不代表初始化实际发生，更不代表之后仍存活。立即调用子报告的动态
+receiver结论、对象边界子报告的执行前提同样不能被提升为本入口的动态保证。
+
+`source_order`、`source_reference_use_effects`、`copy_cleanup_observations`仍有独立
+状态；父checked不等于这些子项全部checked。引用写入/逃逸和不支持的复制效果
+使结构闭合unknown；没有显式源引用的opaque调用、其它作用域清理、可达性、
+source lifetime与历史保持仍未建立。即使不可达分支的结构可检查，也不声明执行。
+旧`check`保留原协议和较宽的条件值范围；真实诊断属性可使旧接口checked而新
+结构接口unknown，不从属性名称猜副作用，也不因此收窄旧接口。
+
 `verification.object_use_closure.check(payload, variable_id, integer_types,
 initialization_selection_domains, capture_protocols, *, max_ast_nodes=None)`
 首先 fresh 检查自动对象初始化，再遍历完整所属普通函数的语义 AST，包含所有
