@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## builtin 固定工具链编译观察
+
+新增合成 CUDA compile-only 探针，绑定原 softmax 的 AOCC 二进制与基础配置，
+保存 O0/O2 IR、同次依赖清单及哈希。直接 huge/nan builtin 返回常量；
+numeric_limits 在 O0 保留包装调用、O2 展开；外部调用和写入负对照均保留。
+这只是人工检查生成 IR 的结果，driver 的 observed 不签发效果或值语义保证。
+核心源码门控未改变，无 GPU、生产 AST 重采或独立留出验收。
+详见 [实录](../experiments/builtin-value-evidence-20260927.md)。
+GPT-5.6 Sol 完成只读复核；版本采集失败现在也阻止 observed。
+完整 975 项 CPU 测试通过（66.352 秒，匹配 native 插件启用，无跳过），
+其中新增 5 项 driver 边界测试；make demo、diff 检查通过，远端 CI 未核验。
+
 ## 静态 method 直接引用接通
 
 DeclRefExpr → static CXXMethodDecl 现要求精确 ID、childless lvalue、
