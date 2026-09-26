@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 数组调用的显式写入范围
+
+array_call_effects.check从同次完整AST绑定void(float*)调用、自动float[N]
+实参与独立caller局部对象，分类helper局部和数组元素写入，不伪称全局无写。
+固定softmax的warp_reduce Max有7处静态写入位置已分类；构造、生命周期、
+shuffle、默认实参与operator五项效果待查，整体仍unknown。见
+[实录](../experiments/array-effects-evidence-20260927.md)。该入口尚未接入
+initializer历史保持，local_idx的输出循环入口域仍未建立。
+完整1083项测试通过（73.363秒，native启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增5项真实Clang回归并复核；无GPU，远端CI未核验。
+
 ## 初始化至输出循环入口的历史检查
 
 initializer_domain.check_to_statement fresh检查初始化与同一函数体的顺序，
