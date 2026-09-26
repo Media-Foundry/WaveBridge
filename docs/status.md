@@ -2,6 +2,21 @@
 
 更新日期：2026-09-26。
 
+## 局部record声明与析构的原生绑定
+
+原生插件新增可选`local_record_objects`，在同一ASTContext绑定局部完整record
+变量、直接DeclStmt所属CompoundStmt、record定义及可用的析构声明，并记录
+自动存储期和非平凡析构属性。for/if初始化不冒充外层compound声明，static/TLS
+显式unsupported；引用、指针、数组及依赖类型不在此非穷尽观测范围。
+这只是词法和类型观测，不是析构事件清单、执行/效果证明或源值保持。
+旧工件缺字段不代表没有清理；现有checker尚未消费新字段来解除任何义务。
+真实源码回归覆盖直接/嵌套/lambda作用域、非自动存储期、不支持形式和trivial析构。
+匹配AOCC17的最终插件下701项CPU、225项Clang专项及demo通过；7项新专项均执行。
+工件在`artifacts/wb-local-record-native-i9nCNe/`；未重采完整生产TU、未运行GPU。
+下一步在现有对象闭合checker中绑定此观测，区分复制前已结束与包围复制点的
+作用域；必须保留非穷尽性、控制流、可达性和析构效果的未建立状态。
+上一轮232b480远端CI（36237991011）已success。
+
 ## 复制前其他清理的范围回归
 
 新增真实源码/native/CPU回归：独立完整表达式中的临时对象，以及复制前已结束

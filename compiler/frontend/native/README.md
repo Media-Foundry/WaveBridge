@@ -50,3 +50,27 @@ compiler flag, not an independent proof of effects, lifetime, or deployment.
 Adding these observations does not upgrade existing checker results or historical
 AST artifacts. A future consumer must bind a specific observation to the exact
 full-expression and explicitly state its trusted-frontend assumptions.
+
+The optional `local_record_objects` extension records visited local variables
+whose declared type is a complete C++ record (not references, pointers, arrays,
+or dependent types). Each item binds `variable_declaration_id`,
+`record_declaration_id`, and the available `destructor_declaration_id` in the
+same AST. A null destructor ID does not establish trivial destruction. Native
+`has_nontrivial_destructor` records the record's type property, not its effects.
+
+`declaring_compound_statement_id` is populated only for a variable declared in
+a `DeclStmt` directly belonging to that `CompoundStmt`. For/if initializers are
+not assigned the nearest enclosing compound as their declaration scope. Such
+entries, and non-automatic storage durations including static/thread-local,
+remain explicitly `unsupported`; `has_automatic_storage_duration` is obtained
+from Clang's storage-duration classification rather than spelling heuristics.
+
+Coverage is `visited_local_complete_record_variables_not_exhaustive`, with
+semantics `lexical_declarations_not_runtime_destructor_events`. In particular,
+this is not a CFG cleanup schedule, an exhaustive local-object inventory, an
+effects proof, or evidence that a constructor/destructor executes. Constructor
+failure, exceptions, jumps, dynamic lifetime, attributes, arrays and other
+unvisited declaration forms require separate obligations. Consumers must bind
+declarations and scopes and distinguish already-ended scopes from enclosing
+scopes; absent metadata in older artifacts cannot mean no local destruction.
+Existing checkers do not yet consume this extension to discharge preservation.

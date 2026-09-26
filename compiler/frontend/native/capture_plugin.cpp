@@ -52,6 +52,50 @@ const char *captureKindName(LambdaCaptureKind Kind) {
 
 class CaptureVisitor : public RecursiveASTVisitor<CaptureVisitor> {
 public:
+  bool TraverseCompoundStmt(CompoundStmt *Statement) {
+    if (!Statement)
+      return true;
+    // Bind only declarations directly in this lexical compound statement.
+    // A nearest-enclosing-compound heuristic would misclassify for/if initializers.
+    for (const Stmt *Child : Statement->body()) {
+      if (const auto *Declarations = dyn_cast_or_null<DeclStmt>(Child))
+        for (const Decl *Declaration : Declarations->decls())
+          if (const auto *Variable = dyn_cast<VarDecl>(Declaration))
+            DirectDeclarationScopes[Variable] = Statement;
+    }
+    return RecursiveASTVisitor<CaptureVisitor>::TraverseCompoundStmt(Statement);
+  }
+
+  bool VisitVarDecl(VarDecl *Variable) {
+    if (!Variable || !Variable->isLocalVarDecl() ||
+        Variable->getType()->isDependentType() ||
+        !SeenLocalVariables.insert(Variable).second)
+      return true;
+    const CXXRecordDecl *Record = Variable->getType()->getAsCXXRecordDecl();
+    if (!Record || !Record->hasDefinition())
+      return true; // References, pointers, arrays and dependent types are not covered.
+    Record = Record->getDefinition();
+    const CXXDestructorDecl *Destructor = Record->getDestructor();
+    const CompoundStmt *Scope = DirectDeclarationScopes.lookup(Variable);
+    const bool Automatic = Variable->getStorageDuration() == SD_Automatic;
+    llvm::json::Object Item;
+    Item["variable_declaration_id"] = pointerID(Variable);
+    Item["declaring_compound_statement_id"] =
+        Scope ? llvm::json::Value(pointerID(Scope)) : llvm::json::Value(nullptr);
+    Item["record_declaration_id"] = pointerID(Record);
+    Item["destructor_declaration_id"] = Destructor
+        ? llvm::json::Value(pointerID(Destructor)) : llvm::json::Value(nullptr);
+    Item["has_automatic_storage_duration"] = Automatic;
+    Item["has_nontrivial_destructor"] = Record->hasNonTrivialDestructor();
+    const char *Reason = !Automatic ? "non_automatic_storage_duration"
+        : !Scope ? "not_direct_compound_declaration" : nullptr;
+    Item["support_status"] = Reason ? "unsupported" : "observed";
+    Item["unsupported_reason"] = Reason
+        ? llvm::json::Value(Reason) : llvm::json::Value(nullptr);
+    LocalRecordObjects.push_back(std::move(Item));
+    return true;
+  }
+
   bool VisitExprWithCleanups(ExprWithCleanups *Expression) {
     if (!Expression || !SeenExpressionCleanups.insert(Expression).second)
       return true;
@@ -163,13 +207,19 @@ public:
   llvm::json::Array takeExpressionCleanups() {
     return std::move(ExpressionCleanups);
   }
+  llvm::json::Array takeLocalRecordObjects() {
+    return std::move(LocalRecordObjects);
+  }
 
 private:
   std::vector<const LambdaExpr *> LambdaStack;
   llvm::DenseSet<const LambdaExpr *> SeenLambdas;
   llvm::DenseSet<const ExprWithCleanups *> SeenExpressionCleanups;
+  llvm::DenseSet<const VarDecl *> SeenLocalVariables;
+  llvm::DenseMap<const VarDecl *, const CompoundStmt *> DirectDeclarationScopes;
   llvm::json::Array Captures;
   llvm::json::Array ExpressionCleanups;
+  llvm::json::Array LocalRecordObjects;
 };
 
 class CaptureConsumer : public ASTConsumer {
@@ -184,6 +234,8 @@ public:
                     "\"cleanup_coverage\":\"visited_expressions_not_exhaustive\","
                     "\"cleanup_object_count_semantics\":\"clang_cleanup_objects_"
                     "not_destructor_event_count\","
+                    "\"local_record_object_coverage\":\"visited_local_complete_record_variables_not_exhaustive\","
+                    "\"local_record_object_semantics\":\"lexical_declarations_not_runtime_destructor_events\","
                     "\"source_program_checked\":false,"
                     "\"deployable\":false,\"plugin_build_clang_version\":"
                  << llvm::formatv("{0}", llvm::json::Value(CLANG_VERSION_STRING))
@@ -200,6 +252,9 @@ public:
                  << llvm::formatv(
                         "{0}", llvm::json::Value(
                                    Visitor.takeExpressionCleanups()))
+                 << ",\"local_record_objects\":"
+                 << llvm::formatv("{0}", llvm::json::Value(
+                        Visitor.takeLocalRecordObjects()))
                  << "}\n";
   }
 };
