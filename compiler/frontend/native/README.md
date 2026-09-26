@@ -73,4 +73,6 @@ failure, exceptions, jumps, dynamic lifetime, attributes, arrays and other
 unvisited declaration forms require separate obligations. Consumers must bind
 declarations and scopes and distinguish already-ended scopes from enclosing
 scopes; absent metadata in older artifacts cannot mean no local destruction.
-Existing checkers do not yet consume this extension to discharge preservation.
+The independent object-use structure checker consumes this extension only to
+classify observed declaration scopes relative to copy syntax. Its dedicated
+child report does not discharge preservation, completeness or cleanup effects.

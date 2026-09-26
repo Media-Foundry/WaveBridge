@@ -588,6 +588,21 @@ one-shot会分配完整字符串与UTF-8字节缓冲区，仅适用于已评估�
 
 ## 包围复制点的原生清理观测
 
+独立`inspect_structure`另提供`local_record_cleanup_scopes`子报告，消费同次
+native局部record元数据并核对精确VarDecl、直接DeclStmt/CompoundStmt、完整
+record及直接析构声明。变量到record的类型关联仍是明确的可信前端假设，不是
+独立类型检查。析构属性必须得到AST definitionData的正面佐证。
+
+分类区分包围复制点作用域中较早/较晚的声明、与复制同一声明语句，以及最近
+共享CompoundStmt下较早/较晚的互不包含作用域。`same_declaration_statement_as_copy`
+不建立语句内顺序；`lexically_earlier_disjoint_scope`不代表该分支实际执行或
+其析构必定发生。无法建立直接结构次序时子报告unknown，父结构状态不升级它。
+
+`checked`仅覆盖元数据中已观测且属于所选函数的条目分类。清单完整性、实际
+析构执行/效果和源值保持均not_established；空清单同样不代表没有清理。缺字段、
+重复ID、错误作用域/析构绑定、非自动或其他不支持声明均保持unknown。旧条件
+`check`接口不新增此项，也不改变其原有协议。此分类不是完整复制前清理验收。
+
 真实回归额外覆盖两类不在祖先范围内的清理：复制前独立语句的临时对象析构、
 复制前已经结束的嵌套作用域中的自动对象析构。二者可增加全局计数，同时祖先
 检查仍checked；报告中的其他作用域清理和源对象保持仍未建立。该样例没有修改

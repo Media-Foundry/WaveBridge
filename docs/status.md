@@ -2,6 +2,20 @@
 
 更新日期：2026-09-26。
 
+## 局部record清理作用域的独立分类
+
+`object_use_closure.inspect_structure`新增`local_record_cleanup_scopes`子项：
+核对同次native变量/直接compound作用域/record/析构声明绑定与析构属性，区分
+包围作用域中复制前/后声明、同一声明语句，以及词法上较早/较晚的分离作用域。
+不以作用域包含关系断言对象已存活；不以词法较早断言分支或析构已执行。
+仅分类已观测条目，清单完整性、析构执行/效果与源值保持仍未建立。旧工件缺失
+元数据、非自动声明、错绑或无法分类时子unknown，父显式结构仍可checked。
+旧条件check接口不变；未重采完整生产TU或运行GPU。
+707项CPU、231项Clang专项和demo通过；40项对象闭合专项覆盖真实正例、错绑
+元数据及不支持分支。最终源码fixture重放位于
+`artifacts/wb-local-scope-check-HMyXPz/final/`，三例分类checked，77个实现哈希
+前后一致并复核通过；并非生产TU或动态析构证明。7de60ca远端CI已success。
+
 ## 局部record声明与析构的原生绑定
 
 原生插件新增可选`local_record_objects`，在同一ASTContext绑定局部完整record
@@ -9,7 +23,7 @@
 自动存储期和非平凡析构属性。for/if初始化不冒充外层compound声明，static/TLS
 显式unsupported；引用、指针、数组及依赖类型不在此非穷尽观测范围。
 这只是词法和类型观测，不是析构事件清单、执行/效果证明或源值保持。
-旧工件缺字段不代表没有清理；现有checker尚未消费新字段来解除任何义务。
+旧工件缺字段不代表没有清理；后续词法分类接入不解除生命周期或值保持义务。
 真实源码回归覆盖直接/嵌套/lambda作用域、非自动存储期、不支持形式和trivial析构。
 匹配AOCC17的最终插件下701项CPU、225项Clang专项及demo通过；7项新专项均执行。
 工件在`artifacts/wb-local-record-native-i9nCNe/`；未重采完整生产TU、未运行GPU。

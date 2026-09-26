@@ -70,6 +70,117 @@ class ObjectUseClosureClangTests(unittest.TestCase):
         # child report is passed to the independent structure entry point.
         return inspect_structure(payload, source["id"], ABI, {}, **kwargs)
 
+    def local_object_row(self, report, function_name, variable_name, payload=None):
+        payload = self.payload if payload is None else payload
+        function = next(n for n in _walk(payload["ast"])
+                        if n.get("kind") == "FunctionDecl" and n.get("name") == function_name)
+        variable = next(n for n in _walk(function)
+                        if n.get("kind") == "VarDecl" and n.get("name") == variable_name)
+        rows = [row for row in report["local_record_cleanup_scopes"]["objects"]
+                if row["variable_declaration_id"] == variable["id"]]
+        self.assertEqual(len(rows), 1)
+        return rows[0]
+
+    def test_local_record_cleanup_scope_relations_are_lexical_only(self):
+        report = self.run_structure("local_cleanup_enclosing_lambda")
+        self.assertEqual(report["status"], "checked", report)
+        scopes = report["local_record_cleanup_scopes"]
+        self.assertEqual(scopes["status"], "checked", scopes)
+        before = self.local_object_row(
+            report, "local_cleanup_enclosing_lambda", "guard_before")
+        after = self.local_object_row(
+            report, "local_cleanup_enclosing_lambda", "guard_after")
+        self.assertEqual({row["relation"] for row in before["copies"]},
+                         {"enclosing_scope_declared_before_copy"})
+        self.assertEqual({row["relation"] for row in after["copies"]},
+                         {"later_declaration_in_enclosing_scope"})
+        self.assertTrue(report["lambda_ids"])
+        for key in ("inventory_completeness", "destructor_execution_and_effects",
+                    "source_object_preservation"):
+            self.assertEqual(scopes[key], "not_established")
+        self.assertEqual(report["source_object_preservation"], "not_established")
+        self.assertFalse(report["source_program_checked"])
+        self.assertFalse(report["deployable"])
+
+    def test_nested_scope_relations_distinguish_earlier_and_later(self):
+        report = self.run_structure("local_cleanup_disjoint_scopes")
+        self.assertEqual(report["status"], "checked", report)
+        scopes = report["local_record_cleanup_scopes"]
+        self.assertEqual(scopes["status"], "checked", scopes)
+        earlier = self.local_object_row(
+            report, "local_cleanup_disjoint_scopes", "nested_before")
+        later = self.local_object_row(
+            report, "local_cleanup_disjoint_scopes", "nested_after")
+        self.assertEqual({row["relation"] for row in earlier["copies"]},
+                         {"lexically_earlier_disjoint_scope"})
+        self.assertEqual({row["relation"] for row in later["copies"]},
+                         {"lexically_later_disjoint_scope"})
+
+    def test_same_declstmt_is_recorded_without_inventing_order(self):
+        report = self.run_structure("local_cleanup_same_declaration")
+        self.assertEqual(report["status"], "checked", report)
+        peer = self.local_object_row(
+            report, "local_cleanup_same_declaration", "peer")
+        self.assertEqual({row["relation"] for row in peer["copies"]},
+                         {"same_declaration_statement_as_copy"})
+
+    def test_local_record_metadata_mutations_leave_parent_checked_and_child_unknown(self):
+        function_name = "local_cleanup_enclosing_lambda"
+        function = next(n for n in _walk(self.payload["ast"])
+                        if n.get("kind") == "FunctionDecl" and n.get("name") == function_name)
+        guard = next(n for n in _walk(function)
+                     if n.get("kind") == "VarDecl" and n.get("name") == "guard_before")
+        base = next(row for row in self.payload["local_record_objects"]
+                    if row["variable_declaration_id"] == guard["id"])
+        destructor = next(n for n in _walk(self.payload["ast"])
+                          if n.get("kind") == "CXXDestructorDecl" and
+                          n.get("id") != base["destructor_declaration_id"])
+        for mutation in ("duplicate", "scope", "destructor", "flag", "missing", "nonbool"):
+            payload = copy.deepcopy(self.payload)
+            rows = payload["local_record_objects"]
+            row = next(item for item in rows if item["variable_declaration_id"] == guard["id"])
+            if mutation == "duplicate":
+                rows.append(copy.deepcopy(row))
+            elif mutation == "scope":
+                row["declaring_compound_statement_id"] = "unrelated"
+            elif mutation == "destructor":
+                row["destructor_declaration_id"] = destructor["id"]
+            elif mutation == "flag":
+                row["has_nontrivial_destructor"] = False
+            elif mutation == "missing":
+                del payload["local_record_objects"]
+            else:
+                row["has_automatic_storage_duration"] = 1
+            with self.subTest(mutation=mutation):
+                report = self.run_structure(function_name, payload=payload)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["local_record_cleanup_scopes"]["status"],
+                                 "unknown", report["local_record_cleanup_scopes"])
+
+    def test_empty_local_record_inventory_does_not_claim_completeness(self):
+        payload = copy.deepcopy(self.payload)
+        payload["local_record_objects"] = []
+        report = self.run_structure("local_cleanup_enclosing_lambda", payload=payload)
+        self.assertEqual(report["status"], "checked", report)
+        scopes = report["local_record_cleanup_scopes"]
+        self.assertEqual(scopes["status"], "checked", scopes)
+        self.assertEqual(scopes["objects"], [])
+        self.assertEqual(scopes["inventory_completeness"], "not_established")
+        self.assertEqual(scopes["destructor_execution_and_effects"], "not_established")
+        self.assertEqual(scopes["source_object_preservation"], "not_established")
+
+    def test_unsupported_storage_and_noncompound_branch_keep_child_unknown(self):
+        for name in ("local_cleanup_static_unrelated", "local_cleanup_if_else"):
+            with self.subTest(name=name):
+                report = self.run_structure(name)
+                self.assertEqual(report["status"], "checked", report)
+                scopes = report["local_record_cleanup_scopes"]
+                self.assertEqual(scopes["status"], "unknown", scopes)
+                self.assertEqual(scopes["inventory_completeness"], "not_established")
+                self.assertEqual(scopes["destructor_execution_and_effects"],
+                                 "not_established")
+                self.assertEqual(report["source_object_preservation"], "not_established")
+
     def test_independent_closure_never_calls_conditional_copy_or_identity(self):
         before = copy.deepcopy(self.payload)
         with patch("wavebridge.verification.object_use_closure.check_record_copy",

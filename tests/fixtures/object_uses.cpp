@@ -125,6 +125,36 @@ void ended_scope_before_copy() {
   { SideEffectTemporary local; }
   observe_value(source);
 }
+void local_cleanup_enclosing_lambda() {
+  Config source(3);
+  SideEffectTemporary guard_before;
+  [&]() { observe_value(source); }();
+  SideEffectTemporary guard_after;
+}
+void local_cleanup_disjoint_scopes() {
+  Config source(3);
+  { SideEffectTemporary nested_before; }
+  observe_value(source);
+  { SideEffectTemporary nested_after; }
+}
+void local_cleanup_same_declaration() {
+  Config source(3);
+  Config peer(4), target(source);
+  (void)target;
+}
+void local_cleanup_static_unrelated() {
+  Config source(3);
+  static SideEffectTemporary unrelated_static;
+  observe_value(source);
+}
+void local_cleanup_if_else(bool select_cleanup) {
+  Config source(3);
+  if (select_cleanup) {
+    SideEffectTemporary then_scope;
+  } else {
+    observe_value(source);
+  }
+}
 void by_reference_flow() {
   Config source(3);
   change_reference(source);

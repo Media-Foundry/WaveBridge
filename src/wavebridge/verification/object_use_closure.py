@@ -36,6 +36,139 @@ HARD_MAX_AST_NODES = 10_000_000
 MAX_EXPLICIT_USES = 256
 
 
+def _local_record_cleanup_scopes(payload, root_hash, semantic_paths, semantic_ids,
+                                 copy_paths, index, budget):
+    """Classify observed declaration scopes, not cleanup execution or effects."""
+    result = {
+        "schema_version": "local-record-cleanup-scopes/v1",
+        "status": "unknown", "reason": None, "objects": [],
+        "root_sha256": root_hash, "source_program_checked": False, "deployable": False,
+        "scope": "lexical_scope_relations_for_native_observed_local_record_declarations",
+        "inventory_completeness": "not_established",
+        "destructor_execution_and_effects": "not_established",
+        "source_object_preservation": "not_established",
+        "assumptions": [
+            "native variable-to-record and destructor-property observations are trusted frontend evidence",
+            "AST and native IDs belong to the same Clang ASTContext",
+            "lexical ordering does not prove execution, lifetime, or absence of other cleanups",
+        ],
+    }
+    try:
+        observations = payload.get("local_record_objects")
+        if (payload.get("local_record_object_coverage") !=
+                "visited_local_complete_record_variables_not_exhaustive" or
+                payload.get("local_record_object_semantics") !=
+                "lexical_declarations_not_runtime_destructor_events" or
+                not isinstance(observations, list) or len(observations) > budget or
+                any(not isinstance(row, dict) for row in observations)):
+            raise _Unknown("local_record_metadata_missing_or_wrong_schema")
+        identifiers = [row.get("variable_declaration_id") for row in observations]
+        if (any(not isinstance(key, str) or not key for key in identifiers) or
+                len(set(identifiers)) != len(identifiers)):
+            raise _Unknown("local_record_metadata_ids_missing_or_duplicate")
+        result["metadata_sha256"] = _hash({
+            "observations": observations,
+            "coverage": payload["local_record_object_coverage"],
+            "semantics": payload["local_record_object_semantics"],
+            "plugin_build_clang_version": payload.get("plugin_build_clang_version"),
+            "ast_target_triple": payload.get("ast_target_triple"),
+        })
+
+        def semantic_node(identifier, kind):
+            occurrences = semantic_ids.get(identifier, [])
+            if (len(occurrences) != 1 or occurrences[0].get("kind") != kind or
+                    not index.get(identifier) or
+                    any(not _same_ast(item, occurrences[0]) for item in index[identifier])):
+                raise _Unknown("local_record_semantic_node_missing_or_conflicting")
+            return occurrences[0]
+
+        for observation in observations:
+            identifier = observation["variable_declaration_id"]
+            # Other functions are outside this report; no whole-TU coverage claim.
+            if identifier not in semantic_ids:
+                continue
+            variable = semantic_node(identifier, "VarDecl")
+            path = semantic_paths[id(variable)]
+            if (observation.get("support_status") != "observed" or
+                    observation.get("unsupported_reason") is not None or
+                    observation.get("has_automatic_storage_duration") is not True or
+                    type(observation.get("has_nontrivial_destructor")) is not bool or
+                    variable.get("storageClass") not in (None, "auto", "register") or
+                    variable.get("tls") is not None):
+                raise _Unknown("local_record_declaration_shape_unsupported")
+            scope_id = observation.get("declaring_compound_statement_id")
+            if not isinstance(scope_id, str) or not scope_id:
+                raise _Unknown("local_record_scope_id_missing")
+            scope = semantic_node(scope_id, "CompoundStmt")
+            if (len(path) < 3 or path[-2].get("kind") != "DeclStmt" or
+                    path[-3] is not scope):
+                raise _Unknown("local_record_direct_declaration_scope_mismatch")
+            record_id = observation.get("record_declaration_id")
+            if not isinstance(record_id, str) or not record_id:
+                raise _Unknown("local_record_record_id_missing")
+            definitions = [node for node in index.get(record_id, [])
+                           if node.get("kind") == "CXXRecordDecl" and
+                           node.get("completeDefinition") is True]
+            if not definitions or any(not _same_ast(node, definitions[0]) for node in definitions):
+                raise _Unknown("local_record_definition_missing_or_conflicting")
+            destructor_id = observation.get("destructor_declaration_id")
+            destructors = [node for node in _children(definitions[0], strict=True)
+                           if node.get("kind") == "CXXDestructorDecl"]
+            if destructor_id is not None:
+                if (not isinstance(destructor_id, str) or not destructor_id or
+                        len(destructors) != 1 or destructors[0].get("id") != destructor_id):
+                    raise _Unknown("local_record_destructor_owner_mismatch")
+            elif destructors:
+                raise _Unknown("local_record_destructor_binding_missing")
+            definition_data = definitions[0].get("definitionData")
+            if not isinstance(definition_data, dict):
+                raise _Unknown("local_record_definition_data_missing")
+            dtor_shape = definition_data.get("dtor")
+            flag = observation["has_nontrivial_destructor"]
+            if (not isinstance(dtor_shape, dict) or
+                    (flag and dtor_shape.get("nonTrivial") is not True) or
+                    (not flag and dtor_shape.get("trivial") is not True)):
+                raise _Unknown("local_record_destructor_property_not_corroborated")
+            row = {**observation, "copies": []}
+            result["objects"].append(row)
+            scope_path = semantic_paths[id(scope)]
+            for copy_id in sorted(copy_paths):
+                copy_node = semantic_node(copy_id, "CXXConstructExpr")
+                copy_path = semantic_paths[id(copy_node)]
+                relation = "unclassified"
+                if any(node is scope for node in copy_path):
+                    position = next(i for i, node in enumerate(copy_path) if node is scope)
+                    siblings = _children(scope, strict=True)
+                    left = next(i for i, child in enumerate(siblings) if child is path[-2])
+                    right = next(i for i, child in enumerate(siblings) if child is copy_path[position + 1])
+                    relation = ("enclosing_scope_declared_before_copy" if left < right else
+                                "later_declaration_in_enclosing_scope" if left > right else
+                                "same_declaration_statement_as_copy")
+                else:
+                    common = 0
+                    while (common < min(len(scope_path), len(copy_path)) and
+                           scope_path[common] is copy_path[common]):
+                        common += 1
+                    if (common and common < len(scope_path) and common < len(copy_path) and
+                            scope_path[common - 1].get("kind") == "CompoundStmt"):
+                        siblings = _children(scope_path[common - 1], strict=True)
+                        left = next(i for i, child in enumerate(siblings) if child is scope_path[common])
+                        right = next(i for i, child in enumerate(siblings) if child is copy_path[common])
+                        relation = ("lexically_earlier_disjoint_scope" if left < right else
+                                    "lexically_later_disjoint_scope")
+                row["copies"].append({"copy_expression_id": copy_id, "relation": relation})
+                if relation == "unclassified":
+                    raise _Unknown("local_record_scope_relation_unsupported")
+        result.update(status="checked", relation=(
+            "observed_local_record_scopes_lexically_classified" if result["objects"] else
+            "no_observed_local_record_entries_in_selected_function"))
+    except _Unknown as error:
+        result["reason"] = error.reason
+    except (TypeError, ValueError, RecursionError, StopIteration):
+        result["reason"] = "local_record_metadata_or_path_invalid"
+    return result
+
+
 def _copy_cleanup_observations(payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget):
     """Bind native flags for enclosing wrappers, not all destructor events."""
     result = {
@@ -749,6 +882,8 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
             "status": "unknown", "reason": "explicit_use_structure_not_checked"},
         "copy_cleanup_observations": {
             "status": "unknown", "reason": "explicit_use_structure_not_checked"},
+        "local_record_cleanup_scopes": {
+            "status": "unknown", "reason": "explicit_use_structure_not_checked"},
         "source_lifetime": "not_established",
         "source_object_preservation": "not_established",
         "reachability_and_execution_order": "not_established",
@@ -897,6 +1032,8 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
                 variable_id, root_hash, copy_paths, copy_structures,
                 capture_structures, structural=True),
             copy_cleanup_observations=_copy_cleanup_observations(
+                payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget),
+            local_record_cleanup_scopes=_local_record_cleanup_scopes(
                 payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget),
             source_reference_count=len(reference_reports),
             capture_count=len(capture_summaries),
