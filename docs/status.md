@@ -10,11 +10,21 @@
 不以作用域包含关系断言对象已存活；不以词法较早断言分支或析构已执行。
 仅分类已观测条目，清单完整性、析构执行/效果与源值保持仍未建立。旧工件缺失
 元数据、非自动声明、错绑或无法分类时子unknown，父显式结构仍可checked。
-旧条件check接口不变；未重采完整生产TU或运行GPU。
+旧条件check接口不变；未运行GPU。
 707项CPU、231项Clang专项和demo通过；40项对象闭合专项覆盖真实正例、错绑
 元数据及不支持分支。最终源码fixture重放位于
 `artifacts/wb-local-scope-check-HMyXPz/final/`，三例分类checked，77个实现哈希
 前后一致并复核通过；并非生产TU或动态析构证明。7de60ca远端CI已success。
+后续固定生产TU已用新插件重采并完成独立组合：parent及顺序/复制效果/祖先
+cleanup/局部作用域四项均checked。已观测grid、block、device_guard三个对象，
+均在三个copy之前声明且作用域包围copy；device_guard保留非平凡析构属性。
+此结果不建立清单完整性、析构执行/效果、生命周期或历史值保持。
+采集181.51秒、恢复检查536.96秒，78个实现哈希前后一致并与当前源码复核通过；
+会话81660退出0，源码冻结解除。第一次选点脚本因ATen与生产源码的同名函数
+断言退出1，原日志保留；修正为固定源码offset/签名选点后复用已保存AST，没有
+重新编译。外部区间/ABI只重新绑定到新ID，不是自动推断输入域。工件为
+`artifacts/wb-production-local-scopes-BuluwQ/production.json`；b6779e5远端CI已success。
+见`.agents/handoffs/wb04-production-local-scopes-20260926.md`。
 
 ## 局部record声明与析构的原生绑定
 
