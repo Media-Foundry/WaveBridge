@@ -6,9 +6,11 @@
 
 `corpus.json`区分原始TU、手工HIP及CUDA adapter。llama-rmsnorm的早期intake中
 仍有历史待办字段，当前状态以corpus和带日期证据为准。
-第二仓库vLLM RMSNorm正在按[intake协议](intake/vllm-rmsnorm-protocol.md)进行
-固定分析器评估，尚不算通过holdout。`intake/`记录是人工筛选资料，不是自动
-恢复器的关系输入或oracle。
+第二仓库vLLM RMSNorm的首次固定分析器评估保留在
+[intake协议](intake/vllm-rmsnorm-protocol.md)及原始工件中。此后它已反复用于
+分析器开发和调试，当前属于开发反馈输入，不能把后续结果算作新的未见holdout。
+它尚未以完备执行案例收入corpus.json；当前登记数量不因此增加。
+`intake/`记录是人工筛选资料，不是自动恢复器的关系输入或oracle。
 
 ## 纳入语料
 
