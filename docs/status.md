@@ -2,6 +2,18 @@
 
 更新日期：2026-09-26。
 
+## 独立捕获结构与条件身份拆分
+
+`capture_source_check.inspect_structure` fresh检查复制结构、native引用捕获链、
+立即receiver祖先及同一普通函数body；不接收alive协议、不调用条件字段值检查。
+新旧入口共享私有解析，旧v1/v2/v3仍按原协议添加条件动态身份；63份真实native
+fixture报告与6016720旧实现完整JSON一致。真实unused参数属性案例保持旧值
+checked、新结构unknown；写入source后复制可结构checked，但历史保持未建立。
+687项CPU、211项Clang专项及demo通过，匹配原生插件已启用。
+固定完整生产TU的新独立入口尚待重放，未运行GPU；object_use_closure的条件
+组合尚未被独立结构组合替代，alive及源有效性前提没有解除。见
+`.agents/handoffs/wb04-capture-structure-20260926.md`。
+
 ## 复制祖先cleanup的原生观测组合
 
 `object_use_closure.copy_cleanup_observations` 逐copy沿唯一语义祖先路径检查

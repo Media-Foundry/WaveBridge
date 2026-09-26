@@ -389,6 +389,26 @@ FieldDecl ID；`source_object_preservation` 和 `launch_semantics` 始终未建�
 
 ## 全引用捕获链的条件对象身份
 
+### 独立结构入口与条件接口的区别
+
+`capture_source_check.inspect_structure(payload, copy_expression_id, integer_types,
+*, max_ast_nodes=None)` 不接收生命周期协议，也不调用条件字段值或条件身份检查。
+它fresh检查复制构造器的受限结构效果，复用共享的捕获路径解析，核对原生
+by-reference边、全部立即receiver祖先，以及source与copy所在的同一普通函数body。
+报告为`capture-source-structure/v1`；具名、传出、返回closure及不支持的效果
+仍unknown。它不签发动态对象身份或值保持结论；没有假设alive再删除报告前提。
+
+这里的checked只描述可信AST/原生元数据中的声明和路径绑定。source lifetime、
+历史值保持、调用可达性、其它调用或清理效果及部署均未建立；不能用此结果单独
+解除alive。`copy_structure`及独立的`activation_binding`保留来源，不使用
+`identity_completion`将结构包装成动态保证。
+立即调用子报告仍保留其原有有效执行前提；本入口只消费静态ID与祖先路径绑定，
+不把其中的条件receiver身份升级为已执行、已存活或动态对象身份保证。
+
+旧`check`继续消费原v1/v2/v3协议，在共享语法解析之后添加条件动态身份结论。
+v1仍允许外部声明的具名closure来源；旧值路径对未支持效果属性的容忍不变，
+可能出现条件值checked、独立结构unknown。新入口的严格范围不能反向缩窄旧协议。
+
 `capture_source_check.check(payload, copy_expression_id, integer_types, protocol,
 *, max_ast_nodes=None)` 消费同次原生 envelope，fresh 运行复制检查，再从完整 AST
 重新恢复目标表达式的 lambda body 路径。它跳过 closure record 内的重复 body，

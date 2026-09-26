@@ -5,11 +5,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.frontend.native_captures import collect
 from wavebridge.verification.integer_selection import _hash
-from wavebridge.capture_source_check import check
+from wavebridge.capture_source_check import check, inspect_structure
 from wavebridge.verification.object_use_closure import check as check_uses
 
 PLUGIN = os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
@@ -77,6 +78,101 @@ class CaptureSourceClangTests(unittest.TestCase):
         protocol["schema_version"] = "capture-source-assumptions/v3"
         del protocol["source_and_closures_share_recorded_activation_assumed"]
         return expression, protocol
+
+    def test_independent_structure_never_calls_conditional_value_entries(self):
+        before = copy.deepcopy(self.payload)
+        for name, depth in (("immediate_reference", 1), ("immediate_nested", 2),
+                            ("initializer_evaluation", 1), ("recursive_immediate", 1)):
+            expression, _ = self.inputs(name)
+            with self.subTest(name=name), \
+                    patch("wavebridge.capture_source_check.check", side_effect=AssertionError("conditional capture used")), \
+                    patch("wavebridge.capture_source_check.check_record_copy", side_effect=AssertionError("conditional copy used")), \
+                    patch("wavebridge.record_copy_check.check", side_effect=AssertionError("copy value API used")):
+                report = inspect_structure(self.payload, expression, ABI)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["schema_version"], "capture-source-structure/v1")
+                self.assertEqual(report["copy_structure"]["status"], "checked")
+                self.assertEqual(len(report["capture_chain"]), depth)
+                self.assertEqual(report["closure_origin"]["status"], "checked")
+                self.assertIsNotNone(report["activation_binding"]["function_id"])
+                self.assertEqual(report["source_object_identity"], "not_established")
+                self.assertEqual(report["source_object_preservation"], "not_established")
+                self.assertNotIn("identity_completion", report)
+                self.assertNotIn("protocol", report["input_sha256"])
+                self.assertFalse(report["source_program_checked"])
+                self.assertFalse(report["deployable"])
+                for edge in report["capture_chain"]:
+                    self.assertNotIn("dynamic_object", edge["relation"])
+        self.assertEqual(before, self.payload)
+
+    def test_structure_is_not_a_source_history_check(self):
+        expression, _ = self.inputs("immediate_changed_source")
+        report = inspect_structure(self.payload, expression, ABI)
+        self.assertEqual(report["status"], "checked", report)
+        self.assertEqual(report["source_object_preservation"], "not_established")
+        self.assertEqual(report["source_object_identity"], "not_established")
+        # The existing CPU witness returns 99, not the initial 3. Here only
+        # the lexical capture path is checked, not that mutation history.
+
+    def test_structure_requires_immediate_reference_paths(self):
+        for name in ("one_reference", "nested_references", "passed_reference",
+                     "returned_reference", "named_outer_immediate_inner", "outer_copy_inner_reference",
+                     "value_capture", "source_inside_outer", "alias_capture", "static_source",
+                     "tls_source", "init_capture", "generic_capture", "direct_without_capture"):
+            expression, _ = self.inputs(name)
+            with self.subTest(name=name):
+                report = inspect_structure(self.payload, expression, ABI)
+                self.assertEqual(report["status"], "unknown", report)
+                self.assertEqual(report["source_object_identity"], "not_established")
+        # V1 retains its externally assumed receiver origin for named lambdas.
+        self.assertEqual(self.run_check("one_reference")["status"], "checked")
+
+    def test_conditional_attribute_support_not_narrowed_by_structure_api(self):
+        expression, _ = self.inputs("immediate_attributed_copy")
+        report = inspect_structure(self.payload, expression, ABI)
+        self.assertEqual(report["status"], "unknown", report)
+        for protocol_factory in (self.inputs, self.v2_protocol, self.v3_protocol):
+            expression, protocol = protocol_factory("immediate_attributed_copy")
+            conditional = check(self.payload, expression, ABI, protocol)
+            self.assertEqual(conditional["status"], "checked", conditional)
+            self.assertEqual(conditional["copy_check"]["local_copy_effects"]["status"], "unknown")
+
+    def test_structure_rechecks_native_edges_without_an_external_protocol(self):
+        for mutation in ("missing", "duplicate", "field", "initializer", "outer_path", "by_copy"):
+            payload = copy.deepcopy(self.payload)
+            expression, binding = self.inputs("immediate_reference", payload)
+            edge = next(c for c in payload["captures"]
+                        if c["captured_declaration_id"] == binding["source_declaration_id"])
+            if mutation == "missing":
+                payload["captures"].remove(edge)
+            elif mutation == "duplicate":
+                payload["captures"].append(copy.deepcopy(edge))
+            elif mutation == "field":
+                edge["field_declaration_id"] = "unrelated"
+            elif mutation == "initializer":
+                edge["initializer_expression_id"] = "unrelated"
+            elif mutation == "outer_path":
+                edge["enclosing_lambda_ids"] = ["unrelated"]
+            else:
+                edge["capture_kind"] = "by_copy"
+            with self.subTest(mutation=mutation):
+                self.assertEqual(inspect_structure(payload, expression, ABI)["status"], "unknown")
+
+    def test_structure_invalid_inputs_and_forged_success_cannot_bypass_fresh_check(self):
+        expression, _ = self.inputs("immediate_reference")
+        for budget in (True, 0, 1, 10_000_001):
+            with self.subTest(budget=budget):
+                self.assertEqual(inspect_structure(self.payload, expression, ABI,
+                                                  max_ast_nodes=budget)["status"], "unknown")
+        for payload in (None, {}, {"ast": self.payload["ast"]}):
+            self.assertEqual(inspect_structure(payload, expression, ABI)["status"], "unknown")
+        payload = copy.deepcopy(self.payload)
+        for node in _walk(payload["ast"]):
+            if node.get("id") == expression:
+                node["inner"] = []
+        payload["copy_structure"] = {"status": "checked"}
+        payload["capture_structure"] = {"status": "checked"}
+        self.assertEqual(inspect_structure(payload, expression, ABI)["status"], "unknown")
 
     def test_v3_derives_activation_and_keeps_lifetime_external(self):
         for name in ("immediate_reference", "immediate_nested", "initializer_evaluation", "recursive_immediate"):

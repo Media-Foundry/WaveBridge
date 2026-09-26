@@ -88,6 +88,15 @@ void immediate_nested() {
   Plain source(3, 5);
   [&]() { [&]() { Plain target(source); }(); }();
 }
+typedef struct AttributedCopy {
+  unsigned x;
+  AttributedCopy() : x(3) {}
+  AttributedCopy(const AttributedCopy& source __attribute__((unused))) : x(source.x) {}
+} AttributedCopy;
+void immediate_attributed_copy() {
+  AttributedCopy source;
+  [&]() { AttributedCopy target(source); }();
+}
 void named_outer_immediate_inner() {
   Plain source(3, 5);
   auto outer = [&]() { [&]() { Plain target(source); }(); };

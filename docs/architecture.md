@@ -42,6 +42,12 @@
 
 恢复器、lowering 和模型解释器属于各自保证的可信基础。目标代码与被检查模型之间还需要 translation validation 或明确的可信 lowering 假设；检查了模型不自动证明发出的机器代码。
 
+对象复制与捕获各有独立结构入口（`record_copy_check.inspect_effects`、
+`capture_source_check.inspect_structure`），不通过假设源存活的值检查去证明源存活。
+捕获结构与旧条件身份接口共享路径解析，动态身份仍由旧接口在明确协议下给出。
+结构入口当前尚未替代`object_use_closure`内的条件组合；历史保持与生命周期门控
+仍待独立建立，不能把接口拆分记成这些义务已经解除。
+
 ## 依赖规则
 
 - `ir` 只使用标准库，不能依赖候选生成、硬件或 CLI。
