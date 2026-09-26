@@ -12,9 +12,11 @@ RECOVERY_SHA = "31a6570762225ea247f24b799be28ebd51f3dab13e562e32cccb8e305d764f67
 
 
 def run(native, recovery, output, *, prefix_values=False, header_connection=False, work_preservation=False,
-        int_bits=32, static_branches=False):
+        int_bits=32, static_branches=False, nested_loops=False):
     if static_branches and not work_preservation:
         raise ValueError("static_branches_requires_work_preservation")
+    if nested_loops and not work_preservation:
+        raise ValueError("nested_loops_requires_work_preservation")
     if sha(native) != NATIVE_SHA or sha(recovery) != RECOVERY_SHA:
         raise ValueError("fixed_input_mismatch")
     if output.exists():
@@ -44,7 +46,8 @@ def run(native, recovery, output, *, prefix_values=False, header_connection=Fals
             call_ids = {node.get("id") for node in walk(matches[0]) if node.get("kind") == "CallExpr"}
             protocols = {key: value for key, value in old["call_protocols"].items() if key in call_ids}
             checked = check_work_preservation(frontend["payload"], matches[0]["id"], int_bits, protocols,
-                                               use_static_branches=static_branches)
+                                               use_static_branches=static_branches,
+                                               use_nested_loops=nested_loops)
         elif header_connection:
             checked = check_header_connection(root, matches[0]["id"], int_bits)
         else:
@@ -71,6 +74,7 @@ def run(native, recovery, output, *, prefix_values=False, header_connection=Fals
         report["schema_version"] = "softmax-exit-work-development/v1"
         report["integer_abi"] = {"int_bits": int_bits, "status": "explicit_external_assumption"}
         report["static_branches_enabled"] = static_branches
+        report["nested_loops_enabled"] = nested_loops
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"checks": [{"status": item["check"]["status"], "reason": item["check"]["reason"],
                                   "scope": item["check"]["scope"]}
@@ -89,7 +93,8 @@ if __name__ == "__main__":
     mode.add_argument("--work-preservation", action="store_true")
     parser.add_argument("--int-bits", type=int, default=32)
     parser.add_argument("--static-branches", action="store_true")
+    parser.add_argument("--nested-loops", action="store_true")
     args = parser.parse_args()
     run(args.native, args.recovery, args.output, prefix_values=args.prefix_values,
         header_connection=args.header_connection, work_preservation=args.work_preservation,
-        int_bits=args.int_bits, static_branches=args.static_branches)
+        int_bits=args.int_bits, static_branches=args.static_branches, nested_loops=args.nested_loops)

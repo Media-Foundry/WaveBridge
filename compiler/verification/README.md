@@ -1119,3 +1119,22 @@ IfStmt条件为bool字面量、经核验的Clang模板bool字面量替换、括�
 这不修改源码、不删除break，不依赖函数名或外部配置猜分支。partial决定不能
 升级未知父报告；不可达分支中的额外协议仍受unused门槛限制。原模式仍检查
 两侧，嵌套loop与完整退出域等边界不因此解除。
+
+## 嵌套 guarded work 的依赖保持
+
+`loop_exit_guards.check_work_preservation(..., use_nested_loops=True)`显式启用
+`loop-exit-work-preservation-with-nested-loops/v1`；默认不接受嵌套循环。
+可与`use_static_branches=True`组合，模式在报告中分别记录。
+每个可达内层ForStmt必须从同一完整AST重新完成header/prefix/guard连接，
+仅支持既有leading-break或trailing-else-break分区；不信任调用方子报告。
+
+内层原始初始化、条件和增量以全部祖先受保护声明为目标检查；内层prefix、
+完整guard和work以祖先与内层依赖的并集检查。prefix在退出迭代也执行，
+不能删除。只有结构检查归属明确的BreakStmt不作为写入处理。普通while、
+未知调用、引用逃逸和对保护声明的写入仍unknown；所有调用效果fresh检查，
+未消费协议阻止父报告成功。深度上限8、内层循环总数上限16。
+
+报告逐层保留原始外层loop相对路径、祖先/合并保护集合与连接子报告；部分
+子项checked不能升级unknown父项。成功仅为显式源有效、无别名、无异步
+干扰和外部leaf效果等前提下的存储保持，不证明终止、有效迭代域、溢出、
+覆盖、FP值或部署；不是把有限测试替换成整核保证。

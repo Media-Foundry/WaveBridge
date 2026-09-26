@@ -308,7 +308,7 @@ def check_header_connection(root, loop_id, int_bits, *, max_ast_nodes=None):
 
 
 def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_ast_nodes=None,
-                            use_static_branches=False):
+                            use_static_branches=False, use_nested_loops=False):
     """Check all selected work statements, not just successfully checked calls."""
     from wavebridge.analysis.column_loops import _check_body, _static_bool_value, _Unknown as BodyUnknown
     from wavebridge.verification.builtin_calls import check_call_no_memory_write
@@ -325,7 +325,8 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
                               "nested loops are not accepted by this work checker",
                               "external leaf effects remain unverified; all consumed call premises apply"],
               "budget": {"max_call_protocols": 64}}
-    if (type(use_static_branches) is not bool or not isinstance(payload, dict) or not isinstance(payload.get("ast"), dict) or
+    if (type(use_static_branches) is not bool or type(use_nested_loops) is not bool or
+            not isinstance(payload, dict) or not isinstance(payload.get("ast"), dict) or
             not isinstance(call_protocols, dict) or len(call_protocols) > 64 or
             any(not isinstance(key, str) or not key or not isinstance(value, dict)
                 for key, value in call_protocols.items())):
@@ -334,6 +335,12 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
     if use_static_branches:
         result["schema_version"] = "loop-exit-work-preservation-with-static-branches/v1"
         result["static_branch_decisions"] = []
+    if use_nested_loops:
+        result["schema_version"] = "loop-exit-work-preservation-with-nested-loops/v1"
+        result["static_branches_enabled"] = use_static_branches
+        result["nested_loop_checks"] = []
+        result["budget"].update(max_nested_loops=16, max_nested_depth=8)
+        result["limitations"][1] = "only freshly checked guarded ForStmt nests are supported; termination is not proved"
     root = payload["ast"]
     connection = check_header_connection(root, loop_id, int_bits, max_ast_nodes=max_ast_nodes)
     result["connection_check"] = connection
@@ -341,13 +348,17 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
         result["reason"] = "header_connection_not_checked"
         return result
     try:
+        def dependencies(checked):
+            header = checked["header_check"]["header"]
+            protected = set(checked["prefix_check"]["external_read_declaration_ids"])
+            protected.add(checked["induction_declaration_id"])
+            for source in (header["start"], header["bound"]):
+                if "declaration_id" in source:
+                    protected.add(source["declaration_id"])
+            return protected
+
         prefix = connection["prefix_check"]
-        header = connection["header_check"]["header"]
-        protected = set(prefix["external_read_declaration_ids"])
-        protected.add(connection["induction_declaration_id"])
-        for source in (header["start"], header["bound"]):
-            if "declaration_id" in source:
-                protected.add(source["declaration_id"])
+        protected = dependencies(connection)
         result["protected_declaration_ids"] = sorted(protected)
         loops, pending = [], [root]
         while pending:
@@ -398,14 +409,59 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
                     reports[identifier] = check_call_no_memory_write(payload, identifier, protocol, max_ast_nodes=max_ast_nodes)
             return reports[identifier]["status"] == "checked"
 
-        for binding in prefix["partition_check"]["work_statement_bindings"]:
-            statement = loops[0]
+        def bound_statement(loop, binding):
+            statement = loop
             for position in binding["loop_relative_child_path"]:
                 statement = statement["inner"][position]
             if statement.get("id") != binding["id"]:
                 raise _Unknown("work_binding_changed")
-            _check_body(statement, protected, call_callback=check_call,
+            return statement
+
+        def scan(statement, protected_ids, depth):
+            _check_body(statement, protected_ids, call_callback=check_call,
+                        nested_callback=(lambda node: nested(node, protected_ids, depth + 1))
+                        if use_nested_loops else None,
                         branch_callback=choose_branch if use_static_branches else None)
+
+        def nested(node, ancestors, depth):
+            reports = result["nested_loop_checks"]
+            if depth > 8 or len(reports) >= 16:
+                raise _Unknown("nested_loop_budget_exceeded")
+            locations = paths.get(id(node), [])
+            if len(locations) != 1:
+                raise _Unknown("nested_loop_occurrence_not_unique")
+            report = {"loop_id": node.get("id"), "loop_relative_child_path": locations[0],
+                      "status": "unknown", "ancestor_protected_declaration_ids": sorted(ancestors),
+                      "header_preserves_ancestors": "not_established",
+                      "body_preserves_combined_dependencies": "not_established"}
+            reports.append(report)
+            child = check_header_connection(root, node.get("id"), int_bits, max_ast_nodes=max_ast_nodes)
+            report["connection_check"] = child
+            if child["status"] != "checked":
+                raise _Unknown("nested_header_connection_not_checked")
+            if child["input_sha256"]["root"] != connection["input_sha256"]["root"]:
+                raise _Unknown("input_changed_between_checks")
+            # Inspect the ORIGINAL init, condition and increment. Only the fresh
+            # nested induction may change; no ancestor storage may be touched.
+            parts = node["inner"]
+            for expression in (parts[0], parts[2], parts[3]):
+                scan(expression, ancestors, depth)
+            report["header_preserves_ancestors"] = "conditional"
+            combined = ancestors | dependencies(child)
+            report["combined_protected_declaration_ids"] = sorted(combined)
+            partition = child["prefix_check"]["partition_check"]
+            # Include the prefix and complete guard on the breaking iteration.
+            # Only the structurally owned BreakStmt itself is omitted.
+            for binding in partition["prefix_statement_bindings"]:
+                scan(bound_statement(node, binding), combined, depth)
+            scan(partition["guard_ast"], combined, depth)
+            for binding in partition["work_statement_bindings"]:
+                scan(bound_statement(node, binding), combined, depth)
+            report.update(status="checked", body_preserves_combined_dependencies="conditional")
+            result["assumptions"].extend(child["assumptions"])
+
+        for binding in prefix["partition_check"]["work_statement_bindings"]:
+            scan(bound_statement(loops[0], binding), protected, 0)
         unused = sorted(set(call_protocols) - set(result["call_effect_checks"]))
         result["unused_call_protocol_ids"] = unused
         if unused:

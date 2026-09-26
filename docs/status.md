@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 嵌套退出循环对祖先依赖的保持
+
+显式use_nested_loops模式fresh连接每层header/prefix/guard，并扫描原始
+init/condition/increment对祖先声明的效果；prefix/guard/work保护祖先与
+内层依赖的并集。默认模式不变，报告独立且预算有限。
+固定softmax内外层work均条件checked；嵌套路径不再是本检查的unknown，
+但完整域、溢出、覆盖和整核/部署仍未建立，历史6/8恢复不提升。见
+[实录](../experiments/nested-work-evidence-20260927.md)。
+完整1058项测试通过（73.388秒，native启用，无跳过），专项30项、demo/diff
+通过。GPT-5.6 Sol新增5项真实Clang回归并复核；无GPU，远端CI未核验。
+
 ## 显式静态布尔工作分支
 
 check_work_preservation新增显式use_static_branches模式，独立schema从同次AST
