@@ -203,6 +203,14 @@ prefix/postfix 值类别、唯一 int lvalue 操作数及精确 VarDecl ID，只
 循环体可包含具有恰好三个完整子节点的普通 `ConditionalOperator`；副作用
 检查遍历条件和两个结果分支，不计算条件值、不删除未选分支。条件表达式作为
 写入左值、GNU binary conditional、分支中的未知调用/引用写入仍不支持。
+signed-int 递推路径允许一层内嵌 `for`：内层须重新恢复成功，起点为非负
+literal、上界为非负已解析 const 声明、步长为支持的正整数。检查迭代次数
+及末次增量可表示性，再对内层 init、condition、increment 和 body 重查
+外层受保护声明保持性。`nested_loops` 记录内层恢复、次数、末值及条件范围。
+运行时上界、依赖外层的起点、第三层循环、while、break/continue、调用仍未知。
+平面循环清单保留 `lexical_loop_depth`，仅深度 0 可启用嵌套组合；后代不重新
+作为顶层扩大支持。这不证明内存安全、实际可达或正常 body 执行。
+旧 unsigned coordinate-header 观察和独立 property-body checker 不启用此能力。
 起点保留源码表达式引用，不预设为线程 ID；额外循环变量/边界写入、可疑引用
 别名、调用或复杂控制流保守拒绝。普通 `output[i]` 下标读取不是对 `i` 的写入。
 递推仍以无溢出、合法域、未建立的别名前提为条件；没有证明输入覆盖、launch

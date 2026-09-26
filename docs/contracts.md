@@ -277,6 +277,15 @@ unsigned compound increment 的结构及 getter/receiver 绑定已观察到；�
 副作用检查，常量条件也不跳过分支。它不建立条件值或终止性；条件左值作为
 写入目标仍 unknown。此行为与常量求值器的 selected-branch 求值有意不同。
 
+普通 signed-int 恢复可组合一层内嵌 for。内层须独立恢复，在非负 literal
+起点 s、const 上界 b、正步长 d 下，计算 k=max(0,ceil((b-s)/d))，检查
+s+k*d 可由显式 signed ABI 表示（包含末次增量）。随后分别对其 init、
+condition、increment 和 body 检查外层受保护声明，不能用内层保持性替代
+外层保持性。nested_loops 保存该条件证据，不输出 checked/deployable。
+平面清单保留词法深度；仅函数顶层循环允许此组合，后代不能重置嵌套预算。
+有限递推不证明内存有效、可达性、正常 body 执行或整核终止。默认副作用
+检查器仍拒绝嵌套循环；只有上述 fresh 组合路径使用内部回调建立外层保持性。
+
 声明类型的引用性质取自可信Clang声明的desugaredQualType，缺少别名展开证据
 不得按值存储放行；同一分类用于引用绑定及写入目标。仅支持自动存储期的
 induction，static/thread_local返回unknown。普通值类型别名不等于引用，

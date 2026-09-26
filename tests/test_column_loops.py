@@ -130,7 +130,7 @@ class ColumnLoopTests(unittest.TestCase):
         accepted = recover(root_with(loop(body={"kind": "CompoundStmt", "inner": [store]})), "fn", 32)
         self.assertEqual("recovered", accepted["status"])
         nested = loop(body={"kind": "ForStmt", "range": RANGE, "inner": []})
-        self.assertEqual("nested_loop_in_body", recover(root_with(nested), "fn", 32)["loops"][0]["reason"])
+        self.assertEqual("unsupported_for_header_layout", recover(root_with(nested), "fn", 32)["loops"][0]["reason"])
         alias = {"kind": "VarDecl", "type": {"qualType": "int &"}, "range": RANGE,
                  "init": "c", "inner": [ref("i")]}
         aliased = recover(root_with(loop(body={"kind": "CompoundStmt", "inner": [alias]})), "fn", 32)

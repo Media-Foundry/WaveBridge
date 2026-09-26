@@ -154,7 +154,7 @@ BODY_KINDS = {
 
 
 def _check_body(body: dict[str, Any], protected_ids: set[str],
-                property_callback=None) -> None:
+                property_callback=None, nested_callback=None) -> None:
     pending = [body]
     while pending:
         node = pending.pop()
@@ -165,6 +165,9 @@ def _check_body(body: dict[str, Any], protected_ids: set[str],
                 # check. Only then may its semantic call subtree be skipped.
                 continue
             raise _Unknown("property_effect_not_checked", node.get("range"))
+        if kind == "ForStmt" and nested_callback is not None:
+            nested_callback(node)
+            continue
         if kind in LOOP_KINDS:
             raise _Unknown("nested_loop_in_body", node.get("range"))
         if kind in CONTROL_KINDS:
@@ -283,11 +286,48 @@ def _coordinate_header(root: dict[str, Any], induction: dict[str, Any],
     return result
 
 
-def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> dict[str, Any]:
+def _check_nested_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int,
+                       protected_ids: set[str]) -> dict[str, Any]:
+    """One nested level, constant finite recurrence, and enclosing storage preservation.
+
+    This is conditional on the same valid-execution/no-alias premises as the
+    parent. A finite header recurrence alone does not prove body completion.
+    """
+    nested = _recover_loop(root, loop, int_bits, allow_nested=False)
+    if nested["status"] != "recovered":
+        raise _Unknown(nested["reason"], nested.get("unknown_range"))
+    start, bound, step = nested["start"], nested["bound"], nested["step"]
+    if (start["kind"] != "integer_literal" or bound["kind"] != "constant_declaration" or
+            start["value"] < 0 or bound["value"] < 0):
+        raise _Unknown("nested_domain_not_nonnegative_constants", loop.get("range"))
+    first, limit = start["value"], bound["value"]
+    iterations = max(0, (limit - first + step - 1) // step)
+    final = first + iterations * step
+    if final > (1 << (int_bits - 1)) - 1:
+        raise _Unknown("nested_signed_increment_overflow", loop.get("range"))
+    if nested["induction"]["declaration_id"] in protected_ids:
+        raise _Unknown("nested_induction_conflicts_with_enclosing", loop.get("range"))
+    # The inner check protects its own recurrence. Independently recheck ALL
+    # executable components against the enclosing loop's protected declarations.
+    init, _, condition, increment, body = loop["inner"]
+    for component in (init, condition, increment, body):
+        _check_body(component, protected_ids)
+    return {
+        "range": loop.get("range"), "recurrence": nested,
+        "iterations": iterations, "final_induction": final,
+        "enclosing_storage_preserved": "established_in_supported_effect_subset",
+        "completion": "conditional_on_valid_body_execution",
+        "checked": False, "deployable": False,
+    }
+
+
+def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int,
+                  *, allow_nested: bool = True) -> dict[str, Any]:
     item: dict[str, Any] = {
         "status": "unknown", "reason": None, "range": loop.get("range"),
         "induction": None, "start": None, "bound": None, "step": None,
         "step_source": None,
+        "nested_loops": [],
         "initializer_ast": None, "increment_ast": None,
         "coordinate_header_observation": None,
         "header_recurrence_observed": False,
@@ -444,7 +484,10 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> 
         protected = {induction_id, bound_id}
         if start_id is not None:
             protected.add(start_id)
-        _check_body(body, protected)
+        def check_nested(node):
+            item["nested_loops"].append(_check_nested_loop(root, node, int_bits, protected))
+
+        _check_body(body, protected, nested_callback=check_nested if allow_nested else None)
         item.update(body_preserves_induction="established_in_supported_effect_subset",
                     body_preserves_bound="established_in_supported_effect_subset")
         item.update(status="recovered", induction={"declaration_id": induction_id,
@@ -477,11 +520,19 @@ def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
         result["reason"] = "function_unique_body_not_found"
         return result
     _, body = bodies[0]
-    loops = [node for node in _walk(body) if node.get("kind") == "ForStmt"]
+    loops = []
+    pending = [(body, 0)]
+    while pending:
+        node, depth = pending.pop()
+        if node.get("kind") == "ForStmt":
+            loops.append((node, depth))
+        child_depth = depth + int(node.get("kind") in LOOP_KINDS)
+        pending.extend((child, child_depth) for child in reversed(_children(node)))
     if not loops:
         result["reason"] = "no_for_loop"
         return result
-    result["loops"] = [_recover_loop(root, loop, int_bits) for loop in loops]
+    result["loops"] = [dict(_recover_loop(root, loop, int_bits, allow_nested=depth == 0),
+                            lexical_loop_depth=depth) for loop, depth in loops]
     result["status"] = "recovered" if all(loop["status"] == "recovered" for loop in result["loops"]) else "unknown"
     if result["status"] == "unknown":
         result["reason"] = "one_or_more_loops_unknown"
