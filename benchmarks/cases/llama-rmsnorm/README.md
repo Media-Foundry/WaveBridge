@@ -39,6 +39,14 @@ runner 每次创建 `artifacts/wb02-<id>/`，保存实际源码、runner、输�
 runner 要求 WB-01 报告为 `verified`，并核对可见设备环境及运行时 PCI、arch、HIP
 runtime/driver 身份；host 属性中的 warp size 不会单独被当作物理波宽证明。
 
+runner只用于冻结logical32基线，不接受自动生成的候选：任何编译命令前先核对
+复制源码与provenance的baseline SHA，以及复制协议与已加载reference协议的
+类型敏感一致性，固定launch为width32/block256/shared128。输入不符返回
+`invalid_baseline_inputs`。成功执行后，stdout必须只有一个规范的
+`logical_width=32`；缺失、重复或错配返回`runtime_protocol_mismatch`，不做数值比较。
+该打印字段只是协议一致性检查，不证明物理wave或真实机器码采用对应宽度。
+width64候选需要自己的执行协议与全部验收门槛，不能借用本runner的passed。
+
 `evidence.json` 索引九份有效 sanity 报告：在已验证 wave32 的 W7900 上，固定
 `nrows=3`，`ncols∈{1,31,32,33,255,256,257,777,1023}` 的全部输出均满足预冻结
 容差，观测到的最大绝对误差不超过 `1.1920928955078125e-07`。这些只建立九个

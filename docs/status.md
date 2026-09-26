@@ -2,6 +2,26 @@
 
 更新日期：2026-09-26。
 
+## 冻结基线执行入口的输入与宽度门槛
+
+核对发现protocol仍固定logical_width=32；旧runner只记录源码SHA，未在执行前
+对照provenance，也未在数值比较前核stdout逻辑宽度。现已增加复制输入的严格
+JSON/类型敏感协议检查、源码SHA绑定和width32/block256/shared128限制。输入
+不符在任何外部命令前返回invalid_baseline_inputs；运行宽度缺失、重复、错配
+或非规范整数返回runtime_protocol_mismatch且不调用数值比较。打印值不证明
+物理wave/机器码，未改变冻结源码、协议、provenance或旧实验索引。
+
+772项完整测试及demo通过，匹配native插件启用；新增6项runner门控测试的执行
+阶段使用mock，不能称为GPU结果。真实width64候选bytes经预检查以源码谱系
+不匹配拒绝，零外部命令；原baseline通过输入门槛后因故意缺失probe而停止。
+历史9份报告逐SHA、source/protocol和唯一logical_width=32只读核验一致，属于
+post-hoc审计，未重跑GPU，也未补签其预启动门槛。
+工件`artifacts/wb-baseline-input-gates-fi7kQ3/`，preflight.json SHA256
+`b4147290741b79f7b5784e7a1e16b8a68973ebf0edd1d3abcb3f322cbab1bf53`；historical.json
+`06fc192244442a47c70f503c015f57bf3d22a26bd214eb0d797247f60dd24d77`。
+不能将candidate接入旧baseline runner，后续须单独绑定候选执行协议；源码用途
+unknown和源目标关系/FP/同步/设备能力门槛并未因此解除。
+
 ## 显式宽度用途清单与目标条件证据
 
 新增`analysis.width_uses.inspect`：从fresh归约链共同width声明选点，在完整TU

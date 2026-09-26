@@ -17,6 +17,7 @@ import struct
 import subprocess
 import sys
 import time
+import re
 
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "baseline" / "rmsnorm_logical32.hip.cpp"
@@ -62,6 +63,94 @@ def parse_key_values(raw: str) -> dict[str, str]:
     return dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
 
 
+def strict_json(path: Path):
+    def pairs(values):
+        result = {}
+        for key, value in values:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    def nonfinite(value):
+        raise ValueError(f"non-finite JSON constant: {value}")
+
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=pairs,
+                      parse_constant=nonfinite)
+
+
+def canonical_json(value) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def validate_baseline_inputs(source: Path, protocol: Path, provenance: Path) -> dict:
+    """Bind this runner to the frozen logical32 baseline before invoking a command."""
+    result = {"status": "rejected", "reason": None, "source_sha256": None,
+              "provenance_baseline_sha256": None, "protocol_matches_reference": False,
+              "frozen_launch": None}
+    try:
+        protocol_value = strict_json(protocol)
+        provenance_value = strict_json(provenance)
+        source_sha = digest(source)
+        protocol_matches_reference = canonical_json(protocol_value) == canonical_json(reference.PROTOCOL)
+    except (OSError, UnicodeError, ValueError) as error:
+        result.update(reason="baseline_input_missing_or_malformed", detail=str(error))
+        return result
+    if not isinstance(protocol_value, dict) or not isinstance(provenance_value, dict):
+        result["reason"] = "baseline_input_json_not_object"
+        return result
+    expected_sha = provenance_value.get("baseline_sha256")
+    result.update(source_sha256=source_sha, provenance_baseline_sha256=expected_sha,
+                  protocol_matches_reference=protocol_matches_reference)
+    if not isinstance(expected_sha, str) or re.fullmatch(r"[0-9a-f]{64}", expected_sha) is None:
+        result["reason"] = "invalid_provenance_baseline_sha256"
+        return result
+    if source_sha != expected_sha:
+        result["reason"] = "baseline_source_provenance_mismatch"
+        return result
+    if not protocol_matches_reference:
+        result["reason"] = "copied_protocol_reference_mismatch"
+        return result
+    launch = protocol_value.get("launch")
+    if not isinstance(launch, dict):
+        result["reason"] = "frozen_launch_missing"
+        return result
+    frozen = {"logical_width": launch.get("logical_width"), "block": launch.get("block"),
+              "dynamic_shared_bytes": launch.get("dynamic_shared_bytes")}
+    result["frozen_launch"] = frozen
+    if (type(frozen["logical_width"]) is not int or frozen["logical_width"] != 32 or
+            frozen["block"] != [256, 1, 1] or
+            any(type(value) is not int for value in frozen["block"]) or
+            type(frozen["dynamic_shared_bytes"]) is not int or
+            frozen["dynamic_shared_bytes"] != 128):
+        result["reason"] = "not_frozen_logical32_launch"
+        return result
+    result.update(status="verified_frozen_logical32_baseline", reason=None)
+    return result
+
+
+def validate_runtime_logical_width(stdout: str, expected: int) -> dict:
+    values = [line.split("=", 1)[1] for line in stdout.splitlines()
+              if line.startswith("logical_width=")]
+    result = {"status": "rejected", "expected_logical_width": expected,
+              "observed_values": values,
+              "physical_wave_width_inferred": False}
+    if len(values) != 1:
+        result["reason"] = "logical_width_missing_or_repeated"
+        return result
+    raw = values[0]
+    if len(raw) > 10 or re.fullmatch(r"(?:0|[1-9][0-9]*)", raw) is None:
+        result["reason"] = "logical_width_not_canonical_nonnegative_integer"
+        return result
+    observed = int(raw)
+    result["observed_logical_width"] = observed
+    if observed != expected:
+        result["reason"] = "logical_width_protocol_mismatch"
+        return result
+    result.update(status="verified_runtime_logical_width", reason=None)
+    return result
+
+
 def run(output_base: Path, hipcc: str, probe_report: Path, nrows: int,
         ncols: int, timeout: float) -> tuple[int, Path]:
     run_id = (dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" +
@@ -81,27 +170,41 @@ def run(output_base: Path, hipcc: str, probe_report: Path, nrows: int,
     protocol_copy = artifact / "protocol.json"
     reference_copy = artifact / "reference.py"
     provenance_copy = artifact / "provenance.json"
-    shutil.copyfile(SOURCE, source_copy)
-    shutil.copyfile(Path(__file__), runner_copy)
-    shutil.copyfile(HERE / "protocol.json", protocol_copy)
-    shutil.copyfile(HERE / "reference.py", reference_copy)
-    shutil.copyfile(HERE / "provenance.json", provenance_copy)
     binary = artifact / "rmsnorm_logical32"
     report = {
         "schema_version": "rmsnorm-baseline-run/v1", "case_id": "llama-rmsnorm-f32",
-        "status": "not_run", "protocol_sha256": digest(protocol_copy),
-        "reference_sha256": digest(reference_copy),
-        "provenance_sha256": digest(provenance_copy),
-        "source_sha256": digest(source_copy), "runner_sha256": digest(runner_copy),
+        "status": "not_run", "protocol_sha256": None,
+        "reference_sha256": None, "provenance_sha256": None,
+        "source_sha256": None, "runner_sha256": None,
         "input_sha256": digest(input_path), "expected_sha256": digest(expected_path),
         "visible_device_environment": {key: os.environ.get(key) for key in
                                        ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES",
                                         "CUDA_VISIBLE_DEVICES")},
         "probe_report": str(probe_report.resolve()), "probe_report_sha256": None,
         "probe_validation": None,
+        "input_protocol_validation": None, "runtime_protocol_validation": None,
         "nrows": nrows, "ncols": ncols, "epsilon": 1.0e-5,
         "toolchain": None, "compile": None, "execute": None, "comparison": None,
     }
+    copies = [(SOURCE, source_copy), (Path(__file__), runner_copy),
+              (HERE / "protocol.json", protocol_copy), (HERE / "reference.py", reference_copy),
+              (HERE / "provenance.json", provenance_copy)]
+    try:
+        for source, destination in copies:
+            shutil.copyfile(source, destination)
+        report.update(protocol_sha256=digest(protocol_copy), reference_sha256=digest(reference_copy),
+                      provenance_sha256=digest(provenance_copy), source_sha256=digest(source_copy),
+                      runner_sha256=digest(runner_copy))
+    except OSError as error:
+        report["status"] = "invalid_baseline_inputs"
+        report["input_protocol_validation"] = {
+            "status": "rejected", "reason": "baseline_input_copy_failed", "detail": str(error)}
+        return finish(report, artifact, 2)
+    input_validation = validate_baseline_inputs(source_copy, protocol_copy, provenance_copy)
+    report["input_protocol_validation"] = input_validation
+    if input_validation["status"] != "verified_frozen_logical32_baseline":
+        report["status"] = "invalid_baseline_inputs"
+        return finish(report, artifact, 2)
     try:
         probe = json.loads(probe_report.read_text(encoding="utf-8"))
         report["probe_report_sha256"] = digest(probe_report)
@@ -139,6 +242,12 @@ def run(output_base: Path, hipcc: str, probe_report: Path, nrows: int,
         report["status"] = "run_timeout" if execute["status"] == "timeout" else "run_failed"
         return finish(report, artifact, 2)
     runtime = parse_key_values(execute["stdout"])
+    runtime_protocol = validate_runtime_logical_width(
+        execute["stdout"], report["input_protocol_validation"]["frozen_launch"]["logical_width"])
+    report["runtime_protocol_validation"] = runtime_protocol
+    if runtime_protocol["status"] != "verified_runtime_logical_width":
+        report["status"] = "runtime_protocol_mismatch"
+        return finish(report, artifact, 2)
     expected_identity = probe.get("device_identity", {})
     identity_keys = ("device_name", "gcn_arch_name", "pci_bus_id",
                      "hip_runtime_version", "hip_driver_version")
