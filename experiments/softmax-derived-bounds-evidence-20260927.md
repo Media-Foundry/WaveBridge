@@ -33,4 +33,10 @@ int8 负例明确到达 `signed_arithmetic_may_overflow`，不是在无关语法
 
 每次实际到达的单次 inner invocation 与 outer 总工作量必须区分。其余外部
 区间要求在该次 inner 入口成立；本轮不验证 launch、outer 次数或可达性。
-完整验收与重放完成状态见 `docs/status.md`，未完成的运行不计通过。
+真实重放现已结束（退出码 0）：status=checked、inputs_unchanged=true，
+source_interval=`[0,31]`，每次内层 work_count_bounds=`[0,4]`。
+报告 SHA256：`9a9fc92bc008c9d7ee49649a44102e8a58a13f6cc4fa6ce0bbe285a17193b134`。
+完成后核对 implementation_after 与当时源文件逐项一致；代码对应 `bb97d7f`，
+`68a6fbe` 仅增加控制程序与文档，没有修改该检查实现。
+完整 1132 项测试通过（76.736 秒，native 启用、无跳过），demo/diff 通过。
+没有 GPU、完整列地址覆盖或整核正确性结论。

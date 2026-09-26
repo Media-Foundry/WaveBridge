@@ -2,6 +2,20 @@
 
 更新日期：2026-09-27。
 
+## 实际 work 路径与相对输出下标
+
+新增 `guarded_stores.check`：fresh 入口/次数链之后，检查所选输出形参、
+每条 work 路径恰好一次 store、真实下标与 row/count/iteration 的关系，
+并逐运算检查 signed-int 范围。header 容量不足、错基址/下标、双写或
+漏写路径不能通过，未知表达式保留 unknown。
+GPT-5.6 Sol 补充 5 项真实 Clang 回归并只读复核。完整 1137 项测试通过
+（81.431 秒，native 启用、无跳过），demo/diff 通过；日志在
+`artifacts/wb-guarded-stores-check-pbTe45/`。
+真实 softmax AST 重放已启动，尚未取得终态；见
+[记录](../experiments/softmax-guarded-stores-evidence-20260927.md)。
+此前指针偏移、完整 lane 多重集、完整输出覆盖、浮点值和 GPU 执行仍未建立。
+该局部关系不改变 source/deployable=false，不宣称 WB-03 完整验收。
+
 ## 次数界不是实际列地址覆盖
 
 GPT-5.6 Sol 只读复核确认：单线程 local_idx 域与每次 inner 的次数界不能
@@ -12,7 +26,8 @@ lane 漏 4 列；N=129 被固定四次 header 截断。它们不是生产语料�
 [记录与下一道验收门槛](../experiments/guarded-store-controls-20260927.md)。
 下一步应连接真实 prefix/guard/header、完整起点多重集以及 work 每路径的
 store/base/index，并复用 residue checker；不再增加仅重复次数界的报告。
-当前 derived-bounds 真实重放仍运行中，尚未记为通过。本轮未改其核心实现。
+derived-bounds 真实重放已结束：checked、inputs_unchanged=true；条件源域
+`[0,31]`，每次内层 work 次数界 `[0,4]`。未将次数界升级为覆盖结论。
 
 ## fresh 入口域接入内层次数边界
 
@@ -22,7 +37,7 @@ store/base/index，并复用 residue checker；不再增加仅重复次数界的
 5 项真实 Clang 回归通过，正例精确核对每次 inner invocation 的 `[1,4]`
 次数界，int8 负例明确拒绝前缀溢出。完整 1132 项测试通过（76.736 秒，
 native 启用、无跳过），demo/diff 通过；GPT-5.6 Sol 只读复核无阻断。
-真实 softmax 的 derived-bounds 重放已启动，尚未记为完成；见
+真实 softmax 的 derived-bounds 重放已完成并核对实现哈希；见
 [实录](../experiments/softmax-derived-bounds-evidence-20260927.md)。
 element_count `[0,128]` 仍是既有示例外部域，不是自动输入校验；无 GPU、
 完整覆盖、outer 总次数或整核等价结论。

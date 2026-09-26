@@ -1199,3 +1199,21 @@ checked仅表示正常到达目标首次入口时，在源有效、无别名、�
 之后迭代或launch语义。目标body可修改该变量，不应被此入口错误阻止；
 后续消费者必须另行检查body保持。未知helper不能因为不显式传入该local
 就当成无副作用，更不能给实际写数组的helper补一个虚假的“全局无写”前提。
+## 条件相对输出写入检查
+
+`verification.guarded_stores.check` 从同一次 AST fresh 执行初始化历史、嵌套
+入口和内层次数检查，随后绑定选定输出形参与真实 store。当前子集是零起点、
+单位增量的常量循环头、`source + it*S < N` 正步长 guard，以及相对当前输出
+指针的 `row*N + it*S` signed-int 下标。下标逐运算检查范围后才规范化，
+不以数学抵消掩盖机器整数溢出。
+
+每条 work 路径须恰好一次写入所选 `float *` 形参；动态 if 两支均检查，
+静态选择复用本次 fresh 工作检查的决定。条件和 RHS 必须通过无内存写入
+检查，调用仅消费本次重新执行的调用效果检查。未知语法保留 unknown。
+固定 header 必须能覆盖给定列数域，不能把 header 截断当成完整遍历。
+
+这里的 `checked` **不是完整输出覆盖**：指针此前的偏移、跨 lane 起点多重集、
+行身份、分配容量、浮点值与设备执行仍未建立。报告始终保留
+`output_pointer_history_checked=false`、`lane_family_established=false`、
+`full_output_coverage_established=false`、`source_program_checked=false` 和
+`deployable=false`。外部输入域和 getter/调用/no-alias 前提继续显式保留。

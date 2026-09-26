@@ -43,7 +43,10 @@ def direct_target(call):
     return node["referencedDecl"]["id"]
 
 
-def run(native, leaf_protocol, output, *, nested_entry=False, iteration_domain_protocol=None):
+def run(native, leaf_protocol, output, *, nested_entry=False, iteration_domain_protocol=None,
+        guarded_stores=False):
+    if guarded_stores and (not nested_entry or iteration_domain_protocol is None):
+        raise ValueError("guarded_stores_requires_nested_iteration_domain")
     if sha(native) != NATIVE_SHA or sha(leaf_protocol) != LEAF_PROTOCOL_SHA or output.exists():
         raise ValueError("fixed_input_mismatch_or_output_exists")
     dependencies = {str(p): sha(p) for p in (Path(__file__), leaf_protocol,
@@ -161,9 +164,19 @@ def run(native, leaf_protocol, output, *, nested_entry=False, iteration_domain_p
             intervals = {parameter["id"]: external_domain["interval"]}
             inner_ids = {n["id"] for n in calls_on_supported_paths(inner)}
             inner_protocols = {k: v for k, v in work_protocols.items() if k in inner_ids}
-            checked = check_nested_iteration_bounds(payload, protected["id"], target["id"], inner["id"],
-                contract, abi, history_protocols, work_protocols, inner_protocols, intervals,
-                use_static_branches=True, use_source_constants=True)
+            arguments = (payload, protected["id"], target["id"], inner["id"],
+                         contract, abi, history_protocols, work_protocols, inner_protocols, intervals)
+            if guarded_stores:
+                from wavebridge.verification.guarded_stores import check as check_stores
+
+                output_parameter = parameters[0]
+                if output_parameter.get("name") != "dst":
+                    raise ValueError("output_parameter_binding_mismatch")
+                checked = check_stores(*arguments, output_parameter["id"],
+                                       use_static_branches=True, use_source_constants=True)
+            else:
+                checked = check_nested_iteration_bounds(*arguments,
+                    use_static_branches=True, use_source_constants=True)
         else:
             checked = check_nested_entry(payload, protected["id"], target["id"], inner["id"], contract, abi,
                                          history_protocols, work_protocols, use_static_branches=True)
@@ -174,6 +187,7 @@ def run(native, leaf_protocol, output, *, nested_entry=False, iteration_domain_p
     report = {"schema_version": "softmax-native-history-development/v1", "check": checked,
               "native_sha256": NATIVE_SHA, "call_protocols": history_protocols, "leaf_contract": contract,
               "nested_entry": nested_entry, "work_call_protocols": work_protocols,
+              "guarded_stores": guarded_stores,
               "iteration_domain_protocol": external_domain,
               "integer_types": abi, "implementation_before": before, "implementation_after": after,
               "driver_dependencies": dependencies, "GPU_executed": False,
@@ -194,6 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--nested-entry", action="store_true")
     parser.add_argument("--iteration-domain-protocol", type=Path)
+    parser.add_argument("--guarded-stores", action="store_true")
     args = parser.parse_args()
     run(args.native, args.leaf_protocol, args.output, nested_entry=args.nested_entry,
-        iteration_domain_protocol=args.iteration_domain_protocol)
+        iteration_domain_protocol=args.iteration_domain_protocol, guarded_stores=args.guarded_stores)
