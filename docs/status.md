@@ -10,8 +10,12 @@
 fixture报告与6016720旧实现完整JSON一致。真实unused参数属性案例保持旧值
 checked、新结构unknown；写入source后复制可结构checked，但历史保持未建立。
 687项CPU、211项Clang专项及demo通过，匹配原生插件已启用。
-固定完整生产TU的新独立入口尚待重放，未运行GPU；object_use_closure的条件
-组合尚未被独立结构组合替代，alive及源有效性前提没有解除。见
+固定完整生产TU的新独立入口重放已退出0，三个copy均checked，各绑定两层立即
+receiver和同一普通函数body；只读取ABI，不使用alive协议。耗时425.00秒，
+77个实现哈希前后一致并与当前源码匹配，冻结解除。未重放整个object_use_closure，
+未运行GPU；其条件组合尚未被独立结构组合替代，alive及源有效性前提没有解除。
+5c1d9f4远端CI全部success。另有真实CPU对照：if(false)中的copy结构checked，
+实际复制计数为0，生命周期及动态身份仍未建立；不把结构匹配解释为实际求值。见
 `.agents/handoffs/wb04-capture-structure-20260926.md`。
 
 ## 复制祖先cleanup的原生观测组合
