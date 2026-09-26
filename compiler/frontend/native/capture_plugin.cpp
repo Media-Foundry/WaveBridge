@@ -5,6 +5,7 @@
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
 #include "clang/Basic/Version.h"
+#include "clang/Basic/Builtins.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -52,6 +53,28 @@ const char *captureKindName(LambdaCaptureKind Kind) {
 
 class CaptureVisitor : public RecursiveASTVisitor<CaptureVisitor> {
 public:
+  explicit CaptureVisitor(ASTContext &Context) : Context(Context) {}
+
+  bool VisitCallExpr(CallExpr *Expression) {
+    if (!Expression || !SeenBuiltinCalls.insert(Expression).second)
+      return true;
+    const FunctionDecl *Callee = Expression->getDirectCallee();
+    const unsigned BuiltinID = Callee ? Callee->getBuiltinID() : 0;
+    if (!BuiltinID)
+      return true;
+    llvm::json::Object Item;
+    Item["call_expression_id"] = pointerID(Expression);
+    Item["callee_declaration_id"] = pointerID(Callee);
+    Item["builtin_id"] = static_cast<int64_t>(BuiltinID);
+    Item["builtin_name"] = Context.BuiltinInfo.getName(BuiltinID);
+    llvm::json::Array Arguments;
+    for (const Expr *Argument : Expression->arguments())
+      Arguments.push_back(pointerID(Argument));
+    Item["argument_expression_ids"] = std::move(Arguments);
+    BuiltinCalls.push_back(std::move(Item));
+    return true;
+  }
+
   bool TraverseCompoundStmt(CompoundStmt *Statement) {
     if (!Statement)
       return true;
@@ -204,6 +227,7 @@ public:
   }
 
   llvm::json::Array takeCaptures() { return std::move(Captures); }
+  llvm::json::Array takeBuiltinCalls() { return std::move(BuiltinCalls); }
   llvm::json::Array takeExpressionCleanups() {
     return std::move(ExpressionCleanups);
   }
@@ -212,6 +236,9 @@ public:
   }
 
 private:
+  ASTContext &Context;
+  llvm::DenseSet<const CallExpr *> SeenBuiltinCalls;
+  llvm::json::Array BuiltinCalls;
   std::vector<const LambdaExpr *> LambdaStack;
   llvm::DenseSet<const LambdaExpr *> SeenLambdas;
   llvm::DenseSet<const ExprWithCleanups *> SeenExpressionCleanups;
@@ -225,7 +252,7 @@ private:
 class CaptureConsumer : public ASTConsumer {
 public:
   void HandleTranslationUnit(ASTContext &Context) override {
-    CaptureVisitor Visitor;
+    CaptureVisitor Visitor(Context);
     Visitor.TraverseDecl(Context.getTranslationUnitDecl());
 
     llvm::outs() << "{\"schema_version\":\"clang-native-captures/v1\","
@@ -236,6 +263,8 @@ public:
                     "not_destructor_event_count\","
                     "\"local_record_object_coverage\":\"visited_local_complete_record_variables_not_exhaustive\","
                     "\"local_record_object_semantics\":\"lexical_declarations_not_runtime_destructor_events\","
+                    "\"builtin_call_coverage\":\"visited_direct_builtin_calls_not_exhaustive\","
+                    "\"builtin_call_semantics\":\"compiler_identity_not_value_or_effect_proof\","
                     "\"source_program_checked\":false,"
                     "\"deployable\":false,\"plugin_build_clang_version\":"
                  << llvm::formatv("{0}", llvm::json::Value(CLANG_VERSION_STRING))
@@ -255,6 +284,9 @@ public:
                  << ",\"local_record_objects\":"
                  << llvm::formatv("{0}", llvm::json::Value(
                         Visitor.takeLocalRecordObjects()))
+                 << ",\"builtin_calls\":"
+                 << llvm::formatv("{0}", llvm::json::Value(
+                        Visitor.takeBuiltinCalls()))
                  << "}\n";
   }
 };

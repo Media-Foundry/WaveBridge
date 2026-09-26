@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 原生 builtin 调用身份
+
+Clang 插件新增可选 builtin_calls，由原生 direct callee / builtin ID 记录同次
+AST 的调用、声明、有序实参 ID，不依赖名字前缀。数字 ID 绑定编译器版本，
+覆盖非穷尽；缺字段不表示无 builtin，身份观测不证明返回值、无写或正常完成。
+真实 CUDA 合成探针采集成功；核心循环/调用检查未放宽，无 GPU 或新留出验收。
+GPT-5.6 Sol 新增真实 Clang 身份/实参/负对照测试并验证通过。
+详见 [实录](../experiments/native-builtin-evidence-20260927.md)。
+使用本轮新构建插件，完整 978 项测试通过（66.472 秒，无跳过）；最终强化
+ID/coverage 断言后的 3 项定向回归再次通过。demo/diff 通过，远端 CI 未核验。
+
 ## builtin 固定工具链编译观察
 
 新增合成 CUDA compile-only 探针，绑定原 softmax 的 AOCC 二进制与基础配置，

@@ -76,3 +76,21 @@ scopes; absent metadata in older artifacts cannot mean no local destruction.
 The independent object-use structure checker consumes this extension only to
 classify observed declaration scopes relative to copy syntax. Its dedicated
 child report does not discharge preservation, completeness or cleanup effects.
+
+The optional `builtin_calls` extension uses `CallExpr::getDirectCallee()` and
+`FunctionDecl::getBuiltinID()` (nonzero), not a name-prefix heuristic. Each entry
+records `call_expression_id`, `callee_declaration_id`, `builtin_id`,
+`builtin_name` from the compiler builtin table, and ordered
+`argument_expression_ids`. All pointer IDs belong to the embedded ASTContext;
+numeric builtin IDs are compiler-version-specific, not portable semantic tags.
+Only visited direct calls are observed and deduplicated by expression pointer.
+`builtin_call_coverage` is `visited_direct_builtin_calls_not_exhaustive`;
+absence, including in old v1 envelopes, cannot prove a call is not builtin.
+
+This is compiler identity evidence, not a whitelist: builtin functions can write
+memory, synchronize, fail to return, or evaluate arguments with effects. The
+plugin neither evaluates returned values nor grants purity. It does not enable
+calls in the column-loop checker. Consumers must bind the exact same-context
+call, declaration, argument AST and compiler evidence before applying any
+separate explicit semantics protocol. Indirect calls and unresolved/dependent
+calls are not covered; syntactic visitation is not runtime reachability.
