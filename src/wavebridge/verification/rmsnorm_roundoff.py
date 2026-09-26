@@ -4,10 +4,43 @@ Requires explicit rsqrt error bounds. Never infers SDK guarantees or validates
 the frozen numerical reference implementation. All decisions use Fraction.
 """
 from fractions import Fraction
+from math import isqrt
 
 from wavebridge.verification import block_roundoff
 
 U, ETA, MAX_FINITE = block_roundoff.U, block_roundoff.ETA, block_roundoff.MAX_FINITE
+
+
+def _binary32(value):
+    if type(value) is not Fraction or abs(value) > MAX_FINITE:
+        return False
+    units = abs(value) * (1 << 149)
+    if units.denominator != 1:
+        return False
+    shift = max(0, units.numerator.bit_length() - 24)
+    return units.numerator % (1 << shift) == 0
+
+
+def ideal_intervals(values, *, epsilon, precision_bits=192):
+    """Enclose ideal real outputs for one concrete finite binary32 input row.
+
+    Uses exact rationals and integer sqrt only, not the stored FP reference or
+    any GPU model. Returned Fractions are bounds, not rounded output predictions.
+    Signs of zero are intentionally not modeled. Unsupported inputs raise.
+    """
+    if (not isinstance(values, (list, tuple)) or not 1 <= len(values) <= 4096 or
+            not all(_binary32(value) for value in values) or
+            not _supported(epsilon, positive=True) or type(precision_bits) is not int or
+            not 16 <= precision_bits <= 1024):
+        raise ValueError("finite binary32 row, positive exact epsilon and bounded precision required")
+    denominator = sum((value * value for value in values), Fraction(0)) / len(values) + epsilon
+    grid = 1 << precision_bits
+    numerator = denominator.denominator * grid * grid
+    root = isqrt(numerator // denominator.numerator)
+    lo = Fraction(root, grid)
+    hi = lo if root * root * denominator.numerator == numerator else Fraction(root + 1, grid)
+    outputs = [(min(value * lo, value * hi), max(value * lo, value * hi)) for value in values]
+    return {"denominator": denominator, "scale_interval": (lo, hi), "outputs": outputs}
 
 
 def _ratio(value):

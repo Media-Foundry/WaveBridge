@@ -2,6 +2,33 @@
 
 更新日期：2026-09-27。
 
+## 保存 reference 与理想实数输出的逐点连接
+
+新增 `rmsnorm_roundoff.ideal_intervals`，通过整数平方根和精确有理数包围
+具体输入的理想RMSNorm输出；不调用浮点sqrt、不相信reference自报正确。
+`experiments.reference_interval_audit` 检查已有run的input/expected/protocol/
+reference哈希，再用区间给出保存reference误差并接fresh条件模型误差界。
+
+对历史W7900 baseline工件 wb02-20260926T154202Z-d8e8d1 的3×777、2331个
+保存点实际执行CPU审计；三行reference最大绝对误差上界约5.78447e-8、
+4.63281e-8、5.74682e-8。FMA/分离与显式width32/64共四组条件模型的
+所有点均满足精确实数容限不等式，最小余量约1e-5。没有重新执行reference
+或GPU；这是对固定字节的数学包围，不是reference生成算法的全域证明。
+
+runner的Python epsilon为binary64字面量1e-5，GPU launch为binary32
+1e-5f；本轮分别建模，不能将JSON可round-trip重建误称为原始数据流。
+模型的实际FP/源码/运行条件、host comparator舍入均未自动核验，
+numeric_contract_checked与deployable仍false；冻结容限及reference未修改。
+proof-writer用于写明区间与三角误差组合证明。
+
+工件 artifacts/wb-reference-interval-jvPDdv/，report.json SHA256：
+`9502dfe7d2451c95f4a2e6d1ef052619605e95723bef42a2a8b1cd65ba519153`。
+
+新增7项测试覆盖精确/非平方区间、符号/零/次正规输入、精度细化、非法值、
+错误reference的界不足、哈希变更与保证标记。完整876项CPU测试通过
+（64.784秒，匹配native插件启用，无跳过），demo与diff检查通过。
+GPT-5.6 Sol复核未发现阻断问题；保存expected的生成来源不由本数学审计证明。
+
 ## rsqrt 的 ISA 依据与完整列长域检查
 
 本轮核对既有 gfx1100 基线 IR/汇编与当前 SDK，确认正常支路为

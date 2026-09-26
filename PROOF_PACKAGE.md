@@ -337,3 +337,54 @@ $$
 已人工核对直接 rsq 与缩放选择链；未自动验证所有执行机器码、实际入口与
 运行环境对应，也未建立其他运算误差律和冻结 reference 的误差。
 不能把文档精度、有限模型域检查或人工指令核对单独当作整核部署许可。
+
+## Stored Reference Lemma：具体输入的独立有理区间
+
+### Claim, Status and Assumptions
+
+PROVABLE AS STATED。给定一行精确表示的有限 binary32 输入 $x_j$ 和正有理
+epsilon $e$，`ideal_intervals` 为每个理想实数输出
+$y_j=x_j/\sqrt{D}$、$D=\sum_jx_j^2/N+e>0$ 给出闭区间 $[l_j,h_j]$。
+它不调用浮点 sqrt，不依赖已保存 reference 的算法正确性。整数/有理数运算
+和整数平方根实现属于可信基础；输入值和 epsilon 必须与被比较工件一致。
+
+令保存的某个 reference 值为精确有理数 $w$，并定义
+$A=\max(|w-l|,|w-h|)$、$M=\max(|l|,|h|)$。如果另一侧模型有已明确条件的
+$|\widehat y-y|\le c|y|+a$，$c,a\ge0$，则
+$$|\widehat y-w|\le cM+a+A.$$
+所以在精确实数比较语义下，若 $cM+a+A\le\mathrm{atol}+\mathrm{rtol}|w|$，
+该具体点满足给定容限。此命题不自动证明宿主浮点 comparator 的舍入行为，
+更不解除模型的源码/编译/设备前提。
+
+### Strategy and Dependency Map
+
+1. 对 $D^{-1}$ 使用整数平方根构造倒平方根的有理包围区间。
+2. 正负输入分别乘区间端点，获得输出区间。
+3. 区间上的绝对误差端点上界与已有模型界通过三角不等式组合。
+
+### Proof Step 1：整数平方根区间
+
+写 $D=p/q$，$p,q$ 为正整数，取 $G=2^k$，实现支持 $16\le k\le1024$。
+令 $m=\lfloor\sqrt{\lfloor qG^2/p\rfloor}\rfloor$。
+整数性质给出 $m^2\le qG^2/p<(m+1)^2$：后一不等式若失败，则作为整数的
+$(m+1)^2$ 不超过内层 floor，与 $m$ 的定义矛盾。因此
+$$m/G\le D^{-1/2}<(m+1)/G.$$
+若 $m^2p=qG^2$，上下界可同时取 $m/G$；否则取上述相邻端点作为闭区间。
+区间宽度至多 $2^{-k}$，包含其下界为零的粗精度情况。
+
+### Proof Step 2：符号和误差组合
+
+当 $x\ge0$，直接乘两个端点；当 $x<0$，端点顺序反转。取两乘积的min/max
+即可覆盖两种情况，$x=0$ 得精确区间 $[0,0]$。这里不区分 IEEE 正负零。
+对任意 $y\in[l,h]$，绝对值凸性给出 $|w-y|\le A$、$|y|\le M$。于是
+$$|\widehat y-w|\le|\widehat y-y|+|y-w|\le cM+a+A.$$
+容限结论随即成立。区间过宽而无法满足不等式时，仅表示该界不充分；不证明
+真实输出超出容限，也不允许自动提高容限。∎
+
+### Open Risks
+
+`reference_interval_audit` 对绑定哈希的保存输入和 expected 字节逐点执行上述
+检查，并fresh计算模型系数；不重新执行 reference.py，也不声称证明了
+其 `fsum/sqrt` 算法在其他输入或其他 Python/libm 环境中的误差。报告重建的
+binary64 epsilon 来自历史 runner 字面量的 JSON round-trip；GPU固定binary32
+epsilon单独表达。实际读取与运行数据对应仍是独立义务。

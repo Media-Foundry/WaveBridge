@@ -910,6 +910,14 @@ unknown。原先闭合扫描拒绝的空AST placeholder仍然拒绝，不为顺�
 长度域重新计算正分母区间，不依赖预先假设的 rsqrt 精度。文档支持的精度
 前提不等于已验证实际执行契约，也不会自动填入上述 checker 或放宽数值协议。
 
+`rmsnorm_roundoff.ideal_intervals` 另提供具体 binary32 输入行的理想实数输出
+包围区间，使用整数平方根与精确有理数，不调用浮点 sqrt。它不改变 reference，
+也不预测正确舍入后的唯一值。`experiments.reference_interval_audit` 绑定已有
+run 的 input/expected/protocol/reference 字节哈希，以该区间独立给出已保存
+reference 的误差上界，再与 fresh 条件模型界相加。其容限检查只覆盖这些
+具体输入的精确实数比较，不证明 reference 算法全域误差、宿主 comparator
+舍入、实际 GPU 误差律或部署。边界详见 PROOF_PACKAGE.md 的 Stored Reference Lemma。
+
 ## 显式源引用的复制效果组合
 
 `object_use_closure.source_reference_use_effects` 只消费本次fresh执行的
