@@ -1180,3 +1180,22 @@ source_constant_checks、derived_constant_intervals与effective_declaration_inte
 value_preserved_to_use=false；不会改动旧initializer_evidence的const-origin条件。
 源有效、执行到该初始化、正常返回及外部leaf值域等前提保留；坐标含义、
 完整求值效果、到loop的历史保持、launch域和部署都未建立。
+
+## 初始化到后续语句首次入口的保持
+
+`initializer_domain.check_to_statement(payload, declaration_id, statement_id,
+leaf_contract, integer_types, call_protocols, ...)`重新检查初始化域，然后绑定
+同一普通函数体的single DeclStmt和较晚直接语句（可经受支持的无参LoopHint
+包装选择ForStmt）。声明和目标身份唯一，全函数goto/label/coroutine拒绝。
+
+全部中间语句都经受限存储效果检查；标准五槽ForStmt递归检查原始初始化、
+条件、增量和body，不假定循环不执行或只执行一次。对被保护local的写入、
+取地址/引用逃逸和未知调用/控制流拒绝，最多16个循环、8层。显式静态分支
+模式只基于同次AST的受限布尔事实选择分支，记录函数体相对路径。
+调用点必须fresh通过现有builtin/scalar完整调用检查，未消费协议阻止成功。
+
+checked仅表示正常到达目标首次入口时，在源有效、无别名、无异步干扰和
+外部调用前提下保留初始化值域；不检查目标body，也不证明可达性、终止、
+之后迭代或launch语义。目标body可修改该变量，不应被此入口错误阻止；
+后续消费者必须另行检查body保持。未知helper不能因为不显式传入该local
+就当成无副作用，更不能给实际写数组的helper补一个虚假的“全局无写”前提。

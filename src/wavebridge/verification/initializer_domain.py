@@ -17,6 +17,154 @@ from wavebridge.verification.kernel_arguments import _abi_type, _Unknown
 MAX_CASTS = 32
 
 
+def check_to_statement(payload, declaration_id, statement_id, leaf_contract, integer_types,
+                       call_protocols, *, max_ast_nodes=None, use_static_branches=False):
+    """Preserve an initialized local up to a later direct statement's first entry."""
+    from wavebridge.analysis.column_loops import (
+        _check_body, _static_bool_value, _hinted_loop, _Unknown as BodyUnknown)
+    from wavebridge.verification.builtin_calls import check_call_no_memory_write
+    from wavebridge.verification.scalar_call_effects import check_no_memory_write as check_scalar_call
+
+    result = {"schema_version": "initializer-to-statement-preservation/v1", "status": "unknown", "reason": None,
+              "scope": "local_value_at_first_entry_to_later_direct_statement",
+              "initializer_check": None, "statement_checks": [], "call_effect_checks": {},
+              "static_branch_decisions": [], "value_preserved_to_statement": False,
+              "source_program_checked": False, "deployable": False, "target_body_checked": False,
+              "assumptions": ["execution reaches the target normally after this initialization",
+                              "intervening stores do not alias the protected local and no asynchronous interference occurs",
+                              "all initialization and consumed external call premises apply"],
+              "limitations": ["not a reachability, termination, target-body or later-iteration guarantee",
+                              "only direct statements in one ordinary function body; no goto or labels",
+                              "coordinate meaning, launch domain and external leaf effects remain unverified"],
+              "budget": {"max_call_protocols": 64, "max_nested_loops": 16, "max_nested_depth": 8}}
+    if (not isinstance(payload, dict) or not isinstance(payload.get("ast"), dict) or
+            not isinstance(statement_id, str) or not statement_id or type(use_static_branches) is not bool or
+            not isinstance(call_protocols, dict) or len(call_protocols) > 64 or
+            any(not isinstance(k, str) or not k or not isinstance(v, dict) for k, v in call_protocols.items())):
+        result["reason"] = "invalid_inputs_or_protocols"
+        return result
+    root = payload["ast"]
+    initialized = check_source(root, declaration_id, leaf_contract, integer_types, max_ast_nodes=max_ast_nodes)
+    result["initializer_check"] = initialized
+    if initialized["status"] != "checked":
+        result["reason"] = "source_initializer_not_checked"
+        return result
+    try:
+        index, functions, pending = {}, [], [root]
+        while pending:
+            node = pending.pop()
+            if isinstance(node.get("id"), str):
+                index.setdefault(node["id"], []).append(node)
+            if node.get("kind") in {"FunctionDecl", "CXXMethodDecl"}:
+                functions.append(node)
+            pending.extend(node.get("inner", []))
+        if len(index.get(statement_id, [])) != 1:
+            raise _Unknown("target_statement_not_unique")
+        contexts = []
+        for function in functions:
+            for body in function.get("inner", []):
+                if body.get("kind") != "CompoundStmt":
+                    continue
+                for position, statement in enumerate(body.get("inner", [])):
+                    children = statement.get("inner", [])
+                    if (statement.get("kind") == "DeclStmt" and len(children) == 1 and
+                            children[0].get("id") == declaration_id):
+                        contexts.append((function, body, position))
+        if len(contexts) != 1:
+            raise _Unknown("declaration_not_unique_direct_function_statement")
+        function, body, begin = contexts[0]
+        paths, pending = {}, [(body, [])]
+        forbidden = {"GotoStmt", "IndirectGotoStmt", "LabelStmt", "AddrLabelExpr",
+                     "CoawaitExpr", "CoyieldExpr", "CoreturnStmt"}
+        while pending:
+            node, path = pending.pop()
+            paths.setdefault(id(node), []).append(path)
+            if node.get("kind") in forbidden:
+                raise _Unknown("function_control_transfer_unsupported")
+            pending.extend((child, path + [position]) for position, child in enumerate(node.get("inner", [])))
+        statements = body["inner"]
+        targets = []
+        for position, statement in enumerate(statements):
+            candidate = _hinted_loop(statement) if statement.get("kind") == "AttributedStmt" else statement
+            if candidate.get("id") == statement_id:
+                targets.append(position)
+        if len(targets) != 1 or targets[0] <= begin:
+            raise _Unknown("target_not_later_direct_statement")
+        end = targets[0]
+        result["selection"] = {"function_id": function.get("id"), "declaration_id": declaration_id,
+                               "target_statement_id": statement_id, "declaration_statement_index": begin,
+                               "target_statement_index": end}
+        loops_used = 0
+
+        def call_effect(node):
+            identifier = node.get("id")
+            if identifier not in call_protocols:
+                result["unknown_call_id"] = identifier
+                return False
+            checks = result["call_effect_checks"]
+            if identifier not in checks:
+                protocol = call_protocols[identifier]
+                checks[identifier] = (check_scalar_call(root, identifier, protocol, max_ast_nodes=max_ast_nodes)
+                                      if protocol.get("schema_version") == "scalar-leaf-effect-assumption/v1"
+                                      else check_call_no_memory_write(payload, identifier, protocol,
+                                                                     max_ast_nodes=max_ast_nodes))
+            return checks[identifier]["status"] == "checked"
+
+        def branch(node):
+            if any(node.get(flag) for flag in ("hasInit", "hasVar", "isConstexpr", "isConsteval")):
+                return None
+            children = node.get("inner", [])
+            if len(children) != (3 if node.get("hasElse") else 2):
+                return None
+            try:
+                value = _static_bool_value(children[0])
+            except BodyUnknown:
+                return None
+            locations = paths.get(id(node), [])
+            if len(locations) != 1:
+                raise _Unknown("static_branch_occurrence_not_unique")
+            result["static_branch_decisions"].append({"if_id": node.get("id"), "condition_ast": children[0],
+                                                       "condition_value": value, "range": node.get("range"),
+                                                       "function_body_child_path": locations[0]})
+            return [children[1]] if value else children[2:]
+
+        def scan(node, depth=0):
+            def nested(loop):
+                nonlocal loops_used
+                loops_used += 1
+                parts = loop.get("inner", [])
+                if (depth >= 8 or loops_used > 16 or len(parts) != 5 or parts[1] != {} or
+                        any(not isinstance(parts[i], dict) or not parts[i] for i in (0, 2, 3, 4))):
+                    raise _Unknown("intervening_loop_layout_or_budget_unsupported")
+                for position in (0, 2, 3, 4):
+                    scan(parts[position], depth + 1)
+            _check_body(node, {declaration_id}, nested_callback=nested, call_callback=call_effect,
+                        branch_callback=branch if use_static_branches else None)
+
+        for position in range(begin + 1, end):
+            statement = statements[position]
+            item = {"function_body_child_index": position, "statement_id": statement.get("id"), "status": "unknown"}
+            result["statement_checks"].append(item)
+            scan(statement)
+            item["status"] = "checked"
+        unused = sorted(set(call_protocols) - set(result["call_effect_checks"]))
+        result["unused_call_protocol_ids"] = unused
+        if unused:
+            raise _Unknown("unused_call_protocols")
+        result.update(status="checked", value_preserved_to_statement=True,
+                      result_interval=initialized["result_interval"],
+                      input_sha256={**initialized["input_sha256"], "statement_id": _hash(statement_id),
+                                    "call_protocols": _hash(call_protocols), "static_branches": _hash(use_static_branches)})
+        result["assumptions"].extend(initialized["assumptions"])
+    except BodyUnknown as error:
+        result["reason"], result["unknown_range"] = error.reason, error.range
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, KeyError, IndexError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
 def check_source(root, declaration_id, leaf_contract, integer_types, *, max_ast_nodes=None):
     """Freshly bind a local scalar initializer; no post-initialization history claim."""
     from wavebridge.analysis.initializer_value import link

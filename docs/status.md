@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 初始化至输出循环入口的历史检查
+
+initializer_domain.check_to_statement fresh检查初始化与同一函数体的顺序，
+扫描全部中间语句及普通ForStmt header/body，未知调用/写入/跳转不放行。
+固定softmax的8条中间顶层语句条件通过，但在第145行warp_reduce Max调用
+0x1954ab18处unknown；尚不能把local_idx初始化域提升为输出loop入口域。
+见[实录](../experiments/initializer-history-evidence-20260927.md)。下一步需检查
+helper实际写入范围，而非给写数组的归约补一个虚假的全局无写假设。
+完整1078项测试通过（73.984秒，native启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增5项真实Clang回归并复核；无GPU，远端CI未核验。
+
 ## 可变local_idx的初始化时域
 
 initializer_domain.check_source从完整TU重新定位唯一自动int/const int声明，
