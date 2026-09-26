@@ -17,6 +17,82 @@ from wavebridge.verification.kernel_arguments import _abi_type, _Unknown
 MAX_CASTS = 32
 
 
+def check_source(root, declaration_id, leaf_contract, integer_types, *, max_ast_nodes=None):
+    """Freshly bind a local scalar initializer; no post-initialization history claim."""
+    from wavebridge.analysis.initializer_value import link
+    from wavebridge.verification.getter_returns import check as check_getter
+    from wavebridge.verification.scalar_expression_effects import _type
+
+    budget = 1_000_000 if max_ast_nodes is None else max_ast_nodes
+    result = {"schema_version": "source-initializer-domain-check/v1", "status": "unknown", "reason": None,
+              "scope": "selected_local_scalar_value_at_initialization_only",
+              "source_program_checked": False, "deployable": False, "value_preserved_to_use": False,
+              "coordinate_semantics": "not_established", "receiver_purity": "not_established",
+              "checks": {}, "budget": {"max_ast_nodes": budget},
+              "assumptions": ["AST faithfully represents a valid translation unit and initialization is reached",
+                              "external leaf domain and integer ABI are valid; initialization completes normally"],
+              "limitations": ["no value history, reaching definition, loop-entry or launch-domain guarantee",
+                              "no thread-coordinate semantics or complete initializer effect guarantee"]}
+    try:
+        if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
+                not isinstance(declaration_id, str) or not declaration_id or
+                type(budget) is not int or not 1 <= budget <= 10_000_000):
+            raise _Unknown("invalid_inputs_or_budget")
+        index, selected, pending, count = {}, [], [(root, ())], 0
+        while pending:
+            node, parents = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            if not isinstance(node, dict) or not isinstance(node.get("inner", []), list):
+                raise _Unknown("malformed_ast")
+            if isinstance(node.get("id"), str):
+                index.setdefault(node["id"], []).append(node)
+            if node.get("id") == declaration_id:
+                selected.append((node, parents))
+            pending.extend((child, (parents + (node.get("kind"),))[-2:]) for child in node.get("inner", []))
+        if len(selected) != 1:
+            raise _Unknown("initializer_declaration_not_unique")
+        declaration, parents = selected[0]
+        if (declaration.get("kind") != "VarDecl" or parents != ("CompoundStmt", "DeclStmt") or
+                _type(declaration) not in {"int", "const int"} or
+                declaration.get("storageClass") not in (None, "auto", "register") or
+                any(declaration.get(key) is not None for key in ("tls", "tlsKind", "thread_local", "threadLocal")) or
+                declaration.get("init") is None or len(declaration.get("inner", [])) != 1):
+            raise _Unknown("unsupported_local_scalar_declaration")
+        initializer = declaration["inner"][0]
+        if len(index.get(initializer.get("id"), [])) != 1:
+            raise _Unknown("initializer_expression_not_unique")
+        result.update(declaration_id=declaration_id, initializer_id=initializer.get("id"),
+                      declaration_range=declaration.get("range"), initializer_ast=initializer)
+        origin = link(root, initializer)
+        result["checks"]["value_link"] = origin
+        if origin["status"] != "recovered":
+            raise _Unknown("initializer_value_link_not_recovered")
+        getter = check_getter(root, origin["callee_declaration_id"], leaf_contract, integer_types,
+                              max_ast_nodes=budget)
+        result["checks"]["getter"] = getter
+        if getter["status"] != "checked":
+            result.update(status=getter["status"], reason="initializer_getter_not_checked")
+            return result
+        domain = check(origin, getter, integer_types)
+        result["checks"]["conversion"] = domain
+        if domain["status"] != "checked":
+            result.update(status=domain["status"], reason="initializer_conversion_not_checked")
+            return result
+        if domain["result_type"] != "int":
+            raise _Unknown("initializer_result_declaration_type_mismatch")
+        result.update(status="checked", result_type="int", result_interval=domain["result_interval"],
+                      input_sha256={"root": _hash(root), "declaration_id": _hash(declaration_id),
+                                    "leaf_contract": _hash(leaf_contract), "integer_types": _hash(integer_types)})
+        result["assumptions"].extend(origin["assumptions"] + getter["assumptions"])
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, KeyError, IndexError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
 def check(value_link: object, getter_report: object,
           integer_types: object) -> dict[str, Any]:
     result: dict[str, Any] = {

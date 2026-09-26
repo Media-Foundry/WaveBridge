@@ -1166,3 +1166,17 @@ source_constant_checks、derived_constant_intervals与effective_declaration_inte
 外部区间键必须恰好覆盖剩余读取，冗余或冲突常量override也不接受。
 普通变量及不受支持的动态const依然需要显式范围，失败的常量求值报告保留。
 这不证明其余参数域、mutable初始化历史、线程坐标或launch。默认入口保持不变。
+
+## 真实声明的初始化时值域
+
+`initializer_domain.check_source(root, declaration_id, leaf_contract, integer_types)`
+是fresh源码入口，不接受预先签发的value-link/getter报告。它绑定全TU唯一、
+直接CompoundStmt/DeclStmt下的自动int或const int声明和唯一初始化表达式，
+重新执行initializer_value.link、getter_returns.check及原有转换域检查。
+静态/TLS/引用/未知属性与不支持的initializer拒绝，外部leaf范围及ABI明确给出。
+
+允许mutable声明只意味着可以讨论其初始化完成时的值，**不意味着之后值保持**。
+成功scope为selected_local_scalar_value_at_initialization_only，
+value_preserved_to_use=false；不会改动旧initializer_evidence的const-origin条件。
+源有效、执行到该初始化、正常返回及外部leaf值域等前提保留；坐标含义、
+完整求值效果、到loop的历史保持、launch域和部署都未建立。

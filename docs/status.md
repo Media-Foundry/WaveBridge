@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 可变local_idx的初始化时域
+
+initializer_domain.check_source从完整TU重新定位唯一自动int/const int声明，
+fresh连接initializer、getter及转换，不消费caller提供的成功报告。
+固定softmax可变local_idx已连接真实CUDA getter/leaf；在显式leaf [0,31]
+前提下，int→unsigned int→int两次转换值保持，初始化域条件checked。见
+[实录](../experiments/source-initializer-evidence-20260927.md)。
+value_preserved_to_use=false；旧const-origin入口不放宽，未将本结果接入
+循环域替代手填local_idx，历史保持、真实坐标/launch和完整effects仍未建立。
+完整1073项测试通过（73.302秒，native启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增5项真实Clang回归并复核；无GPU，远端CI未核验。
+
 ## 从同次AST建立常量域
 
 check_iteration_bounds新增显式use_source_constants模式，按精确声明ID重新
