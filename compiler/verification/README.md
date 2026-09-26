@@ -888,6 +888,23 @@ unknown。原先闭合扫描拒绝的空AST placeholder仍然拒绝，不为顺�
 原有capture协议中的活跃对象和same-activation假设不会自动删除。
 主引用闭合可以checked而source_order未知，调用者必须检查所需的子报告范围。
 
+## 条件 RMSNorm 理想输出误差界
+
+`verification.rmsnorm_roundoff.compare` 从 fresh 局部平方和/归约界继续传播
+除法、epsilon 存储偏差、rsqrt 及最终有符号乘法。输入必须显式给出理想与
+两侧实际存储 epsilon（精确 Fraction），以及两侧外部 rsqrt 相对误差上限；
+没有默认 SDK 保证。数值计算和范围判断均使用精确有理数。
+
+`checked` 仅给出相对 `x/sqrt(exact_sum_of_squares/ncols+ideal_epsilon)` 的
+条件误差界，以及经三角不等式得到的双侧差值界。分母正性或保守有限值域
+无法建立时返回 unknown；上游错误路由仍 rejected。证明见根目录
+`PROOF_PACKAGE.md` 的 Output Extension Claim。
+
+这不是实际编译后缀对应检查，也没有验证实际 rsqrt/division 误差律；理想
+实数函数不是仓库 float64 reference 实现。`numeric_contract_checked`、
+`frozen_reference_implementation_checked`、`rsqrt_contract_verified` 和
+`deployable` 均保持 false，不进入 GPU 放行门控。
+
 ## 显式源引用的复制效果组合
 
 `object_use_closure.source_reference_use_effects` 只消费本次fresh执行的

@@ -2,6 +2,29 @@
 
 更新日期：2026-09-27。
 
+## 归一化输出的条件误差界
+
+新增 `verification.rmsnorm_roundoff.compare`，fresh 连接局部平方和/路由误差，
+再传播除法、epsilon 存储偏差、外部 rsqrt 相对误差和最终乘法。所有系数与
+正性/有限域判断使用精确 Fraction。rsqrt 误差上限必须显式提供，不推断 SDK
+保证；无法建立正分母或保守有限域时 unknown，错误路由保持 rejected。
+
+结论仅相对理想实数 RMSNorm 输出，不是冻结 float64 reference 实现。实际
+源码/编译顺序、div/rsqrt/mul 误差律、reference 舍入误差和冻结容限验收仍未
+建立；相关验证标记与 deployable 均 false。本轮没有 GPU 作业或真实 AST 重放。
+proof-writer 用于完整条件推导；GPT-5.6 Sol 独立只读复核未发现阻断问题。
+
+新增6项回归：四种累计模式配对共324组小域输入，用精确有理数模拟舍入，
+以平方不等式检查理想输出误差，不依赖宿主 sqrt 作精确 oracle；另覆盖符号、
+零域、epsilon 偏差、显式参数缺失、有限域未知与上游拒绝。
+示例工件 `artifacts/wb-output-bound-34o57C/` 使用明确标注的假设 rsqrt 界
+2^-22，绝非实际硬件保证。report.json SHA256：
+`e22b4f9cf6630cc4ba1b4a24bb1668aa4cae15ab14215ce6463127949445a824`。
+
+完整866项CPU测试通过（65.527秒，匹配native插件启用，无跳过）；make demo
+与diff检查通过。下一步需连接冻结reference的实现误差与实际工具链误差保证，
+不能把这个条件上界直接当成已满足原数值协议。
+
 ## 局部平方累计与归约误差连接
 
 新增 block_roundoff.compare_sum_squares，在共同原始输入、明确cyclic列分配

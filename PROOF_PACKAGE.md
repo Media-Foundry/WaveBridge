@@ -189,3 +189,89 @@ $$|\widehat R_s-\widehat R_t|\le(c_s+c_t)Q+e_s+e_t.$$
 此扩展仅在模型内从 $N,B,X$ 推出局部叶界及误差；真实源码对应、输入配对、
 FMA/分离模式、局部和归约误差律仍是外部前提。实际除法、epsilon、rsqrt与
 最终乘法继续未覆盖，不能宣称完整RMSNorm冻结容限已通过。
+
+## Output Extension Claim：相对理想实数输出
+
+状态：PROVABLE AS STATED，仅以下带明确外部误差律的模型命题。真实冻结
+reference 的实现误差和真实设备条件尚未建立，不宣称实际容限验收通过。
+
+### Claim, Assumptions and Notation
+
+承接平方和扩展，每侧总和 $R\ge0$ 满足 $|R-Q|\le aQ+b$。
+令 $q=Q/N$、理想epsilon为 $e>0$、实际存储epsilon为 $\widehat e>0$，
+$D=q+e$、理想输出 $y_*=x/\sqrt D$。后缀严格为
+$d=\operatorname{fl}(R/N)$、$E=\operatorname{fl}(d+\widehat e)$、
+$g=\operatorname{rsqrt}(E)$、$\widehat y=\operatorname{fl}(xg)$。
+假设整数到除数转换精确；除法和加法返回非负值并满足绝对局部误差律
+$|\operatorname{fl}(z)-z|\le u|z|+\eta$；有符号最终乘法满足同一误差律。
+rsqrt 的实际值在报告的正输入区间内满足外部指定的
+$|g-E^{-1/2}|\le\rho E^{-1/2}$，$0\le\rho<1$。此处不猜测SDK提供了什么 $\rho$。
+
+定义
+$$
+A=(1+u)^2(1+a)-1,\quad
+C=(1+u)^2b/N+(2+u)\eta+u\widehat e+|\widehat e-e|,
+$$
+$$\delta=\max(A,C/e),\quad h=\frac{\delta}{2(1-\delta)},\quad
+c=(1+u)(1+h)(1+\rho)-1.$$
+若检查器建立全部有限范围且 $\delta<1$，每侧有
+$$|\widehat y-y_*|\le c|y_*|+\eta.$$
+两侧相对相同 $y_*$ 的误差相加，得到输出差值界。
+
+### Dependency Map and Strategy
+
+1. 平方和误差和两次后缀舍入给出 $E$ 相对 $D$ 的误差。
+2. $e>0$ 与 $\delta<1$ 保证正的rsqrt输入，再用平方根恒等式取有理扰动界。
+3. 外部rsqrt相对误差与最终乘法误差相乘组合，不假定两个误差方向独立。
+
+### Proof Step 1：归一化分母
+
+三角不等式与 $R/N\le(1+a)q+b/N$ 给出
+$$
+|d-q|\le(1+u)|R-Q|/N+uq+\eta.
+$$
+进一步 $d\le q+|d-q|$，代入加法误差可得
+$$
+|E-D|\le(1+u)|d-q|+u(q+\widehat e)+\eta+|\widehat e-e|
+\le Aq+C.
+$$
+因为 $q\ge0,e>0$，$(Aq+C)/(q+e)$ 是 $A$ 与 $C/e$ 的非负加权平均，
+所以 $|E-D|\le\delta D$。于是
+$E\ge(1-\delta)D\ge(1-\delta)e>0$，包含 $Q=0$ 的情况。
+
+### Proof Step 2：精确倒平方根扰动
+
+由 $(1-\delta)D\le E\le(1+\delta)D$ 得
+$\sqrt{D/E}\in[(1+\delta)^{-1/2},(1-\delta)^{-1/2}]$。
+上偏差精确等于
+$\delta/[\sqrt{1-\delta}(1+\sqrt{1-\delta})]$。
+分母为 $(1-\delta)+\sqrt{1-\delta}\ge2(1-\delta)$，故上偏差不超过 $h$。
+下偏差等于 $\delta/[\sqrt{1+\delta}(1+\sqrt{1+\delta})]\le\delta/2\le h$。
+因此 $|E^{-1/2}-D^{-1/2}|\le hD^{-1/2}$，零扰动时同样成立。
+
+### Proof Step 3：近似rsqrt与最终乘法
+
+外部rsqrt律和 Step 2 给出
+$|g-D^{-1/2}|\le[(1+\rho)(1+h)-1]D^{-1/2}$，且
+$|g|\le(1+\rho)(1+h)D^{-1/2}$。将这两个式子代入
+$|\widehat y-y_*|\le u|xg|+\eta+|x||g-D^{-1/2}|$ 得 Claim。
+这里允许 $x$ 为负或零；零输入的保守界仍有 $\eta$。
+
+### Proof Step 4：有限范围与外部边界
+
+平方和检查已建立 $R\le R_{\max}$。先检查
+$d_{\max}=(1+u)R_{\max}/N+\eta\le F$，再检查
+$E_{\max}=(1+u)(d_{\max}+\widehat e)+\eta\le F$，这保证精确操作数在
+局部律的有限域内后才使用它。rsqrt契约的输入区间为
+$[(1-\delta)e,E_{\max}]$。由于 $D\ge e$，
+$D^{-1/2}\le I=\max(1,1/e)$；保守检查
+$G=(1+\rho)(1+h)I\le F$ 及 $(1+u)XG+\eta\le F$，从而覆盖rsqrt结果和
+最终乘法的有限范围。不通过是unknown，不声称真实执行必然溢出。
+有限rsqrt契约是外部前提，本推导未假装从硬件证明其成立。∎
+
+### Open Risks for Output Extension
+
+实际源码/编译器必须对应上述后缀顺序和除数、epsilon值；FMA重排或不同
+lowering不能自动继承该结论。真实rsqrt相对误差、除法/乘法误差律仍未验证。
+当前参考是理想实数函数，不是仓库float64 fsum/sqrt及float32输出的已执行
+reference；后者误差未连接，因此 numeric_contract_checked 继续为false。
