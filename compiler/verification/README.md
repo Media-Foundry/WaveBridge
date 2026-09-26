@@ -240,6 +240,18 @@ launch域或源/目标等价。source_program_checked/deployable始终false。�
 
 ## 初始化域与选定launch的线程起点组合
 
+双侧入口 v4 要求每侧协议提供 `coordinate_effects`，且仅含 `row`、`start`。
+每项包含现有 `effect_protocol`（getter-leaf-effect-assumption/v1）与
+`receiver_protocol`（property-receiver-assumptions/v1）。不接受旧成功报告。
+入口从本次 fresh row/thread 结果选择精确 property ID 和已建立的 leaf 域，
+重新调用 `check_property_no_memory_write`；缺失、过期、错接或超子集即 unknown。
+当前只支持受限 PseudoObjectExpr 路径；不是通用 C++ 调用副作用分析。
+外部 leaf 无写入/正常返回、receiver 初始化/存活和扩展语义仍是 unverified
+假设，不能由 effect 的 checked 状态宣称已经验证 SDK 或完整初始化历史。
+外层整数转换仍由既有 initializer/domain 路径检查；这里不包含变量初始化
+写入本身，也不证明运行实参、指针内容或叶值等价。旧协议缺少此字段时 v4
+保持 unknown；旧版结构证据记录不因此变成错误的历史数值结果。
+
 双侧 `device_evidence.compare_rmsnorm_routes` 的 v3 还将 fresh 局部计算模板
 同本次 row/thread/prefix 证据连接。局部恢复结果必须与前缀内的同一恢复结果
 完全一致，input/start/bound/accumulator 精确绑定，再比较两侧条件入口关系

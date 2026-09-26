@@ -66,6 +66,10 @@ v3 将局部恢复结果与同次前缀恢复中的 local_contribution 精确比
 input/start/bound/accumulator 的声明身份以及自动存储期证据。两侧比较参数角色、
 整数 ABI、条件坐标/区间和源指针整数偏移关系；不比较跨 TU 声明 ID。
 这些关系签名相同不意味着运行实参、内存内容或前提集合相同；两侧前提均保留。
+v4 再对两侧 row/start 的精确 property 求值调用现有无内存写入检查，使用
+本次坐标检查导出的 leaf 域与外部显式 effect/receiver 协议。缺少协议保持
+unknown；外部无写入/正常返回、receiver 存活和扩展语义未自动验证，不能将
+这一条件检查升级为完整初始化、SDK 纯度或叶值等价证明。
 
 `transforms.source_token.edit`仅生成一个精确主源码 literal 的 byte-token 替换，
 不选择常量语义，不判断全部引用用途，不推断目标能力。输出完整源码和变更

@@ -7,6 +7,7 @@ shared-memory branch must come from this invocation's row/column branch.
 from wavebridge.row_offset_check import check as check_offsets
 from wavebridge.shared_storage_check import check as check_shared
 from wavebridge.verification.getter_returns import _hash
+from wavebridge.verification.getter_returns import check_property_no_memory_write
 from wavebridge.verification.launch_binding import check as check_launch
 from wavebridge.analysis.normalization_output import recover as recover_output
 from wavebridge.verification.xor_routes import check as check_xor_routes
@@ -298,12 +299,49 @@ def _local_entry_signature(root, protocol, side, snapshot):
     }
 
 
+def _coordinate_effects(root, protocol, side, *, max_ast_nodes):
+    """Freshly check the two exact property expressions, retaining all premises."""
+    result = {"status": "unknown", "reason": None, "checks": {},
+              "scope": "row_and_start_property_evaluation_under_external_effect_receiver_premises",
+              "external_premises_verified": False,
+              "source_program_checked": False, "deployable": False}
+    try:
+        offsets = side["checks"]["integers"]["checks"]["row_offsets"]
+        coordinates = offsets["checks"]
+        row, thread = coordinates["row"], coordinates["thread"]
+        links = {"row": row["prefix_recovery"]["row_initializer_evidence"]["value_link"],
+                 "start": thread["recovery"]["initializer"]["value_link"]}
+        protocols = protocol["coordinate_effects"]
+        if not isinstance(protocols, dict) or set(protocols) != {"row", "start"}:
+            raise ValueError("exact_row_start_effect_protocols_required")
+        for name, coordinate in (("row", row), ("start", thread)):
+            link = links[name]
+            if coordinate["status"] != "checked" or link["status"] != "recovered":
+                raise ValueError(name + "_coordinate_or_initializer_not_checked")
+            expression = link["pseudo_object"]["expression_id"]
+            assumptions = protocols[name]
+            child = check_property_no_memory_write(
+                root, expression, coordinate["derived_leaf_domain"], protocol["integer_types"],
+                assumptions["effect_protocol"], assumptions["receiver_protocol"],
+                max_ast_nodes=max_ast_nodes)
+            result["checks"][name] = child
+            if child["status"] != "checked":
+                raise ValueError(name + "_property_effect_not_checked")
+            fresh_link = child["value_link"]
+            if any(fresh_link[key] != link[key] for key in ("call_id", "callee_declaration_id")):
+                raise ValueError(name + "_property_call_binding_mismatch")
+        result["status"] = "checked"
+    except (KeyError, TypeError, ValueError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def compare_rmsnorm_routes(source_root, source_protocol, target_root, target_protocol,
                            *, max_ast_nodes=1_000_000):
     """Fresh two-sided route evidence; leaves are NOT proven equivalent values."""
     result = {
-        "schema_version": "rmsnorm-route-comparison/v3", "status": "unknown", "reason": None,
-        "scope": "fresh_two_sided_conditional_block_routes_typed_local_templates_and_entry_bindings",
+        "schema_version": "rmsnorm-route-comparison/v4", "status": "unknown", "reason": None,
+        "scope": "fresh_two_sided_routes_local_templates_entry_bindings_and_coordinate_effects",
         "source_program_checked": False, "deployable": False,
         "leaf_value_correspondence": "not_established",
         "floating_point_equivalence": "not_checked", "checks": {},
@@ -356,4 +394,18 @@ def compare_rmsnorm_routes(source_root, source_protocol, target_root, target_pro
     entry.update(status="evidence" if equal else "unknown", relation_signatures_equal=equal)
     if not equal:
         result.update(status="unknown", reason="different_entry_relation_signatures_not_supported")
+        return result
+    effects = {}
+    result["checks"]["coordinate_effects"] = effects
+    result["remaining_obligations"]["coordinate_effects"] = [
+        "external_leaf_no_write_and_normal_return_assumptions_unverified",
+        "receiver_readiness_and_extension_semantics_assumptions_unverified"]
+    for name, root, protocol in (("source", source_root, source_protocol),
+                                  ("target", target_root, target_protocol)):
+        child = _coordinate_effects(root, protocol, result["checks"][name],
+                                    max_ast_nodes=max_ast_nodes)
+        effects[name] = child
+        if child["status"] != "checked":
+            result.update(status="unknown", reason=name + "_coordinate_effects_not_checked")
+            return result
     return result

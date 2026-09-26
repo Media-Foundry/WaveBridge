@@ -2,6 +2,31 @@
 
 更新日期：2026-09-26。
 
+## 坐标 property 求值的条件无写入门控
+
+双侧入口升级 v4，要求每侧 `coordinate_effects.row/start` 显式提供现有 leaf
+effect 和 receiver 协议。从本次 fresh 坐标报告取精确 property ID 与已建立
+的 leaf 域，重新执行既有 check_property_no_memory_write，并再次核对 call/
+callee 身份。缺失、过期、不支持或 getter 内写操作均不能沿用 route evidence。
+旧协议没有这些前提时 v4 返回 unknown；不修改旧版历史证据的保证范围。
+
+这一检查只覆盖精确 property 求值，不包括声明写入本身。外部 leaf 无写入与
+正常返回、receiver 初始化/存活及扩展语义依然 unverified；运行实参、内存
+内容和浮点叶值对应仍未建立，source_program_checked/deployable 仍 false。
+本轮不执行 GPU，也不把人为声明的外部假设当作 SDK 事实验证。
+
+813 项完整测试通过（64.634 秒，匹配 native 插件启用），demo 与 diff 检查通过。
+新增 5 项真实 Clang property 组合测试和 1 项 mock 顶层门控测试；前者真实
+执行副作用 checker，但外围 row/thread/domain 是显式测试输入，不是完整
+launch 的源码端到端验证。覆盖成功、缺协议、stale root/receiver、错 callee/
+expression 和 getter 内写全局。工件目录 `artifacts/wb-coordinate-effects-DuMwKl/`。
+固定真实 HIP 源/目标 AST 的 v4 重放 350.332 秒退出 0：源/目标 row/start
+四项条件检查均 checked；父报告 evidence，外部前提仍未验证，叶值对应仍
+not_established，实现哈希前后稳定。report.json SHA256 为
+`11b6443164f424142a8ebd3027849696b7a1e9cfc160577b32ea73cfb8496942`。
+source/target-conditional-protocol.json 明确将 leaf/receiver 性质声明为本次
+条件测试假设，其 ID 从固定旧报告选取；不是引用旧报告的成功状态代替检查。
+
 ## 局部模板与条件入口关系连接
 
 双侧归约入口升级 v3：在已有 route 和 typed-local 检查之后，核对局部恢复
