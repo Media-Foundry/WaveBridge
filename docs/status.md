@@ -2,6 +2,33 @@
 
 更新日期：2026-09-26。
 
+## 坐标入口的自动存储期门控
+
+连接局部模板与入口关系前，发现 row/start 的持久存储期尚未受限：
+`static/thread_local const int` 的初始化调用可能只执行一次，不能由其
+initializer 形状推出本次 invocation 的坐标值。现 row_prefix 只接受无 TLS、
+无属性的普通自动 const int；独立 thread_start_check 从当前 AST 核对唯一
+完整声明属于所选 kernel 的直接块作用域，不依赖前缀分析替它建立这一前提。
+全局、嵌套、重复身份、未知属性及持久存储起点保持 unknown。
+
+真实 Clang 的 source.run 回归覆盖 row/start 的四个 static/TLS 变体；CPU
+witness 两次调用普通变量为 0/1，static/TLS 为 0/0。这是 C++ 存储期反例，
+不是已确认的 HIP 设备缺陷，也没有否定历史 W7900 数值基线。
+新增 declaration_evaluation 仅表示每次经过声明时执行初始化，不证明 getter
+无副作用或源目标入口值相等。通用 initializer_evidence 的调用证据语义未改。
+本轮不执行 GPU；双侧角色与入口值对应仍未完成，WB-03 未升级为完整验收。
+
+802 项完整测试通过（64.983 秒，匹配 native 插件启用），demo 和 diff 检查通过。
+修复前后比较使用同一批真实 Clang AST 与 fc67639 的原始 row_prefix 模块：
+四个持久声明旧版 recovered、新版 unknown，自动变量两版均 recovered。
+复现源码、AST、比较脚本及测试日志位于
+`artifacts/wb-coordinate-storage-0TCnEI/`（本地忽略工件）；comparison.json SHA256
+为 `42b99e79474c0766e63aa9ef4265de34e5e338808523d7f8be898ea29130c512`。
+固定真实 HIP 源/候选 AST 的完整双侧重放仍返回 evidence，局部模板相同，
+leaf_value_correspondence 仍 not_established，检查期间实现哈希稳定。
+报告 `artifacts/wb-local-structure-hfn1Di/report-coordinate-storage.json` SHA256
+为 `a5e413eae13fb261252b98c9e6f0ba2e07d53197802e28d4eebd4fb6542ce0f7`。
+
 ## 局部 typed AST 比较接入双侧入口
 
 新增verification.local_structure.compare：两侧fresh恢复局部贡献，规范化自动

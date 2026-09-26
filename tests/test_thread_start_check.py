@@ -16,6 +16,11 @@ from tests.test_initializer_domain import reports
 class ThreadStartCompositionTests(unittest.TestCase):
     def setUp(self):
         self.root, _ = fixture()
+        self.start_declaration = {"kind": "VarDecl", "id": "tid",
+                                  "type": {"qualType": "const int"}}
+        self.root["inner"].append({"kind": "FunctionDecl", "id": "kernel", "inner": [
+            {"kind": "CompoundStmt", "inner": [
+                {"kind": "DeclStmt", "inner": [self.start_declaration]}]}]})
         self.binding = {
             "schema_version": "thread-start-assumptions/v1", "ast_root_sha256": _hash(self.root),
             "kernel_declaration_id": "kernel", "launch_id": "launch", "axis_binding": {},
@@ -52,6 +57,34 @@ class ThreadStartCompositionTests(unittest.TestCase):
         self.assertEqual(result["derived_leaf_domain"]["upper"], 255)
         self.assertFalse(result["source_program_checked"])
         self.assertFalse(result["deployable"])
+
+    def test_persistent_ambiguous_or_attributed_start_cannot_compose(self):
+        for change in ({"storageClass": "static"}, {"tls": "dynamic"},
+                       {"tlsKind": "none"}, {"inner": [{"kind": "AlignedAttr"}]}):
+            with self.subTest(change=change):
+                original = copy.deepcopy(self.start_declaration)
+                self.start_declaration.update(change)
+                self.binding["ast_root_sha256"] = _hash(self.root)
+                result = self.run_check()
+                self.assertEqual(result["status"], "unknown", result)
+                self.assertEqual(result["reason"], "start_not_unique_direct_automatic_const_int")
+                self.start_declaration.clear()
+                self.start_declaration.update(original)
+        self.root["inner"].append(copy.deepcopy(self.start_declaration))
+        self.binding["ast_root_sha256"] = _hash(self.root)
+        self.assertEqual(self.run_check()["status"], "unknown")
+
+    def test_global_or_nested_start_is_outside_supported_entry_subset(self):
+        kernel = self.root["inner"][-1]
+        body = kernel["inner"][0]
+        statement = body["inner"].pop()
+        self.root["inner"].append(self.start_declaration)
+        self.binding["ast_root_sha256"] = _hash(self.root)
+        self.assertEqual(self.run_check()["status"], "unknown")
+        self.root["inner"].pop()
+        body["inner"].append({"kind": "CompoundStmt", "inner": [statement]})
+        self.binding["ast_root_sha256"] = _hash(self.root)
+        self.assertEqual(self.run_check()["status"], "unknown")
 
     def test_stale_root_kernel_launch_or_coordinate_protocol_stays_unknown(self):
         original = copy.deepcopy(self.binding)

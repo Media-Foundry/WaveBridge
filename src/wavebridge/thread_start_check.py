@@ -11,6 +11,7 @@ from wavebridge.analysis.initializer_evidence import inspect as inspect_initiali
 from wavebridge.analysis.launch_facts import inspect as inspect_launch
 from wavebridge.analysis.constructor_arguments import inspect as inspect_constructor
 from wavebridge.analysis.constructor_fields import recover as recover_fields
+from wavebridge.analysis.row_prefix import _automatic_const_int, _children, _walk
 from wavebridge.verification.block_configuration import check as check_block
 from wavebridge.verification.getter_returns import check as check_getter, _hash
 from wavebridge.verification.initializer_domain import check as check_initializer
@@ -88,6 +89,22 @@ def check(root, kernel_id, launch_id, integer_types, binding, *, int_bits=32):
         starts.append(start["declaration_id"])
     if len(set(starts)) != 1:
         return unknown("column_loops_have_different_starts")
+    # Standalone callers need this gate too: the initializer of a persistent
+    # variable is not necessarily evaluated by the current kernel invocation.
+    definitions = [node for node in _walk(root)
+                   if node.get("id") == kernel_id
+                   and node.get("kind") in {"FunctionDecl", "CXXMethodDecl"}]
+    bodies = [child for node in definitions for child in _children(node)
+              if child.get("kind") == "CompoundStmt"]
+    declarations = [node for node in _walk(root)
+                    if node.get("kind") == "VarDecl" and node.get("id") == starts[0]]
+    direct = [variable for body in bodies for statement in _children(body)
+              if statement.get("kind") == "DeclStmt"
+              for variable in _children(statement) if variable.get("id") == starts[0]]
+    if (len(bodies) != 1 or len(declarations) != 1 or len(direct) != 1
+            or direct[0] is not declarations[0] or not _automatic_const_int(declarations[0])):
+        return unknown("start_not_unique_direct_automatic_const_int")
+    result["declaration_evaluation"] = "automatic_on_each_passage_through_declaration"
     sites = launches.get("sites")
     if not isinstance(sites, list):
         return unknown("launch_sites_missing")

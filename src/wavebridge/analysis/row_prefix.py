@@ -64,11 +64,23 @@ def _ref(node: dict[str, Any], casts: list[dict[str, Any]], kind: str | None = N
     return identifier
 
 
+def _automatic_const_int(variable: dict[str, Any]) -> bool:
+    """Only an ordinary declaration executed on each passage through its block.
+
+    This says nothing about getter effects or the value returned by its initializer.
+    """
+    return (variable.get("kind") == "VarDecl" and _type(variable) == "const int"
+            and variable.get("storageClass") in (None, "auto", "register")
+            and not any(key in variable for key in ("tls", "tlsKind", "threadLocal", "thread_local"))
+            and not any(str(child.get("kind", "")).endswith("Attr")
+                        for child in _children(variable)))
+
+
 def _single_const_int(statement: dict[str, Any], reason: str) -> dict[str, Any]:
     if statement.get("kind") != "DeclStmt":
         raise _Unknown(reason, statement.get("range"))
     variables = [child for child in _children(statement) if child.get("kind") == "VarDecl"]
-    if len(variables) != 1 or _type(variables[0]) != "const int":
+    if len(variables) != 1 or not _automatic_const_int(variables[0]):
         raise _Unknown(reason, statement.get("range"))
     return variables[0]
 
@@ -194,6 +206,7 @@ def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
                 source_offset["product_type"] != output_offset["product_type"]):
             raise _Unknown("source_output_offset_cast_structure_mismatch", prefix[3].get("range"))
         result.update(status="recovered", row_declaration_id=row_id, start_declaration_id=start_id,
+                      declaration_evaluation="automatic_on_each_passage_through_declaration",
                       row_initializer_ast=row_initializer, start_initializer_ast=start_initializer,
                       row_initializer_evidence=inspect(root, row_id),
                       start_initializer_evidence=inspect(root, start_id),

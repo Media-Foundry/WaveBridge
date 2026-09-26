@@ -240,6 +240,12 @@ launch域或源/目标等价。source_program_checked/deployable始终false。�
 
 ## 初始化域与选定launch的线程起点组合
 
+坐标值组合只支持 kernel 直接块作用域中唯一的普通自动 `const int` 声明。
+`static`、TLS、未知声明属性、全局或嵌套作用域起点保持 unknown；初始化调用
+结构存在，不意味着本次 invocation 执行了该初始化。行前缀的 row/start 同样
+限制为自动存储期。`declaration_evaluation` 只描述声明每次被经过时的初始化
+规则，不证明 getter 无副作用、跨源码入口值相等或实际设备执行。
+
 `verification.initializer_domain.check(value_link, getter_report, integer_types)`
 在可信前端value_link与真实getter检查证据前提下，核对callee/start ID、call结果
 类型及getter的ABI hash，再从内到外检查最多32级初始化IntegralCast。它不重新
