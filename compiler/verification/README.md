@@ -20,6 +20,18 @@ checked 仅表示条件模型上界：每侧 `abs(output-S) <= r*S+A`；两侧
 这不是 IEEE 逐位等价检查，numeric_contract_checked/deployable 始终 false；
 局部平方和、除法、epsilon、rsqrt 与输出乘法的误差传播尚未连接。
 
+新增 `block_roundoff.compare_sum_squares(source_model,target_model,ncols=...,
+input_abs_bound=Fraction(...),source_accumulation="fma",target_accumulation="separate")`
+在显式 `t+k*block<ncols` 和零初值模型中计算每线程迭代数，分别传播 FMA 或
+分离平方/加法的局部误差与计算值域，再接每侧路由。最多64次局部迭代，预算
+耗尽保持unknown；这不是实际源码或编译模式的自动识别。
+
+它只要求共同原始行输入，不要求两侧已舍入的局部叶相同。报告保存每侧route
+checks，不继承原比较接口的共同computed-leaf假设。局部上界由输入幅值和
+列分配推导，不把未舍入的数学平方和上界当成浮点accumulator上界。
+结果相对共同精确平方和Q给出误差，仍未涵盖除法、epsilon、rsqrt、最终乘法；
+整核数值协议和部署字段仍为false。扩展证明在PROOF_PACKAGE.md末尾。
+
 ## 局部累加器与列循环的 typed AST 对应
 
 `verification.local_structure.compare(source_root, source_kernel, target_root,

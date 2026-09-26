@@ -109,3 +109,106 @@ def compare(source, target, *, leaf_upper_bound):
     }
     result.update(status="checked", reason="conditional_model_forward_error_bound")
     return result
+
+
+def _local_squares(terms, magnitude, mode):
+    upper = allowance = Fraction(0)
+    square = magnitude * magnitude
+    product_upper = (1 + U) * square + ETA if mode == "separate" else square
+    if terms and product_upper > MAX_FINITE:
+        raise ValueError("finite_local_product_bound_not_established")
+    for _ in range(terms):
+        upper = (1 + U) * (upper + product_upper) + ETA
+        allowance = (1 + U) * (allowance + (ETA if mode == "separate" else 0)) + ETA
+        if upper > MAX_FINITE:
+            raise ValueError("finite_local_accumulator_bound_not_established")
+    depth = terms + (1 if mode == "separate" and terms else 0)
+    return (1 + U) ** depth - 1, allowance, upper
+
+
+def compare_sum_squares(source, target, *, ncols, input_abs_bound,
+                        source_accumulation, target_accumulation):
+    """Compose cyclic-column local square accumulation with each route's error.
+
+    Common row inputs are assumed, but computed local leaves need NOT be equal.
+    Accumulation mode is explicit ('fma' or 'separate'), not inferred from AST.
+    Only zero-seeded columns t+k*block are modeled. No normalization suffix.
+    """
+    result = {
+        "schema_version": "block-sum-squares-roundoff/v1", "status": "unknown", "reason": None,
+        "scope": "conditional_cyclic_columns_local_squares_and_block_reduction",
+        "source_program_checked": False, "deployable": False,
+        "external_fp_model_verified": False, "numeric_contract_checked": False,
+        "source_to_model_correspondence_established": False, "sides": {},
+        "u": _ratio(U), "eta": _ratio(ETA), "max_local_iterations": 64,
+        "assumptions": [
+            "both sides read the same immutable row x with abs(x[j]) <= input_abs_bound",
+            "thread t traverses exactly columns t+k*block < ncols with zero accumulator",
+            "explicit accumulation modes follow the local error laws in PROOF_PACKAGE.md",
+            "all computed square, accumulator and route values are nonnegative",
+            "each operation obeys its local error law when the finite bound is established",
+            "all route participation, snapshot and shared-memory premises hold",
+        ],
+        "remaining_obligations": ["actual_source_index_and_value_correspondence",
+                                  "actual_compiler_accumulation_and_FP_semantics",
+                                  "division_epsilon_rsqrt_output_multiply_and_frozen_tolerance"],
+    }
+    if (type(ncols) is not int or ncols < 1 or type(input_abs_bound) is not Fraction or
+            input_abs_bound < 0 or input_abs_bound > MAX_FINITE or
+            max(input_abs_bound.numerator.bit_length(), input_abs_bound.denominator.bit_length()) > 4096 or
+            source_accumulation not in ("fma", "separate") or target_accumulation not in ("fma", "separate")):
+        result["reason"] = "unsupported_explicit_domain_or_accumulation_mode"
+        return result
+    routes = block_routes.compare(source, target)
+    # Retain only the independently rechecked per-side route premises, not the
+    # comparison's unused common-computed-leaf assumption or ordered DAG claim.
+    result["route_checks"] = routes.get("checks", {})
+    result["route_structure_status"] = routes["status"]
+    result["route_structure_reason"] = routes["reason"]
+    result["common_computed_leaf_values_assumed"] = False
+    if routes["status"] != "evidence":
+        result.update(status=routes["status"], reason="route_comparison_not_established")
+        return result
+    block = source["block_threads"]
+    maximum_terms = (ncols + block - 1) // block
+    if maximum_terms > 64:
+        result["reason"] = "local_iteration_budget_exceeded"
+        return result
+    counts = [max(0, (ncols - 1 - t) // block + 1) for t in range(block)]
+    result["domain"] = {"ncols": ncols, "block_threads": block,
+                        "column_stride": block, "input_abs_bound": _ratio(input_abs_bound),
+                        "iteration_counts": counts}
+    q_upper = ncols * input_abs_bound * input_abs_bound
+    total_coefficient = total_allowance = Fraction(0)
+    try:
+        for side, route, mode in (("source", source, source_accumulation),
+                                  ("target", target, target_accumulation)):
+            states = {k: _local_squares(k, input_abs_bound, mode) for k in set(counts)}
+            local_r = max(states[k][0] for k in counts)
+            local_a = sum((states[k][1] for k in counts), Fraction(0))
+            leaf_upper = max(states[k][2] for k in counts)
+            routing, route_r, route_a = _bounds(route, leaf_upper)
+            coefficient = local_r + route_r * (1 + local_r)
+            allowance = (1 + route_r) * local_a + route_a
+            result["sides"][side] = {
+                "accumulation": mode, "max_local_iterations": maximum_terms,
+                "local_relative_coefficient": _ratio(local_r),
+                "local_sum_absolute_allowance": _ratio(local_a),
+                "computed_leaf_upper_bound": _ratio(leaf_upper), "route_bound": routing,
+                "relative_coefficient": _ratio(coefficient), "absolute_allowance": _ratio(allowance),
+                "absolute_error_upper_bound": _ratio(coefficient * q_upper + allowance),
+            }
+            total_coefficient += coefficient
+            total_allowance += allowance
+    except ValueError as error:
+        result["reason"] = str(error)
+        return result
+    result["difference_bound"] = {
+        "formula": "abs(source_total-target_total) <= relative_coefficient*Q + absolute_allowance",
+        "Q": "exact_sum_of_squares_of_common_row_inputs",
+        "Q_upper_bound": _ratio(q_upper), "relative_coefficient": _ratio(total_coefficient),
+        "absolute_allowance": _ratio(total_allowance),
+        "absolute_upper_bound": _ratio(total_coefficient * q_upper + total_allowance),
+    }
+    result.update(status="checked", reason="conditional_local_and_route_error_composed")
+    return result
