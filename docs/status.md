@@ -2,6 +2,29 @@
 
 更新日期：2026-09-27。
 
+## 固定设备对象的显式 HIP module 回放
+
+新增一次性固定工件入口 `experiments/module_replay.py`，仅接受已封存的
+logical32对象与3×777数据；在任何HIP API前检查pins，直接加载已校验的缓存
+字节，并显式选择符号与grid/block/shared/参数。设备身份不符拒绝执行；
+输出预填NaN，API与清理失败保留错误，不作成功处理。
+
+本机W7900（0000:53:00.0）实际回放成功，2331点通过原冻结容限，最大绝对
+误差1.1920928955078125e-7，输出与历史GPU基线字节一致。runtime/driver均
+71526333。没有重新编译kernel、没有native64、没有调优或计时。
+run-experiment技能用于启动前占用核对及本机绑定；GPT-5.6 Sol实现有界脚本，
+主代理核查ABI、补回归并执行实机验收。
+
+这是显式API加载及有限输入数值证据，仍信任runtime/driver；wave32为既有
+对象元数据，本次没有独立设备侧测量。整核、全域数值保证和deployable仍false。
+详见 [回放记录](../experiments/module-replay-20260927.md)，工件在
+artifacts/wb-module-replay-pzJL4j/，报告SHA256：
+`ca6b7a9a731cc8874a24b31195f281f0cdfaabf8139aa3c22c5d4d710df90a05`。
+
+新增10项CPU/mock/ABI回归；完整893项CPU测试通过（66.209秒，匹配native
+插件启用，无跳过），make demo与diff检查通过。GPT-5.6 Sol集成后只读复核
+未发现阻断问题。原始GPU报告与CPU测试日志分开保存，不能互相替代。
+
 ## 运行记录绑定二进制的设备代码观察
 
 新增 `frontend.device_binary`：核对历史report两处binary摘要，复制到新目录，
