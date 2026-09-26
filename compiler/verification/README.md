@@ -1042,3 +1042,11 @@ pointer/reference/volatile、global/static/TLS、调用、赋值、自增及复�
 checked仅条件性表示所选表达式没有显式源码内存写入。初始化历史、对象存活、
 下标范围、算术有效性和正常完成均未证明；不建立FP环境/返回值/数值等价，
 不包含包围调用、wrapper或循环。当前未接入循环放行。
+
+`scalar_call_effects.check_no_memory_write(root, call_expression_id, effect_protocol)`
+组合一个完整直接unary-float调用点：先核对精确FunctionToPointerDecay/DeclRef
+及唯一声明，再fresh检查scalar_forwarding链和scalar_expression_effects实参。
+每层wrapper仍只能将自己的按值参数原样传递给下一层，不能增加写入或换参。
+只读对象限制、循环外求值等边界不放宽；间接调用、receiver和逗号callee拒绝。
+外部协议见docs/contracts.md。成功仅条件无写，不表示leaf性质已验证；
+子报告成功也不能覆盖未知父报告，外部leaf假设不能掩盖实参副作用。

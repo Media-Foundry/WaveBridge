@@ -1,5 +1,20 @@
 # 模型、检查与证据协议
 
+## 单标量外部调用效果协议
+
+`scalar-leaf-effect-assumption/v1` 绑定完整TU的`root_sha256`、外层完整
+`call_expression_id`和外部无body的`leaf_declaration_id`。必须显式提供
+`leaf_no_memory_write_assumed: true`、`valid_call_and_normal_return_assumed: true`
+和非空`evidence_reference`；整数1不代替布尔true。
+
+无写假设覆盖这个调用可达的所有float实参值，只描述外部leaf实现，**不覆盖
+实参求值**。`scalar_call_effects.check_no_memory_write`重新检查直接callee、
+完整受限参数转发链和实参求值效果，然后给出conditional的exact_call_expression
+结论。已有子报告不能替代fresh检查；错绑、未知或预算不足保持unknown。
+证据reference只记录为unverified，不认证SDK函数性质、运行定义绑定、数值值、
+FP环境、纯度或机器码。实参初始化/存活/边界等子检查前提仍明确保留。
+当前入口不改变默认循环恢复和部署门控。
+
 ## builtin 无写入条件协议
 
 `builtin-leaf-effect-assumption/v1` 不提供返回值或浮点等价保证，只向独立结构
