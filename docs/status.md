@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 显式静态布尔工作分支
+
+check_work_preservation新增显式use_static_branches模式，独立schema从同次AST
+核验bool literal、模板替换及paren/!后选择工作分支；未知条件仍检查两臂，
+默认模式不变。选择记录绑定原始loop路径，不修改AST或依据函数名裁剪。
+固定softmax的false分支排除了不可达log；外层仍因nested_loop_in_body保持
+unknown，内层条件checked，历史6/8恢复不升级。见
+[实录](../experiments/static-branch-evidence-20260927.md)。
+完整1053项测试通过（71.478秒，native插件启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增5项真实Clang回归并复核；无GPU，远端CI未核验。
+
 ## 退出循环工作分支保持性
 
 check_work_preservation fresh连接header/prefix/guard后，逐项检查work的所有

@@ -1108,3 +1108,14 @@ fresh执行以上连接，再保护header induction/start/bound及prefix/guard�
 对象；允许写输出，不是全函数无写入。condition/header/prefix子报告的前提
 继续适用，外部leaf性质未验证。仍不签发完整recurrence、整数溢出域、有效
 bound或访问覆盖，不能把单个call或header的checked升级为whole-work通过。
+
+显式`use_static_branches=True`启用独立schema
+`loop-exit-work-preservation-with-static-branches/v1`。仅普通无init/condvar的
+IfStmt条件为bool字面量、经核验的Clang模板bool字面量替换、括号或逻辑非时
+选取可达分支。条件必须为受支持的无副作用bool prvalue；未知返回“不选择”，
+继续检查条件与双分支，不将unknown当false。if constexpr/consteval暂不处理。
+
+每次决定保留同次condition AST、布尔值、selected_arm及loop-relative路径。
+这不修改源码、不删除break，不依赖函数名或外部配置猜分支。partial决定不能
+升级未知父报告；不可达分支中的额外协议仍受unused门槛限制。原模式仍检查
+两侧，嵌套loop与完整退出域等边界不因此解除。

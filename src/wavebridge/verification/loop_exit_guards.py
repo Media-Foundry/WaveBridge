@@ -307,9 +307,10 @@ def check_header_connection(root, loop_id, int_bits, *, max_ast_nodes=None):
     return result
 
 
-def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_ast_nodes=None):
+def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_ast_nodes=None,
+                            use_static_branches=False):
     """Check all selected work statements, not just successfully checked calls."""
-    from wavebridge.analysis.column_loops import _check_body, _Unknown as BodyUnknown
+    from wavebridge.analysis.column_loops import _check_body, _static_bool_value, _Unknown as BodyUnknown
     from wavebridge.verification.builtin_calls import check_call_no_memory_write
     from wavebridge.verification.scalar_call_effects import check_no_memory_write as check_scalar_call
 
@@ -324,12 +325,15 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
                               "nested loops are not accepted by this work checker",
                               "external leaf effects remain unverified; all consumed call premises apply"],
               "budget": {"max_call_protocols": 64}}
-    if (not isinstance(payload, dict) or not isinstance(payload.get("ast"), dict) or
+    if (type(use_static_branches) is not bool or not isinstance(payload, dict) or not isinstance(payload.get("ast"), dict) or
             not isinstance(call_protocols, dict) or len(call_protocols) > 64 or
             any(not isinstance(key, str) or not key or not isinstance(value, dict)
                 for key, value in call_protocols.items())):
         result["reason"] = "invalid_inputs_or_protocols"
         return result
+    if use_static_branches:
+        result["schema_version"] = "loop-exit-work-preservation-with-static-branches/v1"
+        result["static_branch_decisions"] = []
     root = payload["ast"]
     connection = check_header_connection(root, loop_id, int_bits, max_ast_nodes=max_ast_nodes)
     result["connection_check"] = connection
@@ -353,6 +357,33 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
             pending.extend(node.get("inner", []))
         if len(loops) != 1:
             raise _Unknown("loop_identity_changed")
+        paths, pending = {}, [(loops[0], [])]
+        while pending:
+            node, path = pending.pop()
+            paths.setdefault(id(node), []).append(path)
+            pending.extend((child, path + [position]) for position, child in
+                           enumerate(node.get("inner", [])) if child)
+
+        def choose_branch(node):
+            if any(node.get(flag) for flag in ("hasInit", "hasVar", "isConstexpr", "isConsteval")):
+                return None
+            children = _children(node)
+            if len(children) != (3 if node.get("hasElse") else 2):
+                return None
+            try:
+                value = _static_bool_value(children[0])
+            except BodyUnknown:
+                return None  # Unknown never means false: ordinary traversal checks both arms.
+            locations = paths.get(id(node), [])
+            if len(locations) != 1 or not isinstance(node.get("id"), str):
+                raise _Unknown("static_branch_occurrence_not_unique")
+            selected = [children[1]] if value else children[2:]
+            result["static_branch_decisions"].append({
+                "if_id": node["id"], "loop_relative_child_path": locations[0],
+                "condition_ast": children[0], "condition_value": value,
+                "selected_arm": "then" if value else "else" if selected else "none",
+                "guard_evaluation": "checked_literal_boolean_no_memory_write"})
+            return selected
 
         def check_call(node):
             identifier = node.get("id")
@@ -373,7 +404,8 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
                 statement = statement["inner"][position]
             if statement.get("id") != binding["id"]:
                 raise _Unknown("work_binding_changed")
-            _check_body(statement, protected, call_callback=check_call)
+            _check_body(statement, protected, call_callback=check_call,
+                        branch_callback=choose_branch if use_static_branches else None)
         unused = sorted(set(call_protocols) - set(result["call_effect_checks"]))
         result["unused_call_protocol_ids"] = unused
         if unused:

@@ -216,12 +216,37 @@ def _hinted_loop(node: dict[str, Any]) -> dict[str, Any]:
     return children[-1]
 
 
+def _static_bool_value(node: dict[str, Any], depth=0) -> bool:
+    """Only literal/compiler-substituted bools and side-effect-free wrappers."""
+    if depth > 32 or _type(node) != "bool" or node.get("valueCategory") != "prvalue":
+        raise _Unknown("static_bool_type_or_depth_unsupported", node.get("range"))
+    children = node.get("inner", [])
+    if not isinstance(children, list) or any(not isinstance(child, dict) or not child for child in children):
+        raise _Unknown("static_bool_children_unsupported", node.get("range"))
+    kind = node.get("kind")
+    if kind == "CXXBoolLiteralExpr" and type(node.get("value")) is bool and not children:
+        return node["value"]
+    if kind == "SubstNonTypeTemplateParmExpr":
+        _check_bool_substitution(node)
+        return children[-1]["value"]
+    if kind == "ParenExpr" and len(children) == 1:
+        return _static_bool_value(children[0], depth + 1)
+    if kind == "UnaryOperator" and node.get("opcode") == "!" and len(children) == 1:
+        return not _static_bool_value(children[0], depth + 1)
+    raise _Unknown("static_bool_not_established", node.get("range"))
+
+
 def _check_body(body: dict[str, Any], protected_ids: set[str],
-                property_callback=None, nested_callback=None, call_callback=None) -> None:
+                property_callback=None, nested_callback=None, call_callback=None, branch_callback=None) -> None:
     pending = [body]
     while pending:
         node = pending.pop()
         kind = node.get("kind")
+        if kind == "IfStmt" and branch_callback is not None:
+            selected = branch_callback(node)
+            if selected is not None:
+                pending.extend(reversed(selected))
+                continue  # Callback checked full guard evaluation and selected branch.
         if kind == "SubstNonTypeTemplateParmExpr":
             _check_bool_substitution(node)
             continue  # Only the validated literal has runtime expression meaning.
