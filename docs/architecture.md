@@ -70,6 +70,11 @@ v4 再对两侧 row/start 的精确 property 求值调用现有无内存写入�
 本次坐标检查导出的 leaf 域与外部显式 effect/receiver 协议。缺少协议保持
 unknown；外部无写入/正常返回、receiver 存活和扩展语义未自动验证，不能将
 这一条件检查升级为完整初始化、SDK 纯度或叶值等价证明。
+v5 在这些 fresh 子检查之后规范化局部加载的有序元素下标：对共同符号
+`r,n,t`，第 k 次列为 `t+k*B`，条件为 `<n`，相对各自输入参数基址的元素
+偏移为 `r*n+t+k*B`。B 来自已检查的 block 步长，不是 logical width。
+它显式连接同一 column loop 的覆盖/溢出条件、坐标和 offset 检查，比较两侧
+规范式；不证明实际执行已经配对，不证明指针地址、输入内容或浮点叶值相等。
 
 `transforms.source_token.edit`仅生成一个精确主源码 literal 的 byte-token 替换，
 不选择常量语义，不判断全部引用用途，不推断目标能力。输出完整源码和变更

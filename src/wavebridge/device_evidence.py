@@ -336,12 +336,81 @@ def _coordinate_effects(root, protocol, side, *, max_ast_nodes):
     return result
 
 
+def _load_index_relation(comparison):
+    """Compare element-index recurrences under common abstract r, n, t.
+
+    Private fresh-child composition, not a report-consuming public checker.
+    This does not assert that any two actual invocations share those values.
+    """
+    result = {"status": "unknown", "reason": None, "sides": {},
+              "scope": "ordered_logical_element_indices_relative_to_each_input_parameter",
+              "hypothesis": "paired_executions_have_common_row_r_count_n_and_local_x_t_in_both_domains",
+              "runtime_pairing_verified": False, "input_contents_correspondence": "not_established",
+              "source_program_checked": False, "deployable": False}
+    try:
+        for name in ("source", "target"):
+            snapshot = comparison["checks"]["local_structure"]["checks"][name]
+            local, roles = snapshot["local_recovery"], snapshot["role_bindings"]
+            loop = local["loop"]
+            signature = comparison["checks"]["local_entry_binding"]["signatures"][name]
+            step = loop["step"]
+            integer_checks = comparison["checks"][name]["checks"]["integers"]["checks"]["row_offsets"]["checks"]
+            columns, thread, row = (integer_checks[key] for key in ("columns", "thread", "row"))
+            recovered = [item for item in columns["column_recovery"]["loops"] if item["range"] == loop["range"]]
+            covered = [item for item in columns["loops"] if item["loop_range"] == loop["range"]]
+            if (columns["status"] != "checked" or recovered != [loop] or len(covered) != 1
+                    or covered[0]["coverage"]["status"] != "checked"
+                    or covered[0]["parameter_declaration_id"] != roles["bound"]["declaration_id"]
+                    or integer_checks["source_offset"]["status"] != "checked"
+                    or thread["recovery"]["chain"]["block_threads"] != step
+                    or thread["checks"]["block"]["dimensions"] != {"x": step, "y": 1, "z": 1}
+                    or row["conclusion"] != "row_initializer_equals_workgroup_x_under_explicit_protocol"
+                    or thread["coordinate_conclusion"] !=
+                    "column_start_equals_local_x_under_explicit_API_and_launch_premises"
+                    or comparison["checks"]["coordinate_effects"][name]["status"] != "checked"):
+                raise ValueError(name + "_integer_or_effect_premises_not_connected")
+            if (local["status"] != "recovered" or local["operation"] != "sum_of_squares"
+                    or loop["status"] != "recovered" or type(step) is not int or step <= 0
+                    or loop["header_recurrence_observed"] is not True
+                    or any(loop[key] != "established_in_supported_effect_subset"
+                           for key in ("body_preserves_induction", "body_preserves_bound"))
+                    or local["input_parameter_id"] != roles["input"]["declaration_id"]
+                    or loop["start"]["declaration_id"] != roles["start"]["declaration_id"]
+                    or loop["bound"]["declaration_id"] != roles["bound"]["declaration_id"]
+                    or loop["induction"]["declaration_id"] != roles["induction"]["declaration_id"]
+                    or signature["source_offset"]["symbolic_relation"] !=
+                    {"coefficient": 1, "row_power": 1, "count_power": 1}):
+                raise ValueError(name + "_unsupported_load_recurrence")
+            domains = {symbol: signature[key] for symbol, key in
+                       (("r", "row_interval"), ("n", "count_interval"), ("t", "start_interval"))}
+            for domain in domains.values():
+                if (set(domain) != {"lower", "upper"}
+                        or any(type(value) is not int for value in domain.values())
+                        or not 0 <= domain["lower"] <= domain["upper"]):
+                    raise ValueError(name + "_unsupported_index_domain")
+            result["sides"][name] = {
+                "bindings": {symbol: roles[role]["declaration_id"] for symbol, role in
+                             (("input", "input"), ("n", "bound"), ("t", "start"), ("j", "induction"))},
+                "domains": domains,
+                "normal_form": {"element_index": {"r*n": 1, "t": 1, "k": step},
+                                "column": {"t": 1, "k": step},
+                                "iteration": "k_integer_ge_0_and_column_lt_n"},
+            }
+        source, target = (result["sides"][name] for name in ("source", "target"))
+        if source["normal_form"] != target["normal_form"] or source["domains"] != target["domains"]:
+            raise ValueError("different_ordered_index_relations_not_supported")
+        result.update(status="checked", conclusion="same_ordered_element_indices_under_common_r_n_t")
+    except (KeyError, TypeError, ValueError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def compare_rmsnorm_routes(source_root, source_protocol, target_root, target_protocol,
                            *, max_ast_nodes=1_000_000):
     """Fresh two-sided route evidence; leaves are NOT proven equivalent values."""
     result = {
-        "schema_version": "rmsnorm-route-comparison/v4", "status": "unknown", "reason": None,
-        "scope": "fresh_two_sided_routes_local_templates_entry_bindings_and_coordinate_effects",
+        "schema_version": "rmsnorm-route-comparison/v5", "status": "unknown", "reason": None,
+        "scope": "fresh_two_sided_routes_local_templates_entry_effects_and_conditional_load_indices",
         "source_program_checked": False, "deployable": False,
         "leaf_value_correspondence": "not_established",
         "floating_point_equivalence": "not_checked", "checks": {},
@@ -408,4 +477,8 @@ def compare_rmsnorm_routes(source_root, source_protocol, target_root, target_pro
         if child["status"] != "checked":
             result.update(status="unknown", reason=name + "_coordinate_effects_not_checked")
             return result
+    indices = _load_index_relation(result)
+    result["checks"]["load_index_relation"] = indices
+    if indices["status"] != "checked":
+        result.update(status="unknown", reason="load_index_relation_not_checked")
     return result

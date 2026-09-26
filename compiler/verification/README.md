@@ -240,6 +240,14 @@ launch域或源/目标等价。source_program_checked/deployable始终false。�
 
 ## 初始化域与选定launch的线程起点组合
 
+双侧 v5 新增 `load_index_relation`：消费同次 fresh 局部恢复、唯一 range 匹配
+的 column recovery/coverage、行偏移、坐标和 v4 effect 结果。要求正整数
+loop step 等于已检查 block x，角色 ID 一致，源偏移为已检查的 row*count。
+在共同 `(r,n,t)` 位于两侧相同域的假设下，比较有序规范式
+`r*n+t+k*B`、`k>=0`、`t+k*B<n`。这不是基于少量输入的枚举接受。
+结论仅针对相对各自 input 参数基址的逻辑元素下标；地址有效性、运行配对、
+input 对象/内容、并发修改、执行参与及 FP 保持外部义务，不升级 leaf 标记。
+
 双侧入口 v4 要求每侧协议提供 `coordinate_effects`，且仅含 `row`、`start`。
 每项包含现有 `effect_protocol`（getter-leaf-effect-assumption/v1）与
 `receiver_protocol`（property-receiver-assumptions/v1）。不接受旧成功报告。

@@ -2,6 +2,30 @@
 
 更新日期：2026-09-26。
 
+## 共同坐标下的有序加载元素下标
+
+双侧入口升级 v5：在 v4 条件通过之后，连接 local loop 与同次 column
+recovery 中唯一相同 range/完整递推、checked coverage、block 步长、精确
+角色 ID、已检查 row*count 偏移及坐标结论。对共同符号 r/n/t 规范化列
+`t+k*B` 与相对各自 input 参数基址的元素偏移 `r*n+t+k*B`，比较有序规范式
+和域。B 来自 block 步长，不是把逻辑协作宽度替入索引。
+
+这只建立共同符号条件下的逻辑下标序列相同，不证明实际 count/坐标配对、
+指针地址/对象/内容相同，也没有建立浮点叶值对应或 GPU 部署。所有既有
+API、ABI、正常执行、pointer/alias/并发修改和 effect 外部前提仍保留。
+
+819 项完整测试通过（63.002 秒，匹配 native 插件启用），demo、diff 检查通过。
+新增 4 项报告 fixture 方法、1 项真实 Clang source.run 负例方法和 1 项 mock
+顶层传播方法。小域枚举将输出规范式的全部系数同独立 while 迭代比较，属于
+回归证据；实际门控不是枚举采样。真实 shifted-load/shifted-row 均 unknown，
+不同步长/offset/角色、未通过 coverage 或不同域不签发相同索引结论。
+日志与固定工件重放脚本位于 `artifacts/wb-load-indices-vLsfh0/`。
+固定真实 HIP 源/目标 AST 完整 v5 重放 356.649 秒退出 0，条件索引关系
+checked：两侧均为 `r*n+t+256*k`，域 r=0..7、n=1..1023、t=0..255。
+父报告仍 evidence，实际运行配对未验证、输入内容和叶值未建立，实现哈希
+前后稳定。report.json SHA256 为
+`adfc88aceb63b338859dd0cd9108a452bc5a65993dd98a101e7ff183c5a9c785`。
+
 ## 坐标 property 求值的条件无写入门控
 
 双侧入口升级 v4，要求每侧 `coordinate_effects.row/start` 显式提供现有 leaf

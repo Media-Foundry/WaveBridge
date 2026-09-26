@@ -20,7 +20,8 @@ class RMSNormRouteComparisonTests(unittest.TestCase):
                     "status": "evidence", "checks": {"source": {}, "target": {}},
                     "remaining_obligations": ["entry_values"]}) as local, \
                 patch("wavebridge.device_evidence._local_entry_signature", return_value={}) as entry, \
-                patch("wavebridge.device_evidence._coordinate_effects", return_value={"status": "checked"}) as effects:
+                patch("wavebridge.device_evidence._coordinate_effects", return_value={"status": "checked"}) as effects, \
+                patch("wavebridge.device_evidence._load_index_relation", return_value={"status": "checked"}) as indices:
             result = compare_rmsnorm_routes({"src": 1}, {"int_bits": 32}, {"dst": 1}, {"int_bits": 32},
                                             max_ast_nodes=123)
         self.assertEqual(2, collect.call_count)
@@ -39,6 +40,7 @@ class RMSNormRouteComparisonTests(unittest.TestCase):
         self.assertFalse(result["deployable"])
         self.assertEqual(2, entry.call_count)
         self.assertEqual(2, effects.call_count)
+        self.assertEqual(1, indices.call_count)
         self.assertTrue(result["checks"]["local_entry_binding"]["relation_signatures_equal"])
 
     def test_unknown_coordinate_effects_block_route_and_local_success(self):
@@ -52,6 +54,19 @@ class RMSNormRouteComparisonTests(unittest.TestCase):
         self.assertEqual("unknown", result["status"])
         self.assertEqual("source_coordinate_effects_not_checked", result["reason"])
         self.assertEqual("not_established", result["leaf_value_correspondence"])
+
+    def test_unknown_index_relation_blocks_other_successes(self):
+        with patch("wavebridge.device_evidence.collect_rmsnorm", side_effect=[evidence(32), evidence(64)]), \
+                patch("wavebridge.device_evidence.compare_local_structure", return_value={
+                    "status": "evidence", "checks": {"source": {}, "target": {}},
+                    "remaining_obligations": ["entry_values"]}), \
+                patch("wavebridge.device_evidence._local_entry_signature", return_value={}), \
+                patch("wavebridge.device_evidence._coordinate_effects", return_value={"status": "checked"}), \
+                patch("wavebridge.device_evidence._load_index_relation", return_value={"status": "unknown"}):
+            result = compare_rmsnorm_routes({}, {"int_bits": 32}, {}, {"int_bits": 32})
+        self.assertEqual("unknown", result["status"])
+        self.assertEqual("load_index_relation_not_checked", result["reason"])
+        self.assertFalse(result["deployable"])
 
     def test_entry_missing_or_different_cannot_be_upgraded_to_equal_values(self):
         for signatures in ([{}, {"different_domain": True}], KeyError("missing_entry")):
