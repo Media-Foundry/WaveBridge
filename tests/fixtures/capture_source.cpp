@@ -110,3 +110,20 @@ unsigned immediate_changed_source() {
 #ifdef WAVEBRIDGE_CAPTURE_ORIGIN_EXECUTION
 int main() { return immediate_changed_source() == 99 ? 0 : 1; }
 #endif
+
+unsigned recursive_immediate(unsigned depth) {
+  Plain source(depth + 3, 5);
+  return [&]() {
+    if (depth) (void)recursive_immediate(depth - 1);
+    Plain target(source);
+    return target.x;
+  }();
+}
+
+#ifdef WAVEBRIDGE_CAPTURE_ACTIVATION_EXECUTION
+int main() {
+  for (unsigned depth = 0; depth != 5; ++depth)
+    if (recursive_immediate(depth) != depth + 3) return 1;
+  return 0;
+}
+#endif

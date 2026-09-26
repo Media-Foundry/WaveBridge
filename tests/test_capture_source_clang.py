@@ -72,6 +72,56 @@ class CaptureSourceClangTests(unittest.TestCase):
         del protocol["closure_instances_from_recorded_lambdas_assumed"]
         return expression, protocol
 
+    def v3_protocol(self, name, payload=None):
+        expression, protocol = self.v2_protocol(name, payload)
+        protocol["schema_version"] = "capture-source-assumptions/v3"
+        del protocol["source_and_closures_share_recorded_activation_assumed"]
+        return expression, protocol
+
+    def test_v3_derives_activation_and_keeps_lifetime_external(self):
+        for name in ("immediate_reference", "immediate_nested", "initializer_evaluation", "recursive_immediate"):
+            expression, protocol = self.v3_protocol(name)
+            with self.subTest(name=name):
+                report = check(self.payload, expression, ABI, protocol)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["identity_completion"]["premises"],
+                                 ["source_initialized_alive_assumed", "source_program_valid_assumed"])
+                self.assertIsNotNone(report["identity_completion"]["checked_activation"]["function_id"])
+                self.assertEqual(report["source_object_preservation"], "not_established")
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "capture-activation"
+            built = subprocess.run([COMPILER, "-std=c++17", "-DWAVEBRIDGE_CAPTURE_ACTIVATION_EXECUTION",
+                                    str(Path(__file__).parent / "fixtures/capture_source.cpp"), "-o", str(executable)],
+                                   capture_output=True, text=True, timeout=30)
+            self.assertEqual(built.returncode, 0, built.stderr)
+            run = subprocess.run([str(executable)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(run.returncode, 0, run.stderr)
+
+    def test_v3_rejects_cross_context_and_removed_boolean(self):
+        for name in ("one_reference", "passed_reference", "returned_reference", "named_outer_immediate_inner",
+                     "outer_copy_inner_reference", "source_inside_outer", "static_source", "tls_source"):
+            expression, protocol = self.v3_protocol(name)
+            with self.subTest(name=name):
+                self.assertEqual(check(self.payload, expression, ABI, protocol)["status"], "unknown")
+        expression, protocol = self.v3_protocol("immediate_reference")
+        protocol["source_and_closures_share_recorded_activation_assumed"] = True
+        self.assertEqual(check(self.payload, expression, ABI, protocol)["status"], "unknown")
+        expression, protocol = self.v3_protocol("immediate_reference")
+        del protocol["source_initialized_alive_assumed"]
+        self.assertEqual(check(self.payload, expression, ABI, protocol)["status"], "unknown")
+
+    def test_v3_requires_ordinary_function_body_not_coroutine_shape(self):
+        payload = copy.deepcopy(self.payload)
+        function = next(n for n in _walk(payload["ast"]) if n.get("kind") == "FunctionDecl"
+                        and n.get("name") == "immediate_reference")
+        body = next(n for n in function["inner"] if n.get("kind") == "CompoundStmt")
+        # Synthetic unsupported AST shape, not a compiler-produced coroutine.
+        function["inner"][function["inner"].index(body)] = {"kind": "CoroutineBodyStmt", "inner": [body]}
+        expression, protocol = self.v3_protocol("immediate_reference", payload)
+        report = check(payload, expression, ABI, protocol)
+        self.assertEqual(report["status"], "unknown", report)
+        self.assertEqual(report["reason"], "activation_source_not_supported_ordinary_block_local")
+
     def test_v2_derives_origin_from_fresh_immediate_receiver_paths(self):
         for name, depth in (("immediate_reference", 1), ("immediate_nested", 2),
                             ("initializer_evaluation", 1)):

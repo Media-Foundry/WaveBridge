@@ -609,3 +609,18 @@ v2对原生reference capture链的每层lambda重新执行立即调用检查，�
 成功时identity_completion不再列出origin布尔，来源由closure_origin子报告承载。
 该结论以copy被求值为条件；不证明该copy可达、执行次数、对象仍活着或值保持。
 现有object_use_closure可直接消费v2协议，不接受外部成功子报告替代fresh检查。
+
+`capture-source-assumptions/v3`进一步移除same-activation布尔，输出check/v3；
+v1/v2均保留原键集与保证。v3只接受唯一普通FunctionDecl直接CompoundStmt中的
+自动块局部source，要求source声明与copy都位于同一精确函数body对象之下，
+reference capture链与语义lambda路径一致，再fresh核验全部立即receiver链。
+coroutine/function-try-body、具名或传出的receiver等不支持，返回unknown。
+协议仍必须提供source_initialized_alive_assumed及source_program_valid_assumed。
+
+这里的activation限定为包围函数的本次求值，不是线程号或词法声明ID。设计依据
+是自动块变量的存储期规则及嵌套引用捕获原实体的规则（[basic.stc.auto](https://eel.is/c++draft/basic.stc.auto)、
+[expr.prim.lambda.capture](https://eel.is/c++draft/expr.prim.lambda.capture)）；将其连接
+到当前receiver链是本工具的受限语义推导，不是标准对本实现的正确性证明。
+递归调用返回后，原始立即closure仍引用当前外层调用的source，递归本身不拒绝；
+存储旧closure后在另一调用中使用则不满足原始receiver形状。生命周期、初始化
+完成及值保持仍不能由同次调用关系推出。CPU递归回归只是有限执行验证。

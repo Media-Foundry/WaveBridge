@@ -2,8 +2,9 @@
 
 The native capture envelope is trusted frontend evidence from one ASTContext.
 V2 checks the immediate receiver paths conditional on copy evaluation instead
-of assuming closure origin. Neither version proves reachability, source value
-preservation, or launch semantics.
+of assuming closure origin. V3 also binds the source local and receiver chain
+to one ordinary function evaluation. No version proves reachability, source
+lifetime, value preservation, or launch semantics.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ _PROTOCOL_KEYS = {
     "source_program_valid_assumed", "evidence_reference",
 }
 _ORIGIN_PREMISE = "closure_instances_from_recorded_lambdas_assumed"
+_ACTIVATION_PREMISE = "source_and_closures_share_recorded_activation_assumed"
 
 
 def _children(node: object, *, strict: bool = False) -> list[dict[str, Any]]:
@@ -82,9 +84,12 @@ def _template_markers(node: dict[str, Any]) -> bool:
 def check(payload: object, copy_expression_id: object, integer_types: object,
           protocol: object, *, max_ast_nodes: int | None = None) -> dict[str, Any]:
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
-    source_origin = isinstance(protocol, dict) and protocol.get("schema_version") == "capture-source-assumptions/v2"
+    same_activation = isinstance(protocol, dict) and protocol.get("schema_version") == "capture-source-assumptions/v3"
+    source_origin = same_activation or (isinstance(protocol, dict) and
+                                       protocol.get("schema_version") == "capture-source-assumptions/v2")
     result: dict[str, Any] = {
-        "schema_version": "capture-source-check/v2" if source_origin else "capture-source-check/v1",
+        "schema_version": "capture-source-check/v3" if same_activation else
+                          "capture-source-check/v2" if source_origin else "capture-source-check/v1",
         "status": "unknown", "reason": None,
         "copy_expression_id": copy_expression_id, "source_declaration_id": None,
         "copy_check": None, "capture_chain": [],
@@ -115,6 +120,8 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
         result["assumptions"].remove("the evaluated closure instances originate from the recorded lambda expressions")
         result["closure_origin"] = {"status": "unknown", "invocation_checks": [],
                                     "scope": "recorded_lambda_receivers_on_copy_evaluation_path"}
+    if same_activation:
+        result["assumptions"].remove("the source object and every closure belong to the recorded enclosing activation")
     if type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES:
         result["reason"] = "invalid_ast_node_budget"
         return result
@@ -169,7 +176,10 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
     try:
         evidence = protocol.get("evidence_reference")
         expected_keys = _PROTOCOL_KEYS - {_ORIGIN_PREMISE} if source_origin else _PROTOCOL_KEYS
-        expected_version = "capture-source-assumptions/v2" if source_origin else "capture-source-assumptions/v1"
+        if same_activation:
+            expected_keys = expected_keys - {_ACTIVATION_PREMISE}
+        expected_version = ("capture-source-assumptions/v3" if same_activation else
+                            "capture-source-assumptions/v2" if source_origin else "capture-source-assumptions/v1")
         if (set(protocol) != expected_keys or
                 protocol.get("schema_version") != expected_version or
                 protocol.get("root_sha256") != root_hash or
@@ -177,7 +187,7 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
                 protocol.get("source_declaration_id") != source_id or
                 protocol.get("source_initialized_alive_assumed") is not True or
                 (not source_origin and protocol.get(_ORIGIN_PREMISE) is not True) or
-                protocol.get("source_and_closures_share_recorded_activation_assumed") is not True or
+                (not same_activation and protocol.get(_ACTIVATION_PREMISE) is not True) or
                 protocol.get("source_program_valid_assumed") is not True or
                 not isinstance(evidence, str) or not evidence.strip()):
             raise _Unknown("capture_source_protocol_invalid_or_not_applicable")
@@ -204,6 +214,7 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
         source_occurrences: list[tuple[dict[str, Any], tuple[str, ...], str | None, bool]] = []
         path_nodes = 0
         target_paths = []
+        source_declaration_paths = []
 
         def walk(node: dict[str, Any], lambda_path: tuple[str, ...],
                  function_id: str | None, template_context: bool, ancestors=()) -> None:
@@ -224,6 +235,7 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
                 target_paths.append(path)
             if node.get("id") == source_id and kind == "VarDecl":
                 source_occurrences.append((node, lambda_path, here_function, here_template))
+                source_declaration_paths.append(path)
 
             children = _children(node)
             if kind != "LambdaExpr":
@@ -274,6 +286,34 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
                 source.get("isStaticLocal") is True or source.get("isInitCapture") is True or
                 _template_markers(source)):
             raise _Unknown("source_not_plain_automatic_nonreference_variable")
+
+        activation_binding = None
+        if same_activation:
+            # Establish an automatic block local and the exact function body,
+            # not merely an equal function name/ID observed elsewhere in the TU.
+            declaration_path = source_declaration_paths[0]
+            function_bodies = [node for node in _children(enclosing_function, strict=True)
+                               if node.get("kind") in {"CompoundStmt", "CoroutineBodyStmt", "CXXTryStmt"}]
+            if (len(index.get(target_function, [])) != 1 or len(function_bodies) != 1 or
+                    function_bodies[0].get("kind") != "CompoundStmt" or
+                    len(declaration_path) < 3 or declaration_path[-2].get("kind") != "DeclStmt" or
+                    declaration_path[-3].get("kind") != "CompoundStmt" or
+                    source.get("tls") not in (None, "none") or
+                    source.get("isInvalid") is True or source.get("isInvalidDecl") is True):
+                raise _Unknown("activation_source_not_supported_ordinary_block_local")
+            for path in [declaration_path, *target_paths]:
+                positions = [i for i, node in enumerate(path) if node is enclosing_function]
+                if (len(positions) != 1 or positions[0] + 1 >= len(path) or
+                        path[positions[0] + 1] is not function_bodies[0] or
+                        any(node.get("kind") in {"CoroutineBodyStmt", "CoawaitExpr", "CoyieldExpr"}
+                            for node in path)):
+                    raise _Unknown("activation_source_and_copy_not_in_same_ordinary_body")
+            activation_binding = {
+                "function_id": target_function, "function_body_id": function_bodies[0].get("id"),
+                "source_declaration_statement_id": declaration_path[-2].get("id"),
+                "relation": "source_block_local_and_immediate_closures_in_same_enclosing_function_evaluation",
+                "condition": "the_selected_copy_is_evaluated_in_a_valid_program_with_a_live_source",
+            }
 
         captures = payload["captures"]
         if len(captures) > budget or any(not isinstance(item, dict) for item in captures):
@@ -348,6 +388,8 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
             })
 
         if source_origin:
+            if tuple(edge["lambda_id"] for edge in chain) != lambda_path:
+                raise _Unknown("closure_origin_chain_path_mismatch")
             if len(target_paths) != 1:
                 raise _Unknown("closure_origin_copy_path_not_unique")
             path = target_paths[0]
@@ -385,13 +427,15 @@ def check(payload: object, copy_expression_id: object, integer_types: object,
                 "premises": [
                     "source_initialized_alive_assumed",
                     *([] if source_origin else [_ORIGIN_PREMISE]),
-                    "source_and_closures_share_recorded_activation_assumed",
+                    *([] if same_activation else [_ACTIVATION_PREMISE]),
                     "source_program_valid_assumed",
                 ],
                 "evidence_reference": evidence,
                 "external_evidence_verified": False,
             },
         )
+        if same_activation:
+            result["identity_completion"]["checked_activation"] = activation_binding
     except _Unknown as error:
         result["reason"] = error.reason
     return result

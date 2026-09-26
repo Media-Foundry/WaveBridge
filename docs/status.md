@@ -2,6 +2,16 @@
 
 更新日期：2026-09-26。
 
+## 从源码绑定同次包围函数求值
+
+capture-source-assumptions/v3移除same-activation布尔，严格绑定自动块局部
+source、唯一普通函数的同一CompoundStmt body、reference capture链和fresh
+立即receiver祖先链。v1/v2不变，alive及源码有效性仍是外部前提。
+普通递归立即调用保持支持，CPU深度0～4均复制当前调用的source值；具名/传出/
+返回/外层by-copy等负例unknown，coroutine形状保守拒绝（此项为合成AST测试）。
+669项CPU、193项Clang及demo通过。完整vLLM v3重放已启动、尚未取得终态，
+执行期间冻结src。见 `.agents/handoffs/wb04-capture-activation-20260926.md`。
+
 ## 用真实调用链替代closure来源假设
 
 capture-source-assumptions/v2不再接受closure来源布尔。既有checker在copy的
