@@ -47,6 +47,8 @@
 选择协议绑定root哈希及精确ID，不输入成功结论；输出槽位原始AST和哈希。
 它不推断槽位的API语义或字段值，不解除对象保持和设备执行义务，不能单独
 作为候选放行门控。此入口与qdot模型pipeline仍分开。
+精确选点的状态与全TU launch发现状态分开：其他不同非空ID的未解析位置完整
+保留，不默认污染已选位置的绑定；同ID冲突与无法区分身份的情况仍拒绝。
 
 对象复制与捕获各有独立结构入口（`record_copy_check.inspect_effects`、
 `capture_source_check.inspect_structure`），不通过假设源存活的值检查去证明源存活。

@@ -27,6 +27,12 @@ launch，不接受先前分析成功报告。`selection`采用`launch-selection/
 只有同ID完整节点相同的launch重复可归一。配置声明的相同副本数量另行记录。
 默认最多一百万AST节点，可显式提高至一千万；缺失工具证据或不支持形状不放行。
 
+选定位置绑定与全TU发现分开：另一个具有不同非空ID的依赖模板launch未解析，
+不自动使精确选点失败；原始未解析清单和归一记录保存在`launch_discovery`，
+`complete_launch_resolution=not_established`。同ID冲突仍全局拒绝，缺ID无法
+证实是另一个位置时拒绝；选中未解析位置或串用别处配置表达式同样unknown。
+该范围不证明整个TU、调用闭包或其他launch都被支持。
+
 checked仅表示这一静态配对。槽位0–3没有自动获得grid/block/shared/stream的
 API语义，参数值、对象历史保持、host可达性与配置函数语义均未建立；完整AST
 忠实性是前端前提。报告始终source_program_checked=false、deployable=false。

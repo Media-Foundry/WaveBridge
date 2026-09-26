@@ -2,6 +2,27 @@
 
 更新日期：2026-09-26。
 
+## 精确选点与全TU发现分离
+
+静态绑定入口不再因另一个不同非空ID的未解析launch自动退出；完整未解析清单
+和归一记录保存在launch_discovery。任何launch同ID内容冲突仍全局拒绝，缺ID、
+选中未解析位置或串用另一launch的配置槽位仍unknown。新增真实CUDA多launch TU
+包含两个精确调用和一个未实例化模板调用；5项回归覆盖上述正负例。
+726项CPU、250项Clang专项和demo通过，native插件已启用；Sol只读审查未发现
+窄静态结论的阻断问题。上一轮c69ecce与8c80e3e远端CI均success。
+
+固定完整vLLM生产AST的Float配对重放已退出0，154.92秒，静态绑定checked：
+kernel 0x44cbe168、launch 0x44cbe3d8、四个配置槽位与六个参数位置均核对。
+78个实现哈希前后一致并与当前源码复核通过。CUB未解析位置仍在报告中，
+complete_launch_resolution=not_established；并非全TU、配置值、历史保持或部署通过。
+报告为artifacts/wb-selected-launch-VBYCGB/production.json，SHA256
+`0156f0e9c89bd34d5516fb3efcad97818a3f48fd7edf5dac36593d3bbbe999a9`。
+首例llama手工HIP standalone的同类重放会话26920也已退出0，静态绑定checked，
+78个实现哈希前后及结束后复核一致，src冻结解除。报告llama.json的SHA256为
+`7a49a2007a25c8d00d2031af55a7b86b9331e8ac481ea412fe5ef6a12e659037`。
+该输入仍是手工提取的standalone，不是完整原始上游TU自动适配。
+本轮没有重编译或执行GPU；前缀清理unknown保持不变。
+
 ## kernel/launch 精确静态绑定入口
 
 新增`verification.launch_binding.check`，复用fresh launch恢复，在同一完整AST

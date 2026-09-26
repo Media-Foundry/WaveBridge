@@ -85,8 +85,20 @@ def check(root, selection, *, max_ast_nodes=1_000_000):
         facts = inspect(root, kernel)
     except (TypeError, ValueError, RecursionError):
         return unknown("unsupported_AST_or_hash")
-    if facts.get("unresolved_sites"):
-        return unknown("unresolved_launch_sites")
+    result["launch_discovery"] = {
+        "scope": "all_syntactic_launch_occurrences_in_supplied_TU",
+        "unresolved_sites": facts["unresolved_sites"],
+        "normalization": facts["normalization"],
+        "complete_launch_resolution": "not_established" if facts["unresolved_sites"] else "all_observed_sites_resolved",
+    }
+    # Binding one exact site does not require resolving every dependent launch
+    # in this TU. Identity conflicts remain global errors; missing identities
+    # cannot be silently classified as a distinct, unselected site.
+    if facts["normalization"]["conflicts"]:
+        return unknown("conflicting_launch_id_occurrences")
+    if any(not isinstance(node.get("id"), str) or not node["id"]
+           for node in nodes if node.get("kind") == "CUDAKernelCallExpr"):
+        return unknown("launch_occurrence_identity_missing")
     matches = [site for site in facts["sites"] if site.get("launch_id") == launch]
     if len(matches) != 1:
         return unknown("selected_launch_not_uniquely_bound_to_kernel")
