@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 次数界不是实际列地址覆盖
+
+GPT-5.6 Sol 只读复核确认：单线程 local_idx 域与每次 inner 的次数界不能
+直接推出完整 lane 集合或实际输出恰好一次。新增合成 CPU 控制程序，6 项
+预期均通过：同为 128 次工作，偏移 store 漏 1 列、双写重复 128 次、重复
+lane 漏 4 列；N=129 被固定四次 header 截断。它们不是生产语料或 GPU 结果，
+也不是发现现有 checker 错误放行；见
+[记录与下一道验收门槛](../experiments/guarded-store-controls-20260927.md)。
+下一步应连接真实 prefix/guard/header、完整起点多重集以及 work 每路径的
+store/base/index，并复用 residue checker；不再增加仅重复次数界的报告。
+当前 derived-bounds 真实重放仍运行中，尚未记为通过。本轮未改其核心实现。
+
 ## fresh 入口域接入内层次数边界
 
 新增 `check_nested_iteration_bounds`：重新执行入口保持链，再把该源声明的
