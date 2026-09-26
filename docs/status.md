@@ -2,6 +2,29 @@
 
 更新日期：2026-09-27。
 
+## 运行记录绑定二进制的设备代码观察
+
+新增 `frontend.device_binary`：核对历史report两处binary摘要，复制到新目录，
+仅对快照执行LLVM提取/反汇编/元数据读取。保存工具/命令/产物摘要、原始日志、
+输入前后完整性；错误报告结构或重复键拒绝，缺对象/失败/超时不标记observed。
+observed只是采集状态，不验证机器码语义或动态加载选择。
+
+对历史3×777 W7900基线保存binary实际提取成功，binary摘要与run记录一致。
+5008字节设备对象摘要 b5c8b8abaf3972c79b7008a50116d83d7a4d1a4ae53dbe8f76b5e397ac4c9977，
+符号匹配rms_norm_f32_logical32，target gfx1100、wavefront_size32。定位
+局部FMA@0x178c、rsq@0x19e8、输出乘法@0x1a74；这是实际保存对象的静态
+证据，不再仅依赖另一次compile-only汇编。非正规数缩放/恢复支路仍可见。
+
+没有编译或GPU新执行，未证明所有动态路径/内存/FP律，未运行native64。
+GPT-5.6 Sol独立核对指令路径与collector边界，无阻断问题；其报告格式健壮性
+建议已补回归。详见 [保存二进制实录](../experiments/saved-binary-evidence-20260927.md)。
+最终工件 artifacts/binary-observation-i0z96js_/，report SHA256：
+`614e9b19c21a7a032b4dd9331409b0612f5a60b4eda104329a27e6fa5a740cc9`。
+
+新增7项mock测试，与上述真实LLVM提取分开计。完整883项CPU测试通过
+（64.987秒，匹配native插件启用，无跳过），demo与diff检查通过。补报告输入
+校验前的882项全量日志保留在 binary-observation-aapbsz8o/，并非失败或覆盖。
+
 ## 保存 reference 与理想实数输出的逐点连接
 
 新增 `rmsnorm_roundoff.ideal_intervals`，通过整数平方根和精确有理数包围

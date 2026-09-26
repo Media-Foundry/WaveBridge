@@ -73,6 +73,30 @@ output_missing_or_empty；汇总 input_changed 优先，否则缺项为 incomple
 完整模式只保留解析后的 AST 与 stdout 哈希，不重复存储原始 stdout 字符串；
 `stdout_retention=parsed_ast_only_not_verbatim` 明确这一边界。没有自动磁盘或内存预算管理。
 
+## 保存二进制中的设备代码观察
+
+`wavebridge.frontend.device_binary` 从历史执行报告绑定的二进制提取 HIP AMDGPU
+code object、反汇编和原始元数据。先核对报告顶层及build_binding的binary摘要，
+再复制到新工件目录；LLVM的提取命令只接触副本，不在历史输入旁生成文件。
+
+```bash
+PYTHONPATH=src python3 -m wavebridge.frontend.device_binary \
+  --binary /path/to/saved/rmsnorm_logical32 \
+  --execution-report /path/to/saved/report.json \
+  --objdump /path/to/llvm-objdump --readelf /path/to/llvm-readelf \
+  --output-parent artifacts
+```
+
+保存工具版本/摘要、命令与命令摘要、原始stdout/stderr、快照与设备对象摘要、
+直接输入前后摘要。仅支持工具导出的HIP AMDGPU bundle命名；无支持对象、空
+对象、工具失败/超时、快照或输入变化均不报告observed。原始工具状态留在jobs。
+输入路径/格式错误退出3，不完整观察退出2，observed退出0。
+
+`observed`只表示采集成功，不解析元数据为语义保证，不验证局部运算误差律。
+报告本身不是可信执行证明；静态code object存在不证明某次dispatch实际加载
+了它。没有新编译、GPU执行、数值验收或部署授权；工具依赖闭包未冻结。
+首例实录见 [保存二进制核验](../../experiments/saved-binary-evidence-20260927.md)。
+
 ## 可选原生捕获证据
 
 `wavebridge.frontend.native_captures` 调用显式提供的编译器匹配插件，同次输出
