@@ -102,3 +102,11 @@ auto returned_reference() {
   Plain source(3, 5);
   return [&]() { Plain target(source); }; // never executed by tests
 }
+unsigned immediate_changed_source() {
+  Plain source(3, 5);
+  return [&]() { source.x = 99; Plain target(source); return target.x; }();
+}
+
+#ifdef WAVEBRIDGE_CAPTURE_ORIGIN_EXECUTION
+int main() { return immediate_changed_source() == 99 ? 0 : 1; }
+#endif

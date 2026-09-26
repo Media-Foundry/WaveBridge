@@ -1,6 +1,8 @@
 """Real native capture chains with explicit, unverified lifetime assumptions."""
 import copy
 import os
+import subprocess
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -8,6 +10,7 @@ from wavebridge.frontend.clang_ast import _walk
 from wavebridge.frontend.native_captures import collect
 from wavebridge.verification.integer_selection import _hash
 from wavebridge.capture_source_check import check
+from wavebridge.verification.object_use_closure import check as check_uses
 
 PLUGIN = os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -104,6 +107,25 @@ class CaptureSourceClangTests(unittest.TestCase):
             changed = dict(protocol)
             del changed[key]
             self.assertEqual(check(self.payload, expression, ABI, changed)["status"], "unknown")
+
+    def test_v2_origin_does_not_hide_a_real_source_write(self):
+        expression, protocol = self.v2_protocol("immediate_changed_source")
+        identity = check(self.payload, expression, ABI, protocol)
+        self.assertEqual(identity["status"], "checked", identity)
+        self.assertEqual(identity["closure_origin"]["status"], "checked")
+        self.assertEqual(identity["source_object_preservation"], "not_established")
+        uses = check_uses(self.payload, protocol["source_declaration_id"], ABI, {}, {expression: protocol})
+        self.assertEqual(uses["status"], "unknown", uses)
+        self.assertEqual(uses["reason"], "source_reference_not_capture_initializer_or_direct_copy_argument")
+        # Execute this one well-defined function, never the dangling-return fixture.
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "capture-origin"
+            built = subprocess.run([COMPILER, "-std=c++17", "-DWAVEBRIDGE_CAPTURE_ORIGIN_EXECUTION",
+                                    str(Path(__file__).parent / "fixtures/capture_source.cpp"),
+                                    "-o", str(executable)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(built.returncode, 0, built.stderr)
+            run = subprocess.run([str(executable)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(run.returncode, 0, run.stderr)
 
     def test_identity_does_not_imply_value_preservation(self):
         report = self.run_check("changed_source")

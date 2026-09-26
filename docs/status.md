@@ -9,7 +9,10 @@ capture-source-assumptions/v2不再接受closure来源布尔。既有checker在c
 条件来源结论；alive、same-activation和source-valid仍为外部前提。
 v1保持原含义。真实具名/传出/返回及外层非立即调用均unknown，捕获初始化器
 与lambda body明确区分；object_use_closure已用v2做真实跨层回归。
-665项CPU、189项Clang专项及demo通过。固定完整vLLM TU的v2重放正在执行，
+补充真实跨层/CPU反例：立即lambda内把source.x从3改为99，v2来源checked，
+引用闭合unknown，CPU实际复制99，明确来源保证不等于历史保持。
+666项CPU、190项Clang专项及demo通过；ed1f610远端CI已success。
+固定完整vLLM TU的v2重放正在执行，
 尚未取得终态，不把历史v1结果计入本次成功。见
 `.agents/handoffs/wb04-capture-origin-20260926.md`；运行期间冻结src。
 

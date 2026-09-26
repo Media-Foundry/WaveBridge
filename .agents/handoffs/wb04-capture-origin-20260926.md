@@ -34,3 +34,19 @@ exec session79110；核实PID214499存活。日志run.log，终态report.json。
 重新运行全部检查并核对77个实现文件前后哈希；任务存活时不改src，不因超时重启。
 此时尚无完整TU v2终态，不能把既有v1成功称为移除origin前提后的成功。
 未运行GPU。下一步收取本任务结果与哈希，之后才能处理其余动态前提。
+
+## 等待期间的保证边界回归
+
+ed1f610的CI 36231319359已success。仅修改测试/文档，未改冻结的src。
+新增immediate_changed_source：原始source.x=3，立即lambda写为99后copy。
+同份真实AST的v2身份/来源checked，object_use_closure因显式写入unknown；
+CPU执行复制得到99（返回悬垂capture的另一个fixture函数从未执行）。
+此有限CPU反例证明来源关系不能替代历史保持，不是GPU实验。
+13项capture定向、666项CPU、190项Clang与demo退出0；新日志为同目录
+boundary-tests.log、boundary-clang.log、boundary-demo.log。
+
+Sol只读分析提出：v2的精确ordinary FunctionDecl绑定、自动source声明、完整
+reference capture链和连续原始receiver调用路径，可能已足以从源码解除
+same-activation前提。后续需主代理核实自动局部作用域及coroutine边界，补递归
+立即调用正例/跨调用具名closure负例；不得直接修改已发布v2协议含义或将该
+审阅意见当作已实现保证。alive/source-valid仍保留。先等当前完整TU任务终态。
