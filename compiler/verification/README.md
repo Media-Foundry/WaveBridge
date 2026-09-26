@@ -1,5 +1,31 @@
 # 编译器关系检查
 
+## 局部累加器与列循环的 typed AST 对应
+
+`verification.local_structure.compare(source_root, source_kernel, target_root,
+target_kernel, int_bits=32)`分别fresh恢复局部贡献，比较自动累加器声明和完整
+ForStmt。它不是只比较sum_of_squares标签：保留节点种类、类型、转换、运算符、
+操作数顺序、CompoundAssign计算类型以及显式fpoptions。仅去掉位置、原节点ID、
+名字及使用标记；未知节点/字段、别名类型、重复声明身份及预算耗尽保持unknown。
+
+声明按恢复角色对应，角色映射必须单射；参数位置和类型纳入模板，防止换成
+另一个同类型参数后被重命名掩盖。其它引用只允许独立求值成功的整数声明常量，
+保留类型、实际值及原求值报告，并逐项核验求值报告中递归依赖的声明唯一性。
+原始角色ID、consumer位置和root绑定哈希仍保存。
+模板按实际结构比较，不以哈希相同代替结构相同。
+
+成功为evidence/local_structure_equal=true；不相同为结构rejected，而不是数值
+不等价的反例。prefix不在模板内：在循环之前修改input指针仍可具有相同模板；
+consumer也在所选片段之后。因此entry_value_correspondence、consumer_correspondence
+及leaf_value_correspondence均保留not_established。源有效性、指针内容/别名、
+整数域与FP编译/执行环境需要另外建立，不能通过“相同结构”默认补齐。
+节点预算限制初次root清单遍历，片段递归另限128层；不是各fresh恢复器/常量
+求值器所有重复遍历的总时间或内存预算。
+
+双侧归约入口报告升级为rmsnorm-route-comparison/v2：路线贡献比较成功后，
+必须fresh运行此局部检查；任一unknown/rejected阻止整体evidence。新增子检查
+不解除两侧原有义务，也不把route叶值对应从unknown升级为相等。
+
 ## 两侧归约贡献与有序加法树
 
 `verification.block_routes.compare(source, target)`要求两份完整显式route输入，

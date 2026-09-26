@@ -2,6 +2,35 @@
 
 更新日期：2026-09-26。
 
+## 局部 typed AST 比较接入双侧入口
+
+新增verification.local_structure.compare：两侧fresh恢复局部贡献，规范化自动
+累加器声明和完整ForStmt。保留类型、转换、操作数顺序、计算类型与显式FP字段，
+仅剥离列举的展示元数据；未知字段、缺类型/计算类型、声明冲突和超预算保持
+unknown。参数位置纳入角色模板，换到另一个同型input/start/bound参数会拒绝；
+非角色引用只能是独立求值成功的整数常量，直接及递归依赖身份均要求唯一。
+
+双侧归约入口报告升级v2：route evidence之后必须通过fresh局部模板比较，
+不能只把两个sum_of_squares标签拼成成功。模板不同仅表示结构条件不满足，
+不是数值反例；模板相同也不建立entry/consumer/leaf值对应。前缀修改input和
+替换consumer的真实Clang回归专门验证此范围，不能把它们隐藏为已检查部分。
+
+798项完整测试及demo通过，匹配native插件启用。新增8项真实Clang/变体方法
+及1项mock组合方法；其中递归常量冲突是基于真实AST构造的异常输入，不称为
+真实Clang生成错误。合成反例修复前失败记录保留。预算仅限制初次root清单与
+片段深度，不是所有fresh子恢复的总时间预算。
+
+本轮工件目录为`artifacts/wb-local-structure-hfn1Di/`；源/候选和两侧外部协议
+仍使用固定哈希工件。最终完整v2重放295.96秒退出0：局部typed模板相同，
+route贡献重数相同，加法DAG不同；报告为evidence且leaf_value_correspondence
+仍not_established。report-final.json SHA256为
+`3de8725dc1c9fe524a467bb8aff16fa5c2b345db6af6c2d85d729cde116d443a`，
+实现哈希前后稳定；第一次完整重放与递归身份加固后的最终重放分别保留。
+未重新编译HIP或执行GPU。入口值、prefix语义、指针内容/
+别名、FP环境及整核/机器码关系仍待建立；不把局部模板相同宣传为叶值等价。
+下一步将双侧已恢复的前缀、坐标与参数绑定同这些角色连接，先补入口值关系，
+不以增加模板测试替代该义务。详细交接见`.agents/handoffs/wb05-local-structure-20260926.md`。
+
 ## 局部值对应前的保守性修复：存储期与数组维度副作用
 
 准备连接源目标local accumulator时，独立复现了local_contribution的五个错误

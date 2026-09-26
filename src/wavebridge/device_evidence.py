@@ -12,6 +12,7 @@ from wavebridge.analysis.normalization_output import recover as recover_output
 from wavebridge.verification.xor_routes import check as check_xor_routes
 from wavebridge.verification.block_routes import check as check_block_routes
 from wavebridge.verification.block_routes import compare as compare_block_routes
+from wavebridge.verification.local_structure import compare as compare_local_structure
 
 
 def collect(root, protocol, *, max_ast_nodes=1_000_000):
@@ -249,8 +250,8 @@ def compare_rmsnorm_routes(source_root, source_protocol, target_root, target_pro
                            *, max_ast_nodes=1_000_000):
     """Fresh two-sided route evidence; leaves are NOT proven equivalent values."""
     result = {
-        "schema_version": "rmsnorm-route-comparison/v1", "status": "unknown", "reason": None,
-        "scope": "fresh_two_sided_conditional_block_route_models_only",
+        "schema_version": "rmsnorm-route-comparison/v2", "status": "unknown", "reason": None,
+        "scope": "fresh_two_sided_conditional_block_routes_and_typed_local_templates",
         "source_program_checked": False, "deployable": False,
         "leaf_value_correspondence": "not_established",
         "floating_point_equivalence": "not_checked", "checks": {},
@@ -269,4 +270,17 @@ def compare_rmsnorm_routes(source_root, source_protocol, target_root, target_pro
                                          for side in ("source", "target")))
     result["checks"]["route_relation"] = comparison
     result.update(status=comparison["status"], reason=comparison["reason"])
+    if comparison["status"] != "evidence":
+        return result
+    if source_protocol["int_bits"] != target_protocol["int_bits"]:
+        result.update(status="unknown", reason="different_integer_ABI_not_supported")
+        return result
+    local = compare_local_structure(
+        source_root, result["checks"]["source"]["kernel_declaration_id"],
+        target_root, result["checks"]["target"]["kernel_declaration_id"],
+        source_protocol["int_bits"], max_ast_nodes=max_ast_nodes)
+    result["checks"]["local_structure"] = local
+    result["remaining_obligations"]["local_structure"] = local["remaining_obligations"]
+    if local["status"] != "evidence":
+        result.update(status=local["status"], reason="local_structure_not_matched")
     return result
