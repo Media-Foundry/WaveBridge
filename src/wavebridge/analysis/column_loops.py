@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from wavebridge.analysis.integer_constants import evaluate
@@ -112,7 +113,7 @@ def _declaration_is_reference(declaration: dict[str, Any]) -> bool:
 
 
 def _storage_target(node: dict[str, Any], protected_ids: set[str]) -> None:
-    """Accept only direct scalar storage or a simple array element, never guess aliases."""
+    """Recognize builtin storage paths; index effects are checked by the body walk."""
     current = node
     while current.get("kind") == "ParenExpr":
         children = _children(current)
@@ -129,8 +130,13 @@ def _storage_target(node: dict[str, Any], protected_ids: set[str]) -> None:
             raise _Unknown("unsupported_storage_target", current.get("range"))
         return
     if current.get("kind") == "ArraySubscriptExpr":
-        children = _children(current)
-        if len(children) == 2:
+        subscripts = []
+        while current.get("kind") == "ArraySubscriptExpr":
+            subscripts.append(current)
+            children = current.get("inner")
+            if (len(subscripts) > 8 or not isinstance(children, list) or len(children) != 2 or
+                    any(not isinstance(child, dict) or not child for child in children)):
+                raise _Unknown("unsupported_storage_target", current.get("range"))
             base = children[0]
             while base.get("kind") in {"ParenExpr", "ImplicitCastExpr"}:
                 parts = _children(base)
@@ -138,9 +144,31 @@ def _storage_target(node: dict[str, Any], protected_ids: set[str]) -> None:
                         base.get("castKind") not in {"LValueToRValue", "ArrayToPointerDecay", "NoOp"})):
                     raise _Unknown("unsupported_storage_target", current.get("range"))
                 base = parts[0]
-            # The index is evaluated as a value; the enclosing traversal checks its effects.
-            if base.get("kind") == "DeclRefExpr" and not _contains_ref(base, protected_ids):
-                return
+            current = base
+        if current.get("kind") == "DeclRefExpr" and not _contains_ref(current, protected_ids):
+            if len(subscripts) > 1:
+                declaration = current.get("referencedDecl", {})
+                if (not isinstance(declaration.get("id"), str) or
+                        declaration.get("kind") not in {"VarDecl", "ParmVarDecl"} or
+                        any(part.get("valueCategory") != "lvalue" or
+                            not isinstance(_type(part), str) for part in subscripts)):
+                    raise _Unknown("unsupported_storage_target", node.get("range"))
+                # A plain pointer-to-array declarator needs parentheses. Normalize
+                # only that spelling for the existing conservative type classifier;
+                # do not erase reference syntax or expand unresolved aliases.
+                info = declaration.get("type", {})
+                if not isinstance(info, dict):
+                    raise _Unknown("declaration_type_unresolved", node.get("range"))
+                spelling = info.get("desugaredQualType", info.get("qualType"))
+                if (isinstance(spelling, str) and
+                        (info.get("typeAliasDeclId") is None or "desugaredQualType" in info) and
+                        re.search(r"\(\s*\*\s*\)\s*\[", spelling)):
+                    normalized = re.sub(r"\(\s*\*\s*\)(?=\s*\[)", "*", spelling)
+                    declaration = {**declaration, "type": {**info, "desugaredQualType": normalized}}
+                if _declaration_is_reference(declaration):
+                    raise _Unknown("unsupported_storage_target", node.get("range"))
+            # Every index and wrapper remains in the enclosing effect traversal.
+            return
     raise _Unknown("unsupported_storage_target", current.get("range"))
 
 

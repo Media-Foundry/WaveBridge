@@ -211,6 +211,12 @@ literal、上界为非负已解析 const 声明、步长为支持的正整数。
 平面循环清单保留 `lexical_loop_depth`，仅深度 0 可启用嵌套组合；后代不重新
 作为顶层扩大支持。这不证明内存安全、实际可达或正常 body 执行。
 旧 unsigned coordinate-header 观察和独立 property-body checker 不启用此能力。
+内建数组写入路径可沿最多 8 层 ArraySubscriptExpr 定位根声明。新增多层路径
+要求每层两个完整操作数、lvalue 与类型证据，以及精确 VarDecl/ParmVarDecl
+非引用根；普通 pointer-to-array 的 `(*)[...]` 仅为声明类型分类作窄正规化，
+不擦除引用或猜解 typedef。所有下标和 wrapper 仍由 body 遍历检查副作用。
+conditional/comma/cast/重载基址仍未知。支持范围不包含 bounds、指针来源、
+别名或实际内存安全证明；原单层路径的类型支持不随此次扩展扩大。
 起点保留源码表达式引用，不预设为线程 ID；额外循环变量/边界写入、可疑引用
 别名、调用或复杂控制流保守拒绝。普通 `output[i]` 下标读取不是对 `i` 的写入。
 递推仍以无溢出、合法域、未建立的别名前提为条件；没有证明输入覆盖、launch

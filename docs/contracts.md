@@ -270,9 +270,12 @@ unsigned compound increment 的结构及 getter/receiver 绑定已观察到；�
 循环报告将`header_recurrence_observed`与`body_preserves_induction`、
 `body_preserves_bound`分开。后两项只有在受支持的副作用子集中完成检查才为
 `established_in_supported_effect_subset`；仅观察循环头不允许进入列域checker。
-允许的存储目标为直接非保护变量及简单数组下标；引用转换、逗号等复杂写入
+允许的存储目标为直接非保护变量及受限内建数组下标链；引用转换、逗号等复杂写入
 目标和未支持节点（包括汇编）返回unknown。数组写入仍依赖不与受保护标量
 别名的显式前提；这不是任意C++别名分析，也不证明循环体内存访问有效。
+多层下标链最多 8 层，要求完整操作数、lvalue/类型证据和精确非引用根声明；
+不能仅因数组存储根不在 protected 集合就跳过索引求值。每层索引仍参与完整
+副作用检查，修改 protected 声明或包含不支持调用使整个 body unknown。
 普通三操作数条件表达式仅扩大可遍历的 body 结构：条件与两个分支都须通过
 副作用检查，常量条件也不跳过分支。它不建立条件值或终止性；条件左值作为
 写入目标仍 unknown。此行为与常量求值器的 selected-branch 求值有意不同。
