@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 数组helper空对象自身构造/销毁效果
+
+array_call_effects可选native_payload模式重新绑定原生变量/scope/record/ctor
+证据与完整AST，只接受无参implicit defaulted的empty trivial对象子集。
+真实新softmax工件已解除Max对象自身构造/销毁两项效果；pending剩shuffle
+调用及默认实参，整体仍unknown，见
+[实录](../experiments/array-lifecycle-evidence-20260927.md)。不证明生命周期
+历史，不把初始化域升级为loop入口域，未接入历史保持或GPU部署。
+完整1100项测试通过（75.366秒，新native插件启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增5项真实native回归并复核；无GPU或重采，远端CI未核验。
+
 ## 模板实例的原生构造与对象证据
 
 实际发现旧softmax AST中r存在，但原生局部对象清单缺该模板实例。插件现

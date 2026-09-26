@@ -7,7 +7,8 @@ from wavebridge.verification.getter_returns import _hash
 from wavebridge.verification.scalar_expression_effects import _type, check_no_memory_write
 
 
-def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_scalar_operators=False):
+def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_scalar_operators=False,
+          native_payload=None):
     budget = 1_000_000 if max_ast_nodes is None else max_ast_nodes
     result = {"schema_version": "array-call-write-footprint/v1", "status": "unknown", "reason": None,
               "scope": "restricted_single_array_call_preserves_distinct_caller_local",
@@ -23,12 +24,24 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
     if use_scalar_operators is True:
         result.update(schema_version="array-call-write-footprint-with-scalar-operators/v1",
                       scalar_operator_checks=[])
+    if native_payload is not None:
+        result.update(schema_version="array-call-write-footprint-with-native-lifecycle/v1",
+                      local_lifecycle_checks=[])
+        result["assumptions"].append("native observations and embedded AST are from the same trusted compiler invocation")
     try:
         if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
                 any(not isinstance(value, str) or not value for value in (call_id, protected_declaration_id)) or
                 type(budget) is not int or not 1 <= budget <= 10_000_000 or
                 type(use_scalar_operators) is not bool):
             raise _Unknown("invalid_inputs_or_budget")
+        if native_payload is not None and (
+                not isinstance(native_payload, dict) or native_payload.get("ast") is not root or
+                native_payload.get("schema_version") != "clang-native-captures/v1" or
+                native_payload.get("constructor_call_semantics") != "compiler_identity_not_effect_or_lifetime_proof" or
+                native_payload.get("local_record_object_semantics") != "lexical_declarations_not_runtime_destructor_events" or
+                not isinstance(native_payload.get("constructor_calls"), list) or
+                not isinstance(native_payload.get("local_record_objects"), list)):
+            raise _Unknown("native_lifecycle_evidence_missing_or_misbound")
         index, functions, pending, count = {}, [], [root], 0
         while pending:
             node = pending.pop()
@@ -190,6 +203,83 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
                     "body_no_memory_write": checked, "operand_effects_scope": "enclosing traversal; see parent status",
                     "receiver_lifecycle_checked": False}
 
+        def trivial_local(variable_id):
+            """Check one empty automatic object's own ctor/dtor effects, not its lifetime history."""
+            variable = exact(variable_id)
+            observations = [o for o in native_payload["local_record_objects"]
+                            if isinstance(o, dict) and o.get("variable_declaration_id") == variable_id]
+            if len(observations) != 1:
+                raise _Unknown("local_record_observation_not_unique")
+            observation = observations[0]
+            if (observation.get("support_status") != "observed" or observation.get("unsupported_reason") is not None or
+                    "destructor_declaration_id" not in observation or
+                    observation.get("has_automatic_storage_duration") is not True or
+                    observation.get("has_nontrivial_destructor") is not False):
+                raise _Unknown("local_record_storage_or_destruction_not_supported")
+            scope = exact(observation.get("declaring_compound_statement_id"))
+            if scope.get("kind") != "CompoundStmt" or not any(
+                    n.get("kind") == "DeclStmt" and variable in n.get("inner", []) for n in children(scope)):
+                raise _Unknown("local_record_scope_mismatch")
+            record = exact(observation.get("record_declaration_id"))
+            data = record.get("definitionData", {})
+            if (not isinstance(data, dict) or not isinstance(data.get("defaultCtor"), dict) or
+                    not isinstance(data.get("dtor"), dict) or
+                    record.get("kind") not in {"CXXRecordDecl", "ClassTemplateSpecializationDecl"} or
+                    record.get("completeDefinition") is not True or record.get("bases") or
+                    data.get("isEmpty") is not True or data.get("isTrivial") is not True or
+                    data.get("defaultCtor", {}).get("trivial") is not True or
+                    data.get("dtor", {}).get("trivial") is not True or
+                    any(n.get("kind") not in {"TemplateArgument", "CXXRecordDecl", "CXXConstructorDecl",
+                        "CXXDestructorDecl", "CXXMethodDecl", "AccessSpecDecl"} for n in children(record))):
+                raise _Unknown("record_not_supported_trivial_empty_type")
+            initializers = children(variable)
+            if len(initializers) != 1:
+                raise _Unknown("local_record_initializer_not_unique")
+            expression = initializers[0]
+            if (exact(expression.get("id")) is not expression or
+                    expression.get("kind") != "CXXConstructExpr" or children(expression) or
+                    expression.get("constructionKind") != "complete" or _type(expression) != _type(variable)):
+                raise _Unknown("local_record_constructor_expression_unsupported")
+            constructors = [o for o in native_payload["constructor_calls"]
+                            if isinstance(o, dict) and o.get("expression_id") == expression.get("id")]
+            if len(constructors) != 1:
+                raise _Unknown("constructor_observation_not_unique")
+            constructor = constructors[0]
+            if (constructor.get("record_declaration_id") != record.get("id") or
+                    constructor.get("argument_expression_ids") != [] or
+                    constructor.get("is_trivial") is not True or constructor.get("is_default_constructor") is not True):
+                raise _Unknown("constructor_observation_not_trivial_default")
+            declaration = exact(constructor.get("constructor_declaration_id"))
+            attributes = {"CUDAHostAttr", "CUDADeviceAttr", "AlwaysInlineAttr"}
+
+            def implicit_empty_special_member(member, kind):
+                return (member in children(record) and member.get("kind") == kind and
+                        member.get("isImplicit") is True and member.get("explicitlyDefaulted") == "default" and
+                        all(n.get("kind") in attributes or
+                            (n.get("kind") == "CompoundStmt" and not children(n)) for n in children(member)))
+
+            if (not implicit_empty_special_member(declaration, "CXXConstructorDecl") or
+                    _type(declaration) not in {"void ()", "void () noexcept"} or
+                    expression.get("ctorType") != declaration.get("type")):
+                raise _Unknown("constructor_definition_not_supported_implicit_default")
+            destructor_id = observation.get("destructor_declaration_id")
+            destructors = [n for n in children(record) if n.get("kind") == "CXXDestructorDecl"]
+            if destructor_id is None:
+                if destructors or data.get("dtor", {}).get("needsImplicit") is not True:
+                    raise _Unknown("implicit_destructor_evidence_missing")
+            elif len(destructors) != 1 or not implicit_empty_special_member(exact(destructor_id), "CXXDestructorDecl"):
+                raise _Unknown("destructor_definition_not_supported_implicit_default")
+            # If a checked operator uses this object, its actual method must belong
+            # to the very same record, not a namesake or an inherited base.
+            for checked in result.get("scalar_operator_checks", []):
+                if checked["receiver_id"] == variable_id and not any(
+                        n.get("id") == checked["method_id"] for n in children(record)):
+                    raise _Unknown("receiver_record_method_mismatch")
+            return {"status": "checked", "variable_id": variable_id, "record_id": record["id"],
+                    "constructor_expression_id": expression["id"], "constructor_id": declaration["id"],
+                    "destructor_id": destructor_id, "scope": "own_trivial_empty_object_ctor_and_dtor_effects",
+                    "lifetime_history_checked": False, "other_storage_writes": "none_in_supported_subset"}
+
         allowed = {"CompoundStmt", "DeclStmt", "VarDecl", "DeclRefExpr", "ImplicitCastExpr", "ParenExpr",
                    "BinaryOperator", "CompoundAssignOperator", "UnaryOperator", "ArraySubscriptExpr",
                    "IntegerLiteral", "FloatingLiteral", "CXXBoolLiteralExpr", "ConditionalOperator",
@@ -244,6 +334,19 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
                 result["explicit_writes"].append({"expression_id": node.get("id"), "opcode": node.get("opcode"),
                                                   "callee_body_child_path": path, "target": target})
             pending.extend((child, path + [i]) for i, child in reversed(list(enumerate(children(node)))))
+        if native_payload is not None:
+            discharged = set()
+            for effect in result["pending_effects"]:
+                if effect["kind"] == "local_object_lifecycle":
+                    try:
+                        checked = trivial_local(effect["id"])
+                        result["local_lifecycle_checks"].append(checked)
+                        discharged.update({("local_object_lifecycle", effect["id"]),
+                                           ("CXXConstructExpr", checked["constructor_expression_id"])})
+                    except _Unknown as error:
+                        effect["reason"] = str(error)
+            result["pending_effects"] = [e for e in result["pending_effects"] if (e["kind"], e["id"]) not in discharged]
+            result["native_payload_sha256"] = _hash(native_payload)
         result.update(explicit_write_targets_checked=True,
                       input_sha256={"root": _hash(root), "call_id": _hash(call_id),
                                     "protected_declaration_id": _hash(protected_declaration_id)})
