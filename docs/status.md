@@ -2,6 +2,30 @@
 
 更新日期：2026-09-26。
 
+## 非负归约模型的条件前向误差界
+
+新增 verification.block_roundoff.compare：fresh 检查两侧贡献计数，再以
+精确有理数传播加法深度、绝对舍入余量和有限计算值域。根目录
+PROOF_PACKAGE.md 给出条件模型命题的完整归纳证明；GPT-5.6 Sol 独立复核
+未发现阻断问题。该常规数值误差界不单独宣称研究创新。
+
+对 block256 的 width32/64 显式路由，加法深度为10/12；两侧共同叶和 S 的
+差值上界约为 `1.3113025794e-6*S + 4.1618585e-43`，报告保存精确分数。
+这是在非负共同叶、外部局部舍入律和路由前提下的条件结论，不是实际GPU
+数值保证。M只作为显式叶值上界；本轮未从源码恢复M，尤其不能直接把数学
+平方和上界16当作已经舍入的accumulator上界。
+
+新增6项测试包括625组小域精确舍入枚举、上一轮1 ULP见证落在界内、零域、
+错误路由拒绝、缺前提/有限范围不成立保持unknown。完整RMSNorm的除法/rsqrt/
+输出乘法误差与冻结容限仍未连接，numeric_contract_checked和deployable均false。
+本轮不运行GPU。工件 artifacts/wb-route-bound-e6sIDW/ 保存模型重放脚本、精确
+报告和代码/证明摘要；report.json SHA256为
+`4aee35df2c5b818c0ba5b1670841ae8a7f37fb4703d9e96f76e09ee6fceaae57`。
+
+854项完整CPU测试通过（65.682秒，匹配native插件启用），demo与diff检查通过。
+proof-writer技能用于明确命题、外部假设、有限范围及归纳依赖；未将模型证明
+提升为GPU或完整数值协议结果。
+
 ## 归约舍入见证：相同贡献不推出逐位相同
 
 新增可执行模型诊断 experiments/reduction_rounding_witness.py：用整数单位

@@ -1,5 +1,25 @@
 # 编译器关系检查
 
+## 显式非负路由的条件舍入误差界
+
+`verification.block_roundoff.compare(source_model, target_model,
+leaf_upper_bound=Fraction(...))` fresh 调用已有 block_routes.compare，再逐加法
+传播深度、绝对舍入余量和计算值上界。完整证明见根目录
+[PROOF_PACKAGE.md](../../PROOF_PACKAGE.md)。所有计算采用精确 Fraction，报告
+分子/分母为十进制字符串，不用浮点近似判断接受。
+
+两侧叶值逐线程相同且在 [0,M]，计算值非负，局部加法误差不超过
+`u*(a+b)+eta` 是显式外部前提（u=2^-24，eta=2^-150）。每步有限值域检查失败
+返回 unknown；贡献缺失/重复沿用原 route 拒绝。不推断真实 accumulator 的 M，
+不把模型与源码的对应、实际 GPU/FTZ/重排假设或 frozen atol/rtol 判为通过。
+
+checked 仅表示条件模型上界：每侧 `abs(output-S) <= r*S+A`；两侧
+`abs(source-target) <= (r_source+r_target)*S+A_source+A_target`。
+报告的 difference_bound.relative_coefficient 是两个单侧系数之和；S 是共同
+非负精确叶和。初始 shared 零和各加法余量保守计入，不要求舍入误差独立。
+这不是 IEEE 逐位等价检查，numeric_contract_checked/deployable 始终 false；
+局部平方和、除法、epsilon、rsqrt 与输出乘法的误差传播尚未连接。
+
 ## 局部累加器与列循环的 typed AST 对应
 
 `verification.local_structure.compare(source_root, source_kernel, target_root,
