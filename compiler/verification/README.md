@@ -545,7 +545,23 @@ one-shot会分配完整字符串与UTF-8字节缓冲区，仅适用于已评估�
 未知属性仍可出现值关系checked、局部效果unknown，保持原接口的支持范围。
 现有capture/use-closure消费者只保存该子报告，没有自动解除历史保持义务。
 
-## 复制实参与按值形参的精确绑定
+## 包围复制点的原生清理观测
+
+`object_use_closure.copy_cleanup_observations` 是另一个独立状态的子报告，
+schema为`copy-enclosing-cleanup-observations/v1`。它沿所选copy的唯一语义祖先链
+收集所有`ExprWithCleanups`，检查重复AST节点一致，并要求同次native metadata
+逐个精确匹配wrapper/subexpression，`num_objects`为整数0、
+`cleanups_have_side_effects`为布尔false，且不与AST的可选flag冲突。
+缺失、重复、错绑、未知协议或副作用flag均unknown；相同wrapper跨多个copy只
+记一次观测，不当作执行次数。无此类祖先时只报告路径上没有wrapper，无需metadata。
+
+插件的非穷尽coverage未被升级；此子报告不枚举其他作用域析构、callee内清理或
+全部动态析构事件，不根据`num_objects==0`推断“没有析构”。native false flag
+仍是可信Clang观测，不是独立效果证明。子报告绑定root与cleanup metadata哈希，
+不消费生成器提供的成功结论。父显式闭合checked不蕴含它checked；它checked也
+不解除alive、source历史保持或部署义务。
+
+## 复制目标对象与record析构
 
 `inspect_effects` 与条件值入口另返回 `object_boundary`（`copy-object-boundary/v1`）。
 它在fresh结构与局部效果成功后，要求complete/prvalue复制直接初始化普通自动
@@ -566,6 +582,8 @@ TLS、未支持wrapper保持unknown。不把声明ID不同单独当作对象分�
 [析构规则](https://eel.is/c++draft/class.dtor)及
 [传参临时对象](https://eel.is/c++draft/class.temporary)；编译器可为传参引入额外临时对象，
 所以本报告不声称唯一物理存储或固定析构执行时序。
+
+## 复制实参与按值形参的精确绑定
 
 同一 `record_copy_check.check` 还返回独立 `parameter_target` 子报告。先fresh
 完成复制结构和局部效果检查，再从完整AST查找copy表达式的直接父CallExpr；

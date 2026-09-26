@@ -38,7 +38,7 @@
 
 当前参考路径覆盖第 3 步的人工结构化输入、第 4 步的特定模型构造和第 5 步的有限模型关系检查。它没有建立源码与模型的对应。独立的 WB-01 探针和 WB-02 手工基线已覆盖第 6 步的局部设备/数值证据，但没有打通自动适配路径，也没有第 7～8 步的性能比较或部署决策能力。
 
-真实源码路径与qdot参考路径分开：`source.py` 编排受限恢复，各组合checker从绑定的AST重新检查局部义务，而非将分析报告的成功状态直接当作证明。`object_use_closure`的主状态只描述显式引用闭合；`source_order`和`source_reference_use_effects`分别描述结构顺序与复制效果，可能各自unknown。后续历史值保持必须显式消费所需子报告并解除生命周期、动态非重叠等剩余义务，不能只检查父级status。所有这些路径仍保留整核与部署标记为false。
+真实源码路径与qdot参考路径分开：`source.py` 编排受限恢复，各组合checker从绑定的AST重新检查局部义务，而非将分析报告的成功状态直接当作证明。`object_use_closure`的主状态只描述显式引用闭合；`source_order`、`source_reference_use_effects`和`copy_cleanup_observations`分别描述结构顺序、复制效果与复制祖先wrapper的native清理标志，可能各自unknown。最后一项不枚举所有动态析构事件。后续历史值保持必须显式消费所需子报告并解除生命周期、动态非重叠等剩余义务，不能只检查父级status。所有这些路径仍保留整核与部署标记为false。
 
 恢复器、lowering 和模型解释器属于各自保证的可信基础。目标代码与被检查模型之间还需要 translation validation 或明确的可信 lowering 假设；检查了模型不自动证明发出的机器代码。
 

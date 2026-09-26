@@ -100,6 +100,14 @@ void captured_by_value_flow() {
   Config source(3);
   [&]() { change_value(source); observe_value(source); }();
 }
+unsigned cleanup_observation_count = 0;
+struct SideEffectTemporary {
+  ~SideEffectTemporary() { ++cleanup_observation_count; }
+};
+void side_effect_cleanup_copy() {
+  Config source(3);
+  (SideEffectTemporary{}, [&]() { Config target(source); }());
+}
 void by_reference_flow() {
   Config source(3);
   change_reference(source);

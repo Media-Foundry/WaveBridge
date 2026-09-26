@@ -197,6 +197,79 @@ class ObjectUseClosureClangTests(unittest.TestCase):
                 self.assertFalse(report["deployable"])
         self.assertEqual(self.run_check("by_reference_flow")["status"], "unknown")
 
+    def test_copy_ancestor_cleanup_observations_are_narrow_and_checked(self):
+        plain = self.run_check("plain_copy")
+        self.assertEqual(plain["status"], "checked", plain)
+        plain_cleanup = plain["copy_cleanup_observations"]
+        self.assertEqual(plain_cleanup["schema_version"],
+                         "copy-enclosing-cleanup-observations/v1")
+        self.assertEqual(plain_cleanup["status"], "checked", plain)
+        self.assertEqual(plain_cleanup["wrappers"], [])
+        self.assertTrue(all(row["wrapper_ids"] == [] for row in plain_cleanup["copies"]))
+
+        wrapped = self.run_check("captured_by_value_flow")
+        cleanup = wrapped["copy_cleanup_observations"]
+        self.assertEqual(wrapped["status"], "checked", wrapped)
+        self.assertEqual(cleanup["status"], "checked", wrapped)
+        self.assertTrue(cleanup["wrappers"])
+        self.assertTrue(all(row["wrapper_ids"] for row in cleanup["copies"]))
+        for observation in cleanup["wrappers"]:
+            self.assertEqual(observation["num_objects"], 0)
+            self.assertIs(observation["cleanups_have_side_effects"], False)
+        self.assertEqual(wrapped["source_object_preservation"], "not_established")
+        self.assertFalse(wrapped["deployable"])
+
+    def test_side_effecting_cleanup_wrapper_does_not_upgrade_parent_closure(self):
+        report = self.run_check("side_effect_cleanup_copy")
+        self.assertEqual(report["status"], "checked", report)
+        cleanup = report["copy_cleanup_observations"]
+        self.assertEqual(cleanup["status"], "unknown", report)
+        self.assertTrue(cleanup["copies"][0]["wrapper_ids"])
+        self.assertEqual(report["source_object_preservation"], "not_established")
+        self.assertFalse(report["source_program_checked"])
+        self.assertFalse(report["deployable"])
+
+    def test_cleanup_metadata_must_exactly_bind_copy_ancestor_wrappers(self):
+        baseline = self.run_check("captured_by_value_flow")
+        cleanup = baseline["copy_cleanup_observations"]
+        self.assertEqual(cleanup["status"], "checked", baseline)
+        wrapper_id = cleanup["wrappers"][0]["expression_id"]
+        for mutation in ("missing", "duplicate", "subexpression", "flag_true", "flag_nonbool",
+                         "count_nonzero", "count_nonbool", "ast_conflict", "ast_null",
+                         "coverage_missing", "count_semantics_wrong"):
+            payload = copy.deepcopy(self.payload)
+            records = payload["expression_cleanups"]
+            record = next(item for item in records if item["expression_id"] == wrapper_id)
+            if mutation == "missing":
+                records.remove(record)
+            elif mutation == "duplicate":
+                records.append(copy.deepcopy(record))
+            elif mutation == "subexpression":
+                record["subexpression_id"] = "wrong_subexpression"
+            elif mutation == "flag_true":
+                record["cleanups_have_side_effects"] = True
+            elif mutation == "flag_nonbool":
+                record["cleanups_have_side_effects"] = 0
+            elif mutation == "count_nonzero":
+                record["num_objects"] = 1
+            elif mutation == "count_nonbool":
+                record["num_objects"] = False
+            elif mutation == "coverage_missing":
+                del payload["cleanup_coverage"]
+            elif mutation == "count_semantics_wrong":
+                payload["cleanup_object_count_semantics"] = "destructor_count"
+            else:
+                wrapper = next(node for node in _walk(payload["ast"])
+                               if node.get("id") == wrapper_id and
+                               node.get("kind") == "ExprWithCleanups")
+                wrapper["cleanupsHaveSideEffects"] = None if mutation == "ast_null" else True
+            with self.subTest(mutation=mutation):
+                report = self.run_check("captured_by_value_flow", payload)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["copy_cleanup_observations"]["status"], "unknown", report)
+                self.assertEqual(report["source_object_preservation"], "not_established")
+                self.assertFalse(report["deployable"])
+
     def test_cpu_value_vs_reference_mutation_is_a_separate_observation(self):
         # Finite CPU evidence only; the checker above does not certify history.
         with tempfile.TemporaryDirectory(prefix="wb-parameter-flow-") as directory:

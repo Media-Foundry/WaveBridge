@@ -2,6 +2,18 @@
 
 更新日期：2026-09-26。
 
+## 复制祖先cleanup的原生观测组合
+
+`object_use_closure.copy_cleanup_observations` 逐copy沿唯一语义祖先路径检查
+全部`ExprWithCleanups`，绑定同次native wrapper/subexpression、严格布尔副作用
+标志、整数count与协议；缺失、重复、冲突或副作用保持unknown，不改写父显式闭合状态。
+无wrapper只说明选定路径没有该节点，不代表整个函数没有析构。其他作用域清理、
+callee效果、source lifetime与历史保持仍未建立，alive协议保留。
+681项CPU、205项Clang专项及demo通过。真实同一完整表达式内带副作用临时对象
+负例保持父checked、cleanup unknown；元数据边界回归通过。
+固定生产TU的整套v3重放尚未完成，不能将之前版本的结果计作本轮验证；见
+`.agents/handoffs/wb04-copy-cleanup-observations-20260926.md`。
+
 ## 复制目标对象与record析构门控
 
 `record_copy_check.object_boundary` 在独立结构检查之后绑定普通自动完整目标

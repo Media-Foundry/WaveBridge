@@ -18,12 +18,104 @@ from wavebridge.verification.lambda_invocation import (
     _same_ast,
     check as check_lambda_invocation,
 )
-from wavebridge.verification.object_initialization import check as check_object_initialization
+from wavebridge.verification.object_initialization import (
+    CLEANUP_COUNT_SEMANTICS,
+    CLEANUP_COVERAGE,
+    check as check_object_initialization,
+)
 
 
 MAX_AST_NODES = 1_000_000
 HARD_MAX_AST_NODES = 10_000_000
 MAX_EXPLICIT_USES = 256
+
+
+def _copy_cleanup_observations(payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget):
+    """Bind native flags for enclosing wrappers, not all destructor events."""
+    result = {
+        "schema_version": "copy-enclosing-cleanup-observations/v1",
+        "status": "unknown", "reason": None, "copies": [], "wrappers": [],
+        "scope": "native_flags_for_all_ExprWithCleanups_ancestors_of_selected_copies",
+        "root_sha256": root_hash, "source_program_checked": False, "deployable": False,
+        "source_lifetime": "not_established", "source_value_preservation": "not_established",
+        "other_scope_destructors_and_cleanup_events": "not_established",
+        "callee_and_other_argument_effects": "not_established",
+        "assumptions": [
+            "the embedded AST and native observations faithfully describe the same Clang ASTContext",
+            "cleanupsHaveSideEffects is trusted frontend evidence, not an independent effect proof",
+            "getNumObjects is not the number of C++ temporary destructor events",
+        ],
+    }
+    try:
+        wrappers = {}
+        for copy_id in sorted(copy_paths):
+            occurrences = semantic_ids.get(copy_id, [])
+            if len(occurrences) != 1:
+                raise _Unknown("cleanup_copy_semantic_occurrence_not_unique")
+            path = semantic_paths.get(id(occurrences[0]))
+            if not path or path[-1].get("id") != copy_id:
+                raise _Unknown("cleanup_copy_semantic_path_missing")
+            enclosing = []
+            for node in path[:-1]:
+                if node.get("kind") != "ExprWithCleanups":
+                    continue
+                identifier = node.get("id")
+                if (not isinstance(identifier, str) or not identifier or
+                        len(semantic_ids.get(identifier, [])) != 1 or
+                        not index.get(identifier) or
+                        any(not _same_ast(item, node) for item in index[identifier])):
+                    raise _Unknown("cleanup_wrapper_occurrences_missing_or_conflicting")
+                wrappers[identifier] = node
+                enclosing.append(identifier)
+            result["copies"].append({"copy_expression_id": copy_id, "wrapper_ids": enclosing})
+        if not wrappers:
+            result.update(status="checked", relation="no_enclosing_ExprWithCleanups_on_selected_copy_paths",
+                          metadata_required=False)
+            return result
+        observations = payload.get("expression_cleanups")
+        if (payload.get("cleanup_coverage") != CLEANUP_COVERAGE or
+                payload.get("cleanup_object_count_semantics") != CLEANUP_COUNT_SEMANTICS or
+                not isinstance(observations, list) or len(observations) > budget or
+                any(not isinstance(item, dict) for item in observations)):
+            raise _Unknown("cleanup_metadata_missing_or_wrong_schema")
+        identifiers = [item.get("expression_id") for item in observations]
+        if (any(not isinstance(identifier, str) or not identifier for identifier in identifiers) or
+                len(set(identifiers)) != len(identifiers)):
+            raise _Unknown("cleanup_metadata_ids_missing_or_duplicate")
+        result["cleanup_metadata_sha256"] = _hash({
+            "coverage": payload["cleanup_coverage"],
+            "count_semantics": payload["cleanup_object_count_semantics"],
+            "plugin_build_clang_version": payload.get("plugin_build_clang_version"),
+            "ast_target_triple": payload.get("ast_target_triple"),
+            "expression_cleanups": observations,
+        })
+        by_id = dict(zip(identifiers, observations))
+        for identifier, wrapper in sorted(wrappers.items()):
+            children = _children(wrapper, strict=True)
+            observed = by_id.get(identifier)
+            if (len(children) != 1 or not isinstance(children[0].get("id"), str) or
+                    not children[0]["id"]):
+                raise _Unknown("cleanup_wrapper_subexpression_missing_or_ambiguous")
+            if not observed or observed.get("subexpression_id") != children[0]["id"]:
+                raise _Unknown("cleanup_metadata_binding_missing_or_mismatched")
+            count = observed.get("num_objects")
+            effects = observed.get("cleanups_have_side_effects")
+            if type(count) is not int or count != 0 or type(effects) is not bool or effects is not False:
+                raise _Unknown("cleanup_native_flag_not_supported_side_effect_free_shape")
+            json_effects = wrapper.get("cleanupsHaveSideEffects")
+            if "cleanupsHaveSideEffects" in wrapper and (type(json_effects) is not bool or json_effects is not False):
+                raise _Unknown("cleanup_ast_and_native_flag_conflict")
+            result["wrappers"].append({
+                "expression_id": identifier, "subexpression_id": children[0]["id"],
+                "num_objects": count, "cleanups_have_side_effects": effects,
+            })
+        result.update(status="checked", relation="all_selected_enclosing_wrappers_have_supported_native_flags",
+                      metadata_required=True)
+    except _Unknown as error:
+        result["reason"] = error.reason
+    except (TypeError, ValueError, RecursionError):
+        result["reason"] = "cleanup_input_hash_unsupported"
+    return result
 
 
 def _reference_use_effects(variable_id, root_hash, copy_paths, copies, captures):
@@ -259,6 +351,7 @@ def check(payload: object, variable_id: object, integer_types: object,
         "source_mutation_history": "not_established",
         "source_order": {"status": "unknown", "reason": "explicit_use_closure_not_checked"},
         "source_reference_use_effects": {"status": "unknown", "reason": "explicit_use_closure_not_checked"},
+        "copy_cleanup_observations": {"status": "unknown", "reason": "explicit_use_closure_not_checked"},
         "prior_aliases": "not_established",
         "untracked_memory_effects": "not_established",
         "opaque_call_effects": "not_established",
@@ -568,6 +661,8 @@ def check(payload: object, variable_id: object, integer_types: object,
             source_order=_source_order(variable, semantic_paths, semantic_ids, copy_paths, invocation_checks),
             source_reference_use_effects=_reference_use_effects(
                 variable_id, root_hash, copy_paths, copy_checks, capture_checks),
+            copy_cleanup_observations=_copy_cleanup_observations(
+                payload, root_hash, semantic_paths, semantic_ids, copy_paths, index, budget),
             explicit_source_references=reference_reports,
             capture_initializers=capture_summaries,
             direct_copy_expression_ids=sorted(direct_copy_ids),
