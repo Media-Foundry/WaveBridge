@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 混合调用效果接入循环恢复
+
+新增独立recover_with_call_effects，fresh分派builtin/scalar完整调用检查；
+默认recover与旧builtin入口不扩大支持，父子schema及外部假设标签独立。
+真实softmax固定工件中，7个调用（3 builtin、4 scalar）在显式未验证的leaf
+协议下checked；循环节点由历史builtin-only的4/8恢复为6/8，整体仍unknown。
+两个剩余节点因动态break拒绝；节点含嵌套父子，不是6个独立kernel，也不是
+GPU/整核/新holdout结果。见[实录](../experiments/loop-call-evidence-20260927.md)。
+最终完整1028项测试通过（69.421秒，native插件启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增真实Clang组合测试并复核driver；无GPU，远端CI未核验。
+
 ## 完整单标量调用效果组合
 
 新增scalar_call_effects，从完整TU fresh检查直接调用点、原参数转发链及

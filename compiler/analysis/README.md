@@ -488,3 +488,16 @@ column-loop-recovery-with-external-calls/v1；body保持性及nested storage
 不得直接消费这些子报告为无条件关系；部分call成功不能升级失败循环。
 多余未消费协议使原本成功的父状态变为unknown，并列出unused_call_protocol_ids。
 默认最多64项协议和每次扫描100万AST节点；这不是总运行时预算。
+
+`recover_with_call_effects` 是进一步的显式入口，参数相同，允许混合builtin
+协议与`scalar-leaf-effect-assumption/v1`。后者fresh调用scalar_call_effects，
+同时检查直接callee、受限参数转发和实参求值；不由外部leaf假设覆盖实参。
+仅scalar时payload只需包含完整`ast`；builtin分支仍要求真实native envelope。
+旧builtin入口不接受scalar协议，默认recover也不放宽。
+
+新父/子schema分别为`column-loop-call-effects/v1`和
+`column-loop-recovery-with-call-effects/v1`；loop的external_call_effects
+假设显式标记unverified。新旧入口共享其余循环体检查、嵌套保护和unused协议
+门槛。动态break、循环变量/边界写入、不透明调用仍不能因局部调用成功放行。
+数值与输入有效性前提保留在完整call_effect_checks子报告中；它们不是外部
+库性质证书，不能把recurrence恢复结果当作整核、数值或跨波宽保证。

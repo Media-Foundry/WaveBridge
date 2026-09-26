@@ -621,8 +621,20 @@ def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
 
 def recover_with_builtin_effects(payload, function_id, int_bits, call_protocols, *, max_ast_nodes=None):
     """Separate conditional path; never accepts caller-supplied success reports."""
+    return _recover_with_call_effects(payload, function_id, int_bits, call_protocols,
+                                      max_ast_nodes=max_ast_nodes, allow_scalar=False)
+
+
+def recover_with_call_effects(payload, function_id, int_bits, call_protocols, *, max_ast_nodes=None):
+    """Fresh builtin or scalar call checks, with explicit unverified leaf premises."""
+    return _recover_with_call_effects(payload, function_id, int_bits, call_protocols,
+                                      max_ast_nodes=max_ast_nodes, allow_scalar=True)
+
+
+def _recover_with_call_effects(payload, function_id, int_bits, call_protocols, *, max_ast_nodes, allow_scalar):
     from wavebridge.verification.builtin_calls import (
         check_call_no_memory_write, MAX_AST_NODES, HARD_MAX_AST_NODES)
+    from wavebridge.verification.scalar_call_effects import check_no_memory_write as check_scalar_call
     from wavebridge.verification.getter_returns import _hash
 
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
@@ -635,6 +647,9 @@ def recover_with_builtin_effects(payload, function_id, int_bits, call_protocols,
                               "source validity, memory non-aliasing and recurrence domain remain external",
                               "partial successful calls never upgrade an unknown loop"],
               "budget": {"max_ast_nodes_per_scan": budget, "max_call_protocols": 64}}
+    if allow_scalar:
+        result["schema_version"] = "column-loop-call-effects/v1"
+        result["scope"] = "restricted_loop_recurrence_under_explicit_call_effect_assumptions"
     if (not isinstance(payload, dict) or not isinstance(payload.get("ast"), dict) or
             payload["ast"].get("kind") != "TranslationUnitDecl" or
             not isinstance(function_id, str) or not function_id or
@@ -666,8 +681,13 @@ def recover_with_builtin_effects(payload, function_id, int_bits, call_protocols,
                 return False
             reports = result["call_effect_checks"]
             if identifier not in reports:
-                reports[identifier] = check_call_no_memory_write(
-                    payload, identifier, call_protocols[identifier], max_ast_nodes=budget)
+                protocol = call_protocols[identifier]
+                if allow_scalar and protocol.get("schema_version") == "scalar-leaf-effect-assumption/v1":
+                    reports[identifier] = check_scalar_call(
+                        payload["ast"], identifier, protocol, max_ast_nodes=budget)
+                else:
+                    reports[identifier] = check_call_no_memory_write(
+                        payload, identifier, protocol, max_ast_nodes=budget)
             return reports[identifier]["status"] == "checked"
 
         recovery = _recover(payload["ast"], function_id, int_bits, call_callback=check_call)
@@ -675,11 +695,14 @@ def recover_with_builtin_effects(payload, function_id, int_bits, call_protocols,
         # This child must not masquerade as the default effect-subset result in
         # existing combination checkers which do not consume the new premises.
         recovery["schema_version"] = "column-loop-recovery-with-external-calls/v1"
+        if allow_scalar:
+            recovery["schema_version"] = "column-loop-recovery-with-call-effects/v1"
         recovery["external_call_effects_verified"] = False
         pending = list(recovery["loops"])
         while pending:
             loop = pending.pop()
-            loop["assumptions"]["builtin_call_effects"] = "explicit_external_protocols_unverified"
+            assumption_key = "external_call_effects" if allow_scalar else "builtin_call_effects"
+            loop["assumptions"][assumption_key] = "explicit_external_protocols_unverified"
             for flag in ("body_preserves_induction", "body_preserves_bound"):
                 if loop.get(flag) == "established_in_supported_effect_subset":
                     loop[flag] = "established_under_external_call_effect_assumptions"
