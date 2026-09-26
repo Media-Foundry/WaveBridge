@@ -217,7 +217,7 @@ def _hinted_loop(node: dict[str, Any]) -> dict[str, Any]:
 
 
 def _check_body(body: dict[str, Any], protected_ids: set[str],
-                property_callback=None, nested_callback=None) -> None:
+                property_callback=None, nested_callback=None, call_callback=None) -> None:
     pending = [body]
     while pending:
         node = pending.pop()
@@ -242,6 +242,10 @@ def _check_body(body: dict[str, Any], protected_ids: set[str],
         if kind in CONTROL_KINDS:
             raise _Unknown("unsupported_control_flow_in_body", node.get("range"))
         if kind in CALL_KINDS:
+            if kind == "CallExpr" and call_callback is not None:
+                if call_callback(node) is True:
+                    continue  # Fresh check covers the COMPLETE call evaluation.
+                raise _Unknown("call_effect_not_checked", node.get("range"))
             raise _Unknown("call_in_body", node.get("range"))
         # A whitelist is intentional: asm, constructors, statement expressions,
         # opaque builtins and new AST kinds cannot silently be treated as pure.
@@ -356,13 +360,13 @@ def _coordinate_header(root: dict[str, Any], induction: dict[str, Any],
 
 
 def _check_nested_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int,
-                       protected_ids: set[str]) -> dict[str, Any]:
+                       protected_ids: set[str], call_callback=None) -> dict[str, Any]:
     """One nested level, constant finite recurrence, and enclosing storage preservation.
 
     This is conditional on the same valid-execution/no-alias premises as the
     parent. A finite header recurrence alone does not prove body completion.
     """
-    nested = _recover_loop(root, loop, int_bits, allow_nested=False)
+    nested = _recover_loop(root, loop, int_bits, allow_nested=False, call_callback=call_callback)
     if nested["status"] != "recovered":
         raise _Unknown(nested["reason"], nested.get("unknown_range"))
     start, bound, step = nested["start"], nested["bound"], nested["step"]
@@ -380,7 +384,7 @@ def _check_nested_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int
     # executable components against the enclosing loop's protected declarations.
     init, _, condition, increment, body = loop["inner"]
     for component in (init, condition, increment, body):
-        _check_body(component, protected_ids)
+        _check_body(component, protected_ids, call_callback=call_callback)
     return {
         "range": loop.get("range"), "recurrence": nested,
         "iterations": iterations, "final_induction": final,
@@ -391,7 +395,7 @@ def _check_nested_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int
 
 
 def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int,
-                  *, allow_nested: bool = True) -> dict[str, Any]:
+                  *, allow_nested: bool = True, call_callback=None) -> dict[str, Any]:
     item: dict[str, Any] = {
         "status": "unknown", "reason": None, "range": loop.get("range"),
         "induction": None, "start": None, "bound": None, "step": None,
@@ -446,7 +450,7 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int,
                 # This only establishes the supported body's non-modification
                 # premise. Coordinate values, conversions and recurrence remain
                 # unknown and must not be inferred from these two flags.
-                _check_body(body, protected)
+                _check_body(body, protected, call_callback=call_callback)
                 item.update(body_preserves_induction="established_in_supported_effect_subset",
                             body_preserves_bound="established_in_supported_effect_subset")
             except _Unknown as error:
@@ -554,9 +558,10 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int,
         if start_id is not None:
             protected.add(start_id)
         def check_nested(node):
-            item["nested_loops"].append(_check_nested_loop(root, node, int_bits, protected))
+            item["nested_loops"].append(_check_nested_loop(root, node, int_bits, protected, call_callback))
 
-        _check_body(body, protected, nested_callback=check_nested if allow_nested else None)
+        _check_body(body, protected, nested_callback=check_nested if allow_nested else None,
+                    call_callback=call_callback)
         item.update(body_preserves_induction="established_in_supported_effect_subset",
                     body_preserves_bound="established_in_supported_effect_subset")
         item.update(status="recovered", induction={"declaration_id": induction_id,
@@ -567,7 +572,7 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int,
     return item
 
 
-def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
+def _recover(root: object, function_id: str, int_bits: int, call_callback=None) -> dict[str, Any]:
     """Recover only the supported ForStmt recurrence subset in one AST root."""
     result: dict[str, Any] = {
         "schema_version": "column-loop-recovery/v1", "status": "unknown",
@@ -600,9 +605,91 @@ def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
     if not loops:
         result["reason"] = "no_for_loop"
         return result
-    result["loops"] = [dict(_recover_loop(root, loop, int_bits, allow_nested=depth == 0),
+    result["loops"] = [dict(_recover_loop(root, loop, int_bits, allow_nested=depth == 0,
+                                         call_callback=call_callback),
                             lexical_loop_depth=depth) for loop, depth in loops]
     result["status"] = "recovered" if all(loop["status"] == "recovered" for loop in result["loops"]) else "unknown"
     if result["status"] == "unknown":
         result["reason"] = "one_or_more_loops_unknown"
+    return result
+
+
+def recover(root: object, function_id: str, int_bits: int) -> dict[str, Any]:
+    """Default recovery has no external-call effect assumptions."""
+    return _recover(root, function_id, int_bits)
+
+
+def recover_with_builtin_effects(payload, function_id, int_bits, call_protocols, *, max_ast_nodes=None):
+    """Separate conditional path; never accepts caller-supplied success reports."""
+    from wavebridge.verification.builtin_calls import (
+        check_call_no_memory_write, MAX_AST_NODES, HARD_MAX_AST_NODES)
+    from wavebridge.verification.getter_returns import _hash
+
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    result = {"schema_version": "column-loop-builtin-effects/v1", "status": "unknown",
+              "reason": None, "recovery": None, "call_effect_checks": {},
+              "checked": False, "source_program_checked": False, "deployable": False,
+              "external_call_effects_verified": False,
+              "scope": "restricted_loop_recurrence_under_explicit_builtin_effect_assumptions",
+              "limitations": ["not a source-program, FP-value or deployment guarantee",
+                              "source validity, memory non-aliasing and recurrence domain remain external",
+                              "partial successful calls never upgrade an unknown loop"],
+              "budget": {"max_ast_nodes_per_scan": budget, "max_call_protocols": 64}}
+    if (not isinstance(payload, dict) or not isinstance(payload.get("ast"), dict) or
+            payload["ast"].get("kind") != "TranslationUnitDecl" or
+            not isinstance(function_id, str) or not function_id or
+            not isinstance(call_protocols, dict) or len(call_protocols) > 64 or
+            any(not isinstance(k, str) or not k or not isinstance(v, dict) for k, v in call_protocols.items()) or
+            type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES):
+        result["reason"] = "invalid_inputs_or_budget"
+        return result
+    try:
+        # Bound and validate the traversal before using the legacy recursive
+        # walker. Do not silently reinterpret a malformed new-path input.
+        pending, count = [payload["ast"]], 0
+        while pending:
+            node = pending.pop()
+            count += 1
+            if count > budget:
+                result["reason"] = "ast_node_budget_exceeded"
+                return result
+            if not isinstance(node, dict) or not isinstance(node.get("inner", []), list):
+                result["reason"] = "malformed_ast"
+                return result
+            pending.extend(node.get("inner", []))
+        result["input_sha256"] = {"native_envelope": _hash(payload), "function_id": _hash(function_id),
+                                  "int_bits": _hash(int_bits), "call_protocols": _hash(call_protocols)}
+
+        def check_call(node):
+            identifier = node.get("id")
+            if not isinstance(identifier, str) or identifier not in call_protocols:
+                return False
+            reports = result["call_effect_checks"]
+            if identifier not in reports:
+                reports[identifier] = check_call_no_memory_write(
+                    payload, identifier, call_protocols[identifier], max_ast_nodes=budget)
+            return reports[identifier]["status"] == "checked"
+
+        recovery = _recover(payload["ast"], function_id, int_bits, call_callback=check_call)
+        result["recovery"] = recovery
+        # This child must not masquerade as the default effect-subset result in
+        # existing combination checkers which do not consume the new premises.
+        recovery["schema_version"] = "column-loop-recovery-with-external-calls/v1"
+        recovery["external_call_effects_verified"] = False
+        pending = list(recovery["loops"])
+        while pending:
+            loop = pending.pop()
+            loop["assumptions"]["builtin_call_effects"] = "explicit_external_protocols_unverified"
+            for flag in ("body_preserves_induction", "body_preserves_bound"):
+                if loop.get(flag) == "established_in_supported_effect_subset":
+                    loop[flag] = "established_under_external_call_effect_assumptions"
+            for nested in loop.get("nested_loops", []):
+                nested["enclosing_storage_preserved"] = "established_under_external_call_effect_assumptions"
+                pending.append(nested["recurrence"])
+        result["status"], result["reason"] = recovery["status"], recovery["reason"]
+        result["unused_call_protocol_ids"] = sorted(set(call_protocols) - set(result["call_effect_checks"]))
+        if result["status"] == "recovered" and result["unused_call_protocol_ids"]:
+            result["status"], result["reason"] = "unknown", "unused_call_protocols"
+    except (TypeError, ValueError, RecursionError, KeyError):
+        result["status"], result["reason"] = "unknown", "malformed_or_too_deep_input"
     return result

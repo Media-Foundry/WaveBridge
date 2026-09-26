@@ -469,3 +469,22 @@ ElaboratedType（可省略）到 RecordType 的精确 CXXRecordDecl ID。完整 
 `default_source_binding` 单独记录来源，`default_constructor_declaration_ast`
 保留选定声明供字段 checker 核对。已有带子节点的默认表达式继续走原路径。
 来源恢复不等于整数转换安全；窄化仍由独立字段 checker 拒绝。
+## 带外部 builtin 效果的独立循环入口
+
+`column_loops.recover_with_builtin_effects(payload, function_id, int_bits,
+call_protocols)` 是显式选择的条件入口；原 `recover` 行为与schema不变，默认
+仍拒绝body调用。payload必须是同次native envelope，call_protocols按所选
+完整CallExpr ID索引，每项是绑定该envelope及末端builtin的外部效果协议。
+
+body遍历遇到调用时fresh执行check_call_no_memory_write；只有完整调用求值
+检查通过才跳过其子树，其余兄弟、父级存储目标、条件分支及控制流继续检查。
+嵌套循环内部递推和对外层受保护变量的复查均使用同一门槛。同次调用按ID
+缓存fresh结果，不接受调用者预填的成功报告。
+
+父schema为column-loop-builtin-effects/v1，子recovery使用独立的
+column-loop-recovery-with-external-calls/v1；body保持性及nested storage
+标记改为established_under_external_call_effect_assumptions。所有外部前提
+未验证，checked/source_program_checked/deployable仍false。旧组合checker
+不得直接消费这些子报告为无条件关系；部分call成功不能升级失败循环。
+多余未消费协议使原本成功的父状态变为unknown，并列出unused_call_protocol_ids。
+默认最多64项协议和每次扫描100万AST节点；这不是总运行时预算。

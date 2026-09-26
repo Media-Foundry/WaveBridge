@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 条件调用效果接入循环恢复
+
+新增独立recover_with_builtin_effects，fresh检查同次native AST上的完整调用点，
+其余body及嵌套外层保护仍逐项检查；默认recover不变。独立schema及外部假设
+标记防止旧checker误消费，多余未消费协议阻止父报告成功。
+原有softmax harness重采native AST成功：同一AST默认1/8循环recovered，三处
+精确但未验证的builtin效果假设下4/8循环recovered；整体仍unknown。循环节点
+含父/子，不是独立kernel覆盖率；不是blind holdout、整核或GPU结果。
+详见 [实录与重放](../experiments/column-builtin-evidence-20260927.md)。
+完整1010项测试通过（67.080秒，native插件启用，无跳过），demo/diff通过。
+GPT-5.6 Sol实现真实Clang回归并复核；远端CI未核验。
+
 ## 完整 builtin/wrapper 调用点
 
 新增 check_call_no_memory_write：fresh 选唯一完整 CallExpr，检查直接 builtin
