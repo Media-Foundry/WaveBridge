@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 默认实参与shuffle leaf边界
+
+array_call_effects显式use_literal_defaults模式只检查精确形参位置的同型
+literal默认值，重声明和有副作用默认表达式不解除。真实默认掩码求值已
+条件checked，pending仅剩shuffle调用，整体unknown；见
+[实录](../experiments/array-defaults-evidence-20260927.md)。
+同工具链编译探针确认leaf IR为memory(inaccessiblemem: readwrite)，保留
+convergent/nocallback；不是IntrNoMem，后续应检查程序可访问存储保持。
+1105项测试通过（75.392秒，native启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增5项回归并复核；无GPU，远端CI未核验。
+
 ## 数组helper空对象自身构造/销毁效果
 
 array_call_effects可选native_payload模式重新绑定原生变量/scope/record/ctor

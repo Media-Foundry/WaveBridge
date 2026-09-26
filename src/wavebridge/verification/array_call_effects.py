@@ -8,7 +8,7 @@ from wavebridge.verification.scalar_expression_effects import _type, check_no_me
 
 
 def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_scalar_operators=False,
-          native_payload=None):
+          native_payload=None, use_literal_defaults=False):
     budget = 1_000_000 if max_ast_nodes is None else max_ast_nodes
     result = {"schema_version": "array-call-write-footprint/v1", "status": "unknown", "reason": None,
               "scope": "restricted_single_array_call_preserves_distinct_caller_local",
@@ -28,11 +28,14 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
         result.update(schema_version="array-call-write-footprint-with-native-lifecycle/v1",
                       local_lifecycle_checks=[])
         result["assumptions"].append("native observations and embedded AST are from the same trusted compiler invocation")
+    if use_literal_defaults is True:
+        result["default_argument_checks"] = []
+        result["literal_default_mode"] = True
     try:
         if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
                 any(not isinstance(value, str) or not value for value in (call_id, protected_declaration_id)) or
                 type(budget) is not int or not 1 <= budget <= 10_000_000 or
-                type(use_scalar_operators) is not bool):
+                type(use_scalar_operators) is not bool or type(use_literal_defaults) is not bool):
             raise _Unknown("invalid_inputs_or_budget")
         if native_payload is not None and (
                 not isinstance(native_payload, dict) or native_payload.get("ast") is not root or
@@ -203,6 +206,50 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
                     "body_no_memory_write": checked, "operand_effects_scope": "enclosing traversal; see parent status",
                     "receiver_lifecycle_checked": False}
 
+        def literal_defaults(node):
+            """Resolve only literal default evaluation, never the callee's effects."""
+            parts = children(node)
+            if not parts:
+                raise _Unknown("default_call_shape_unsupported")
+            decay = parts[0]
+            if (decay.get("kind") != "ImplicitCastExpr" or decay.get("castKind") != "FunctionToPointerDecay" or
+                    len(children(decay)) != 1):
+                raise _Unknown("default_callee_not_direct")
+            function = ref(children(decay)[0])
+            if (function.get("kind") != "FunctionDecl" or function.get("variadic") or function.get("previousDecl") or
+                    any(n.get("previousDecl") == function["id"] for n in functions)):
+                raise _Unknown("default_callee_redeclared_or_unsupported")
+            params = [n for n in children(function) if n.get("kind") == "ParmVarDecl"]
+            if len(params) != len(parts) - 1 or len(params) > 32:
+                raise _Unknown("default_parameter_arity_mismatch")
+            reports = []
+            for position, (parameter, argument) in enumerate(zip(params, parts[1:])):
+                if argument.get("kind") != "CXXDefaultArgExpr":
+                    continue
+                if (exact(parameter.get("id")) is not parameter or exact(argument.get("id")) is not argument or
+                        children(argument) or argument.get("valueCategory") != "prvalue" or
+                        _type(parameter) != _type(argument) or parameter.get("init") != "c" or
+                        len(children(parameter)) != 1):
+                    raise _Unknown("default_parameter_evidence_unsupported")
+                literal = children(parameter)[0]
+                spelling = _type(literal)
+                if children(literal) or spelling != _type(argument) or literal.get("valueCategory") != "prvalue":
+                    raise _Unknown("default_not_same_type_literal")
+                if literal.get("kind") == "IntegerLiteral" and spelling in {"int", "unsigned int"}:
+                    if not isinstance(literal.get("value"), str) or not re.fullmatch(r"[0-9]+", literal["value"]):
+                        raise _Unknown("default_literal_value_missing")
+                elif literal.get("kind") == "CXXBoolLiteralExpr" and spelling == "bool":
+                    if type(literal.get("value")) is not bool:
+                        raise _Unknown("default_literal_value_missing")
+                else:
+                    raise _Unknown("default_not_supported_literal")
+                reports.append({"status": "checked", "call_id": node.get("id"), "callee_id": function["id"],
+                                "parameter_id": parameter["id"], "parameter_index": position,
+                                "expression_id": argument["id"], "literal_ast": literal,
+                                "scope": "literal_default_argument_has_no_memory_write",
+                                "callee_effects_checked": False, "value_domain_checked": False})
+            return reports
+
         def trivial_local(variable_id):
             """Check one empty automatic object's own ctor/dtor effects, not its lifetime history."""
             variable = exact(variable_id)
@@ -285,6 +332,7 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
                    "IntegerLiteral", "FloatingLiteral", "CXXBoolLiteralExpr", "ConditionalOperator",
                    "IfStmt", "NullStmt", "ReturnStmt"}
         calls = {"CallExpr", "CXXMemberCallExpr", "CXXOperatorCallExpr", "CXXConstructExpr", "CXXDefaultArgExpr"}
+        resolved_defaults = set()
         pending = [(body, [])]
         while pending:
             node, path = pending.pop()
@@ -308,6 +356,14 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
                 continue
             if kind in calls:
                 effect = {"kind": kind, "id": node.get("id"), "callee_body_child_path": path}
+                if kind == "CallExpr" and use_literal_defaults and any(
+                        n.get("kind") == "CXXDefaultArgExpr" for n in children(node)[1:]):
+                    try:
+                        defaults = literal_defaults(node)
+                        result["default_argument_checks"].extend(defaults)
+                        resolved_defaults.update(n["expression_id"] for n in defaults)
+                    except _Unknown as error:
+                        effect["default_argument_reason"] = str(error)
                 if kind == "CXXOperatorCallExpr" and use_scalar_operators:
                     if len(result["scalar_operator_checks"]) >= 8:
                         raise _Unknown("scalar_operator_budget_exceeded")
@@ -316,7 +372,7 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
                     except _Unknown as error:
                         effect["reason"] = str(error)
                         result["pending_effects"].append(effect)
-                else:
+                elif not (kind == "CXXDefaultArgExpr" and node.get("id") in resolved_defaults):
                     result["pending_effects"].append(effect)
             elif kind not in allowed:
                 raise _Unknown("unsupported_helper_effect_node:" + str(kind))
