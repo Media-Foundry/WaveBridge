@@ -2,6 +2,20 @@
 
 更新日期：2026-09-27。
 
+## 真实 store 条件的转换与模板字面量边界
+
+原真实重放停在 `sum[i]==0`：IntegralToFloating 未支持，开启受限转换后
+又定位到模板复用的零字面量 ID（12 份内容一致）。新增 opt-in 无内存写入
+检查，只允许 int/unsigned int→float，递归检查操作数；仅直接纯整数叶
+允许完全一致的共享，声明/变量引用/根表达式继续唯一。冲突内容拒绝。
+真实条件单独复查通过，但不等于整个 store 链通过。失败子报告现在完整保留。
+GPT-5.6 Sol 补充 6 项真实 Clang/错形回归并复核；完整 1143 项测试通过
+（82.527 秒，native 启用、无跳过），demo/diff 通过。日志在
+`artifacts/wb-store-cast-check-WTH9q6/`。
+新完整重放运行于 `artifacts/wb-softmax-store-cast-wsoFEy/`，尚未取得终态。
+原 `e546efa` 的远端 CI 三项已核验成功，不作为本轮修复的远端 CI 证据。
+指针历史扩展暂缓，优先关闭当前真实源码阻断；无 GPU 或数值保证升级。
+
 ## 实际 work 路径与相对输出下标
 
 新增 `guarded_stores.check`：fresh 入口/次数链之后，检查所选输出形参、
@@ -11,7 +25,8 @@
 GPT-5.6 Sol 补充 5 项真实 Clang 回归并只读复核。完整 1137 项测试通过
 （81.431 秒，native 启用、无跳过），demo/diff 通过；日志在
 `artifacts/wb-guarded-stores-check-pbTe45/`。
-真实 softmax AST 重放已启动，尚未取得终态；见
+真实 softmax AST 重放已结束为 unknown：入口/次数通过，实际表达式效果
+检查未通过（`store_expression_effect_not_checked`），输入与实现哈希一致；见
 [记录](../experiments/softmax-guarded-stores-evidence-20260927.md)。
 此前指针偏移、完整 lane 多重集、完整输出覆盖、浮点值和 GPU 执行仍未建立。
 该局部关系不改变 source/deployable=false，不宣称 WB-03 完整验收。

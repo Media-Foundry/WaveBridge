@@ -29,12 +29,15 @@ def _object_type(spelling):
 
 
 def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
-                          allow_constant_globals=False, allow_integer_bitwise=False):
+                          allow_constant_globals=False, allow_integer_bitwise=False,
+                          allow_integer_to_float=False):
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result = {"schema_version": "scalar-expression-no-memory-write/v1", "status": "unknown", "reason": None,
               "scope": "explicit_source_memory_writes_in_one_restricted_scalar_expression",
               "source_program_checked": False, "deployable": False, "value_semantics": "not_established",
               "numeric_contract_checked": False, "read_declaration_ids": [],
+              "integer_to_float_enabled": allow_integer_to_float,
+              "shared_literal_occurrences": [],
               "assumptions": ["AST faithfully describes one valid translation unit",
                               "referenced objects are initialized, alive and visible before this evaluation",
                               "indices and arithmetic are defined and evaluation completes normally",
@@ -47,7 +50,8 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
         if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
                 not isinstance(expression_id, str) or not expression_id or
                 type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES or
-                type(allow_constant_globals) is not bool or type(allow_integer_bitwise) is not bool):
+                type(allow_constant_globals) is not bool or type(allow_integer_bitwise) is not bool or
+                type(allow_integer_to_float) is not bool):
             raise _Unknown("invalid_inputs_or_budget")
         index, automatic, pending, count = {}, set(), [(root, False)], 0
         while pending:
@@ -77,12 +81,22 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
 
         reads = set()
 
-        def prepare(node, depth, category):
+        def prepare(node, depth, category, shared_integer_literal=False):
             if depth > 64:
                 raise _Unknown("expression_depth_budget_exceeded")
             identifier = node.get("id")
-            if not isinstance(identifier, str) or not identifier or unique(identifier) is not node:
+            occurrences = index.get(identifier, []) if isinstance(identifier, str) else []
+            literal_reuse = (shared_integer_literal and node.get("kind") == "IntegerLiteral" and
+                            node.get("inner", []) == [] and occurrences and
+                            any(item is node for item in occurrences) and
+                            all(item == node for item in occurrences))
+            if (not isinstance(identifier, str) or not identifier or
+                    (not literal_reuse and unique(identifier) is not node)):
                 raise _Unknown("expression_identity_missing_or_conflicting")
+            if literal_reuse and len(occurrences) > 1:
+                result["shared_literal_occurrences"].append({
+                    "expression_id": identifier, "occurrences": len(occurrences),
+                    "contents_equal": True, "scope": "direct_integer_to_float_literal_operand"})
             if node.get("valueCategory") != category:
                 raise _Unknown("expression_category_mismatch")
             return _type(node), _children(node)
@@ -137,8 +151,8 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
                 raise _Unknown("unsupported_lvalue_expression")
             return base, dimensions
 
-        def value(node, depth):
-            spelling, children = prepare(node, depth, "prvalue")
+        def value(node, depth, shared_integer_literal=False):
+            spelling, children = prepare(node, depth, "prvalue", shared_integer_literal)
             if spelling not in {"float", "int", "unsigned int", "bool"}:
                 raise _Unknown("scalar_value_type_unsupported")
             kind = node.get("kind")
@@ -149,6 +163,15 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
                 base, dimensions = lvalue(children[0], depth + 1)
                 if dimensions or base.removeprefix("const ") != spelling:
                     raise _Unknown("scalar_load_type_mismatch")
+            elif (allow_integer_to_float and kind == "ImplicitCastExpr" and
+                  node.get("castKind") == "IntegralToFloating" and len(children) == 1):
+                # Builtin conversion does not erase evaluation of its operand.
+                # This proves neither exact conversion nor FP-environment purity.
+                # Clang template instances may share one identical literal
+                # node. Only this pure direct leaf operand may be repeated;
+                # conflicting contents, references and selected roots remain unique.
+                if spelling != "float" or value(children[0], depth + 1, True) not in {"int", "unsigned int"}:
+                    raise _Unknown("integer_to_float_operand_type_mismatch")
             elif kind == "ConditionalOperator" and len(children) == 3:
                 if (value(children[0], depth + 1) != "bool" or
                         any(value(child, depth + 1) != spelling for child in children[1:])):

@@ -1217,3 +1217,10 @@ checked仅表示正常到达目标首次入口时，在源有效、无别名、�
 `output_pointer_history_checked=false`、`lane_family_established=false`、
 `full_output_coverage_established=false`、`source_program_checked=false` 和
 `deployable=false`。外部输入域和 getter/调用/no-alias 前提继续显式保留。
+
+真实 softmax 的 `sum[i] == 0` 含内建 `IntegralToFloating`。标量效果检查
+通过显式 `allow_integer_to_float=True` 支持 int/unsigned int 到 float，完整
+检查操作数；这不证明转换精确或 FP 环境纯度。仅该转换的直接整数纯字面量
+允许 Clang 模板共享 ID，且所有出现必须内容完全一致；根、变量引用与其他
+表达式仍须唯一。报告记录共享次数，内容冲突不放行。guarded-store 层启用
+此选项，并保留失败效果子报告及表达式 ID；不会把 unknown 隐去。

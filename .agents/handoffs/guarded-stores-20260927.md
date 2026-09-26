@@ -8,11 +8,11 @@
 - 验证：native 启用的 `make check`，1137 项通过、81.431 秒、无跳过；
   `make demo`、`git diff --check` 通过。日志 `artifacts/wb-guarded-stores-check-pbTe45/`。
   GPT-5.6 Sol 独立补充测试并只读复核，无阻断。
-- 未完成：真实新检查重放仍运行，exec session `95507`，只轮询此会话，
-  不因 `ps` 跨命名空间看不到而重启。日志与最终报告预定在
+- 原重放已完成：exec session `95507` 已退出，结论 unknown，
+  reason=`store_expression_effect_not_checked`，bounds checked。原报告在
   `artifacts/wb-softmax-guarded-stores-G3FGoC/{run.log,replay.json}`。
-  已记录 protocols_bound；当前不记为 checked。任务源码与 driver 已冻结，
-  重放结束前勿修改它们，否则 inputs_unchanged 失效。
+  输入与实现哈希一致。后续定位到隐式整数到 float 转换及模板共享纯 literal；
+  新修复与运行交接见 `guarded-store-cast-20260927.md`，不要再轮询旧会话。
 - 边界：外部 getter/leaf/input/no-alias 前提未自动验证；指针历史、完整 lane
   集合、跨行覆盖、FP 与整核/部署均未建立。没有启动 GPU，远端 CI 未核验。
 - 下一步：取得该重放终态，核对实现哈希和具体原因/静态 store sites；随后

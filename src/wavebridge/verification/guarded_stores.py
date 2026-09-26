@@ -197,10 +197,13 @@ def check(payload, declaration_id, outer_loop_id, inner_loop_id, leaf_contract,
                     raise _Unknown("store_expression_call_not_checked")
             else:
                 report = scalar_expression_effects.check_no_memory_write(
-                    root, node["id"], max_ast_nodes=max_ast_nodes)
+                    root, node["id"], max_ast_nodes=max_ast_nodes, allow_integer_to_float=True)
+                result["effect_checks"].append(report)
                 if report["status"] != "checked":
+                    result["failed_effect_expression_id"] = node["id"]
                     raise _Unknown("store_expression_effect_not_checked")
-            result["effect_checks"].append(report)
+            if unwrapped.get("kind") == "CallExpr":
+                result["effect_checks"].append(report)
             result["assumptions"].extend(report.get("assumptions", []))
 
         def sequence(nodes, depth):

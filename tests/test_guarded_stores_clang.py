@@ -47,7 +47,7 @@ void mutually_exclusive_stores(float *output, int m, int n, float sum) {
     for (int it = 0; it < INNER_COUNT; ++it) {
       int col = local_idx + it * step;
       if (col < n) {
-        if (sum == 0.0f) {
+        if (sum == 0) {
           output[outer * n + it * step] = 0.0f;
         } else {
           output[outer * n + it * step] = sum;
