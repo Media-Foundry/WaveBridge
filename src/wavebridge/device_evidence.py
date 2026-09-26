@@ -11,6 +11,7 @@ from wavebridge.verification.launch_binding import check as check_launch
 from wavebridge.analysis.normalization_output import recover as recover_output
 from wavebridge.verification.xor_routes import check as check_xor_routes
 from wavebridge.verification.block_routes import check as check_block_routes
+from wavebridge.verification.block_routes import compare as compare_block_routes
 
 
 def collect(root, protocol, *, max_ast_nodes=1_000_000):
@@ -241,4 +242,31 @@ def collect_rmsnorm(root, protocol, *, max_ast_nodes=1_000_000):
         return stop("block_routes_not_checked", block_routes)
     result.update(status="evidence", all_selected_relations_connected=True,
                   kernel_declaration_id=kernel, launch_id=launch)
+    return result
+
+
+def compare_rmsnorm_routes(source_root, source_protocol, target_root, target_protocol,
+                           *, max_ast_nodes=1_000_000):
+    """Fresh two-sided route evidence; leaves are NOT proven equivalent values."""
+    result = {
+        "schema_version": "rmsnorm-route-comparison/v1", "status": "unknown", "reason": None,
+        "scope": "fresh_two_sided_conditional_block_route_models_only",
+        "source_program_checked": False, "deployable": False,
+        "leaf_value_correspondence": "not_established",
+        "floating_point_equivalence": "not_checked", "checks": {},
+        "remaining_obligations": {},
+    }
+    for side, root, protocol in (("source", source_root, source_protocol),
+                                 ("target", target_root, target_protocol)):
+        evidence = collect_rmsnorm(root, protocol, max_ast_nodes=max_ast_nodes)
+        result["checks"][side] = evidence
+        result["remaining_obligations"][side] = list(evidence["remaining_obligations"])
+        if evidence.get("status") != "evidence" or evidence.get("all_selected_relations_connected") is not True:
+            result.update(status="rejected" if evidence.get("status") == "rejected" else "unknown",
+                          reason=side + "_structural_evidence_incomplete")
+            return result
+    comparison = compare_block_routes(*(result["checks"][side]["route_binding"]["inputs"]
+                                         for side in ("source", "target")))
+    result["checks"]["route_relation"] = comparison
+    result.update(status=comparison["status"], reason=comparison["reason"])
     return result

@@ -2,6 +2,30 @@
 
 更新日期：2026-09-26。
 
+## 源目标条件归约比较：贡献相同不等于加法顺序相同
+
+在既有block_routes新增compare，要求两侧全部显式输入并重新检查贡献重数。
+同block才按tid对应模型叶；不同block保持unknown。使用精确tuple共享intern
+构造有序加法DAG，保留左右顺序、所有加法层次和zero seed，不做结合/交换/零
+消除。最多返回evidence；shared存储/同步不是DAG操作，仍需独立语义前提。
+device_evidence.compare_rmsnorm_routes从两侧AST和外部协议fresh恢复，不接受
+旧成功报告；两侧局部累加值相等仍为not_established，部署始终false。
+
+固定首例源/候选真实AST重放270.85秒，两个结构包均evidence。条件路由模型中
+256个线程贡献各恰一次；256个最终线程位置的有序加法DAG全部不同，共3468个
+intern节点。这既不证明浮点结果必然不同，也不证明误差在冻结协议内。
+未重新采集AST、编译或执行GPU；两侧API/ABI协议仍是先前固定的外部假设。
+width用途闭合、叶值/输出关系、同步和实际设备门槛没有因此解除。
+
+783项完整测试及demo通过，匹配native插件启用；新增11项模型/组合测试，含
+独立展开有序树的小形状交叉核验、两阶段重排、容量变化、错误重数及unknown。
+组合单测mock结构恢复；上述真实案例重放没有mock，二者不混称源码验收。
+工件`artifacts/wb-route-pair-OoaxAu/`，report.json SHA256
+`aedc0193e81fe8c085f005f2ad117f479159ae37d3fb2713cc026080a881bf21`；
+实现哈希前后稳定，详情见`.agents/handoffs/wb05-route-pair-20260926.md`。
+下一项应建立受限源码差异到局部累加值对应的证据，并处理width用途边界；
+不能将两个成功的贡献检查直接升级成整核浮点等价。
+
 ## W7900 wave64 编译预检：不建立运行时能力
 
 对未修改的device_probe.hip.cpp，以本机HIP 7.15.26333 / AMD Clang 23.0.0git

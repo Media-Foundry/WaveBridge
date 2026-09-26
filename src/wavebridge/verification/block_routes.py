@@ -91,3 +91,83 @@ def check(block_threads, width, offsets, *, second_offsets=None, writer_lane=0,
             return report
     report.update(status="checked", threads_checked=block_threads, partials_checked=groups)
     return report
+
+
+def compare(source, target):
+    """Compare explicit route models, not source programs or IEEE results.
+
+    Both sides must specify every model input. Equal block-local input labels
+    are a premise, not an inferred mapping between different source programs.
+    Ordered DAG identity uses shared exact tuple interning, not digest equality.
+    Zero seeds and operand order are retained: no associativity, commutativity
+    or floating-point neutral-element simplification is applied.
+    """
+    result = {
+        "schema_version": "block-route-comparison/v1", "status": "unknown", "reason": None,
+        "scope": "conditional_same_block_input_contributions_and_ordered_add_DAGs",
+        "source_program_checked": False, "deployable": False,
+        "floating_point_equivalence": "not_checked",
+        "contribution_multisets_equal": None, "ordered_add_dags_equal": None,
+        "checks": {},
+        "assumptions": ["input contribution at each block-local thread is identical on both sides",
+                        "all premises of both finite block-route checks hold",
+                        "addition nodes represent the same operation and numerical environment"],
+        "remaining_obligations": ["source_target_input_value_correspondence",
+                                  "source_intrinsic_and_machine_operation_correspondence",
+                                  "participation_synchronization_and_memory_visibility",
+                                  "external_floating_point_contract_and_device_execution"],
+    }
+    keys = {"block_threads", "width", "offsets", "second_offsets", "writer_lane",
+            "shared_slots", "barrier", "load_offset"}
+    for label, model in (("source", source), ("target", target)):
+        if not isinstance(model, dict) or set(model) != keys:
+            result["reason"] = label + "_explicit_model_fields_required"
+            return result
+        # These optional legacy inputs must not silently select defaults here.
+        if model["second_offsets"] is None or model["shared_slots"] is None:
+            result["reason"] = label + "_implicit_defaults_not_allowed"
+            return result
+        report = check(**model)
+        result["checks"][label] = report
+        if report["status"] != "checked":
+            result.update(status=report["status"], reason=label + "_route_not_checked")
+            return result
+    result["input_sha256"] = {side: result["checks"][side]["input_sha256"]
+                              for side in ("source", "target")}
+    if source["block_threads"] != target["block_threads"]:
+        result["reason"] = "different_block_input_mapping_not_established"
+        return result
+
+    nodes = {}
+
+    def intern(node):
+        if node not in nodes:
+            nodes[node] = len(nodes)
+        return nodes[node]
+
+    def outputs(model):
+        block, width = model["block_threads"], model["width"]
+
+        def reduce_lanes(lanes, stages):
+            for offset in stages:
+                previous = lanes
+                lanes = [intern(("add", previous[tid],
+                                 previous[(tid // width) * width + ((tid % width) ^ offset)]))
+                         for tid in range(block)]
+            return lanes
+
+        lanes = reduce_lanes([intern(("input", tid)) for tid in range(block)], model["offsets"])
+        groups = block // width
+        shared = [lanes[group * width + model["writer_lane"]] for group in range(groups)]
+        zero = intern(("zero_seed",))
+        seeds = [shared[tid % width + model["load_offset"]] if tid % width < groups else zero
+                 for tid in range(block)]
+        return reduce_lanes(seeds, model["second_offsets"])
+
+    left, right = outputs(source), outputs(target)
+    mismatches = [tid for tid, pair in enumerate(zip(left, right)) if pair[0] != pair[1]]
+    result.update(status="evidence", contribution_multisets_equal=True,
+                  ordered_add_dags_equal=not mismatches, compared_threads=len(left),
+                  differing_output_threads=mismatches, interned_nodes=len(nodes),
+                  operation_relation="ordered_add_DAGs_differ" if mismatches else "identical_ordered_add_DAGs")
+    return result

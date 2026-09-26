@@ -1,5 +1,27 @@
 # 编译器关系检查
 
+## 两侧归约贡献与有序加法树
+
+`verification.block_routes.compare(source, target)`要求两份完整显式route输入，
+不允许省略second_offsets/shared_slots后使用默认值。它重新运行两侧贡献检查，
+仅在block_threads相同时以相同tid作为条件输入叶标签；不同block不猜重分工映射。
+两侧各自覆盖所有tid且恰好一次，才记录contribution_multisets_equal。
+
+随后在共享的精确tuple intern表中构造有序加法DAG；保留每次add的左右操作数、
+所有层次和显式zero seed，不做结合、交换或零消除。比较不依赖哈希碰撞假设，
+也不按展开表达式大小占用指数内存。存储/同步不是该DAG中的操作节点，其语义
+仍作为独立前提，不能由加法树相同推出。
+
+`device_evidence.compare_rmsnorm_routes(source_root, source_protocol, target_root,
+target_protocol)`分别fresh调用collect_rmsnorm，并将本次生成的route输入提交给
+比较器；不接收旧的成功报告。结果最多为evidence，不签发整核或IEEE等价。
+两侧相同tid的local accumulator值是否相等仍为leaf_value_correspondence=
+not_established。全部原有未解除义务保留；源目标width用途、输入值、输出参数/
+数值协议和机器码对应都不能靠本比较器补齐。
+
+32→64可以得到贡献重数一致但有序加法树不同；这不证明浮点结果必然不同，也不
+证明在冻结tolerance内。即使树相同，也仍需叶值、运算模式、源码对应与设备证据。
+
 ## 行偏移的整数部分
 
 `verification.row_offset.check(expression, row_id, count_id, row_interval, count_interval,
