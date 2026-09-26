@@ -1138,3 +1138,22 @@ IfStmt条件为bool字面量、经核验的Clang模板bool字面量替换、括�
 子项checked不能升级unknown父项。成功仅为显式源有效、无别名、无异步
 干扰和外部leaf效果等前提下的存储保持，不证明终止、有效迭代域、溢出、
 覆盖、FP值或部署；不是把有限测试替换成整核保证。
+
+## 退出循环的条件迭代次数界
+
+`loop_exit_guards.check_iteration_bounds(payload, loop_id, int_bits, call_protocols,
+declaration_intervals, ...)`重新执行work保持性检查，再消费按精确声明ID给出的
+闭整数区间。键必须恰好覆盖prefix/guard的外部读取（不含本层induction）；
+即使常量读也要在当前接口显式提供范围。范围是外部前提，未自动验证其与
+初始化、常量定义或实际launch一致，不可作为已建立输入域的证据。
+
+仅支持已观察的常量start/bound、正step和至多1024次原header迭代。每次按原
+有序DAG检查全部prefix和guard的int加减乘、单目正负；中间结果可能溢出即
+unknown，不因最终比较为false而省略prefix。除/余和其它运算暂不支持。
+确定break后停止，可能执行work才检查本次增量（包含最后一次增量）。
+
+输出`work_count_bounds`为保守上下界，不保证每个界都可达，也不表示逐输入
+精确次数。`iteration_bounds_established=true`只覆盖本层header/prefix/guard
+和条件work次数界；nested与work内部其它算术、全局覆盖、输出值和部署仍
+未检查，`full_iteration_domain_established=false`保持。各work前提完整保留。
+budget耗尽、域缺失/多余、非整数/非法区间均unknown，不提升旧循环恢复。

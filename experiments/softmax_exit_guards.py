@@ -5,18 +5,21 @@ from pathlib import Path
 
 from experiments.pytorch_softmax_intake import implementation_hashes, sha, walk
 from wavebridge.verification.loop_exit_guards import (
-    inspect_structure, check_prefix_values, check_header_connection, check_work_preservation)
+    inspect_structure, check_prefix_values, check_header_connection, check_work_preservation,
+    check_iteration_bounds)
 
 NATIVE_SHA = "317b1a438bc13845cf76b5aa7461db4db2081b402c457a85c4160fdd7257c027"
 RECOVERY_SHA = "31a6570762225ea247f24b799be28ebd51f3dab13e562e32cccb8e305d764f67"
 
 
 def run(native, recovery, output, *, prefix_values=False, header_connection=False, work_preservation=False,
-        int_bits=32, static_branches=False, nested_loops=False):
+        int_bits=32, static_branches=False, nested_loops=False, iteration_domains=None):
     if static_branches and not work_preservation:
         raise ValueError("static_branches_requires_work_preservation")
     if nested_loops and not work_preservation:
         raise ValueError("nested_loops_requires_work_preservation")
+    if iteration_domains is not None and not work_preservation:
+        raise ValueError("iteration_domains_requires_work_preservation")
     if sha(native) != NATIVE_SHA or sha(recovery) != RECOVERY_SHA:
         raise ValueError("fixed_input_mismatch")
     if output.exists():
@@ -24,6 +27,12 @@ def run(native, recovery, output, *, prefix_values=False, header_connection=Fals
     before = implementation_hashes()
     helpers = {str(path): sha(path) for path in
                (Path(__file__), Path(__file__).with_name("pytorch_softmax_intake.py"))}
+    domains = None
+    if iteration_domains is not None:
+        helpers[str(iteration_domains)] = sha(iteration_domains)
+        domains = json.loads(iteration_domains.read_text())
+        if not isinstance(domains, dict):
+            raise ValueError("invalid_iteration_domains")
     frontend = json.loads(native.read_text())
     old = json.loads(recovery.read_text())
     if frontend.get("status") != "collected" or NATIVE_SHA not in old.get("inputs", {}).values():
@@ -45,9 +54,14 @@ def run(native, recovery, output, *, prefix_values=False, header_connection=Fals
             # original loop. The checker reruns all applicable call checks.
             call_ids = {node.get("id") for node in walk(matches[0]) if node.get("kind") == "CallExpr"}
             protocols = {key: value for key, value in old["call_protocols"].items() if key in call_ids}
-            checked = check_work_preservation(frontend["payload"], matches[0]["id"], int_bits, protocols,
-                                               use_static_branches=static_branches,
-                                               use_nested_loops=nested_loops)
+            if domains is not None:
+                checked = check_iteration_bounds(frontend["payload"], matches[0]["id"], int_bits, protocols,
+                                                  domains[matches[0]["id"]], use_static_branches=static_branches,
+                                                  use_nested_loops=nested_loops)
+            else:
+                checked = check_work_preservation(frontend["payload"], matches[0]["id"], int_bits, protocols,
+                                                   use_static_branches=static_branches,
+                                                   use_nested_loops=nested_loops)
         elif header_connection:
             checked = check_header_connection(root, matches[0]["id"], int_bits)
         else:
@@ -56,6 +70,10 @@ def run(native, recovery, output, *, prefix_values=False, header_connection=Fals
         checks.append({"loop_range": previous["range"], "check": checked})
     if not checks:
         raise ValueError("no_remaining_exit_loops")
+    if domains is not None:
+        selected = {item["check"]["work_check"]["connection_check"]["header_check"]["loop_id"] for item in checks}
+        if set(domains) != selected:
+            raise ValueError("iteration_domain_loop_keys_mismatch")
     after = implementation_hashes()
     report = {"schema_version": "softmax-exit-guard-development/v1",
               "native_sha256": NATIVE_SHA, "recovery_sha256": RECOVERY_SHA, "checks": checks,
@@ -75,6 +93,10 @@ def run(native, recovery, output, *, prefix_values=False, header_connection=Fals
         report["integer_abi"] = {"int_bits": int_bits, "status": "explicit_external_assumption"}
         report["static_branches_enabled"] = static_branches
         report["nested_loops_enabled"] = nested_loops
+    if domains is not None:
+        report["schema_version"] = "softmax-exit-iteration-bounds-development/v1"
+        report["declaration_intervals"] = domains
+        report["declaration_interval_status"] = "explicit_external_assumptions_not_launch_proven"
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"checks": [{"status": item["check"]["status"], "reason": item["check"]["reason"],
                                   "scope": item["check"]["scope"]}
@@ -94,7 +116,9 @@ if __name__ == "__main__":
     parser.add_argument("--int-bits", type=int, default=32)
     parser.add_argument("--static-branches", action="store_true")
     parser.add_argument("--nested-loops", action="store_true")
+    parser.add_argument("--iteration-domains", type=Path)
     args = parser.parse_args()
     run(args.native, args.recovery, args.output, prefix_values=args.prefix_values,
         header_connection=args.header_connection, work_preservation=args.work_preservation,
-        int_bits=args.int_bits, static_branches=args.static_branches, nested_loops=args.nested_loops)
+        int_bits=args.int_bits, static_branches=args.static_branches, nested_loops=args.nested_loops,
+        iteration_domains=args.iteration_domains)

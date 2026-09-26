@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 退出循环的条件次数界与前缀整数安全
+
+check_iteration_bounds重新检查work/header/prefix/guard，再用精确声明ID的
+外部闭区间逐步检查原始有序整数DAG及可能执行的增量；退出当次prefix不
+省略，确定退出后不虚构后续迭代。预算1024，不支持运算或潜在溢出保持unknown。
+固定softmax示例域下外层次数界[0,2]、内层[0,4]，两项条件checked，见
+[实录](../experiments/iteration-bounds-evidence-20260927.md)。这些范围未与
+初始化/launch绑定，不是自动恢复的输入域；nested/work其它算术、完整覆盖、
+整核和部署仍未建立，历史6/8恢复不提升。
+完整1063项测试通过（73.616秒，native启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增5项真实Clang回归并复核；无GPU，远端CI未核验。
+
 ## 嵌套退出循环对祖先依赖的保持
 
 显式use_nested_loops模式fresh连接每层header/prefix/guard，并扫描原始

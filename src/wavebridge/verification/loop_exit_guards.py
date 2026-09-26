@@ -153,6 +153,139 @@ def inspect_structure(root, loop_id, *, max_ast_nodes=None):
     return result
 
 
+def check_iteration_bounds(payload, loop_id, int_bits, call_protocols, declaration_intervals, *,
+                           max_ast_nodes=None, use_static_branches=False, use_nested_loops=False):
+    """Conservative work-count bounds; check each evaluated prefix/guard operation.
+
+    External declaration intervals are assumptions at entry, not inferred launch
+    facts. Work preservation is rebuilt, never supplied as a trusted report.
+    """
+    work = check_work_preservation(payload, loop_id, int_bits, call_protocols,
+                                  max_ast_nodes=max_ast_nodes,
+                                  use_static_branches=use_static_branches, use_nested_loops=use_nested_loops)
+    result = {"schema_version": "guarded-loop-iteration-bounds/v1", "status": "unknown", "reason": None,
+              "scope": "selected_loop_work_count_bounds_and_prefix_guard_integer_safety",
+              "work_check": work, "source_program_checked": False, "deployable": False,
+              "full_iteration_domain_established": False, "iteration_bounds_established": False,
+              "iterations": [], "budget": {"max_header_iterations": 1024, "max_expression_depth": 64},
+              "assumptions": ["declared integer intervals hold at entry for these exact declarations",
+                              "integer ABI, AST fidelity and every work-check premise apply"],
+              "limitations": ["bounds may be conservative; no per-input exact trip count or output coverage",
+                              "nested-loop arithmetic and work-body arithmetic are not checked here",
+                              "input ranges are external assumptions, not established launch or initialization facts"]}
+    if work["status"] != "checked":
+        result["reason"] = "work_preservation_not_checked"
+        return result
+    try:
+        if not isinstance(declaration_intervals, dict):
+            raise _Unknown("invalid_declaration_intervals")
+        connection = work["connection_check"]
+        header, prefix = connection["header_check"]["header"], connection["prefix_check"]
+        induction = connection["induction_declaration_id"]
+        required = set(prefix["external_read_declaration_ids"]) - {induction}
+        if set(declaration_intervals) != required:
+            raise _Unknown("declaration_interval_keys_mismatch")
+        minimum, maximum = -(1 << (int_bits - 1)), (1 << (int_bits - 1)) - 1
+
+        def representable(bounds):
+            if bounds[0] < minimum or bounds[1] > maximum:
+                raise _Unknown("signed_arithmetic_may_overflow")
+            return bounds
+
+        ranges = {}
+        for identifier, interval in declaration_intervals.items():
+            if (not isinstance(interval, (list, tuple)) or len(interval) != 2 or
+                    any(type(value) is not int for value in interval) or interval[0] > interval[1]):
+                raise _Unknown("invalid_declaration_interval")
+            ranges[identifier] = representable(tuple(interval))
+        start, bound, step = header["start"].get("value"), header["bound"].get("value"), header["step"]
+        if any(type(value) is not int for value in (start, bound, step)) or step <= 0:
+            raise _Unknown("constant_header_domain_required")
+        representable((start, start))
+        representable((bound, bound))
+        count = max(0, (bound - start + step - 1) // step)
+        if count > 1024:
+            raise _Unknown("header_iteration_budget_exceeded")
+
+        def evaluate(node, values, definitions, depth=0):
+            if depth > 64 or node.get("type") != "int":
+                raise _Unknown("interval_expression_type_or_depth")
+            kind = node.get("kind")
+            if kind == "read":
+                return values[node["declaration_id"]]
+            if kind == "prefix_value":
+                return definitions[node["declaration_id"]]
+            if kind == "literal":
+                return representable((node["value"], node["value"]))
+            operands = [evaluate(child, values, definitions, depth + 1) for child in node.get("operands", [])]
+            opcode = node.get("opcode")
+            if kind == "unary" and len(operands) == 1 and opcode in {"+", "-"}:
+                a, b = operands[0]
+                return representable((a, b) if opcode == "+" else (-b, -a))
+            if kind == "binary" and len(operands) == 2:
+                (a, b), (c, d) = operands
+                if opcode == "+":
+                    return representable((a + c, b + d))
+                if opcode == "-":
+                    return representable((a - d, b - c))
+                if opcode == "*":
+                    products = (a*c, a*d, b*c, b*d)
+                    return representable((min(products), max(products)))
+            raise _Unknown("interval_operation_unsupported")
+
+        def comparison(opcode, left, right):
+            a, b = left
+            c, d = right
+            if opcode == ">":
+                return comparison("<", right, left)
+            if opcode == ">=":
+                return comparison("<=", right, left)
+            if opcode == "<":
+                return True if b < c else False if a >= d else None
+            if opcode == "<=":
+                return True if b <= c else False if a > d else None
+            if opcode in {"==", "!="}:
+                equal = True if a == b == c == d else False if b < c or d < a else None
+                return equal if opcode == "==" or equal is None else not equal
+            raise _Unknown("interval_comparison_unsupported")
+
+        lower, upper, guaranteed_reachable = 0, 0, True
+        guard = prefix["guard_value_expression"]
+        for index in range(count):
+            value = start + index * step
+            values, definitions = {**ranges, induction: (value, value)}, {}
+            item = {"induction_value": value, "prefix_intervals": {}}
+            result["iterations"].append(item)
+            for definition in prefix["prefix_values"]:
+                interval = evaluate(definition["expression"], values, definitions)
+                definitions[definition["declaration_id"]] = interval
+                item["prefix_intervals"][definition["declaration_id"]] = list(interval)
+            operands = [evaluate(node, values, definitions) for node in guard["operands"]]
+            truth = comparison(guard["opcode"], *operands)
+            continues = None if truth is None else truth == prefix["partition_check"]["work_when"]
+            item.update(guard_operand_intervals=operands, guard_truth=truth, work_executes=continues)
+            if continues is False:
+                break
+            upper += 1
+            if guaranteed_reachable and continues is True:
+                lower += 1
+            else:
+                guaranteed_reachable = False
+            # Possible work implies a possible increment, even on the final
+            # header iteration. A definite break does not execute increment.
+            representable((value + step, value + step))
+        result.update(status="checked", iteration_bounds_established=True,
+                      work_count_bounds=[lower, upper], original_header_iteration_count=count,
+                      declaration_intervals=declaration_intervals,
+                      input_sha256={**work["input_sha256"], "declaration_intervals": _hash(declaration_intervals)})
+        result["assumptions"].extend(work["assumptions"])
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, KeyError, IndexError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
 def check_prefix_values(root, loop_id, *, max_ast_nodes=None):
     """Connect pure scalar prefix initializers to guard values, without a loop proof."""
     partition = inspect_structure(root, loop_id, max_ast_nodes=max_ast_nodes)
