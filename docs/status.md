@@ -12,9 +12,11 @@ v1保持原含义。真实具名/传出/返回及外层非立即调用均unknown
 补充真实跨层/CPU反例：立即lambda内把source.x从3改为99，v2来源checked，
 引用闭合unknown，CPU实际复制99，明确来源保证不等于历史保持。
 666项CPU、190项Clang专项及demo通过；ed1f610远端CI已success。
-固定完整vLLM TU的v2重放正在执行，
-尚未取得终态，不把历史v1结果计入本次成功。见
-`.agents/handoffs/wb04-capture-origin-20260926.md`；运行期间冻结src。
+固定完整vLLM TU的v2重放退出0：3个copy各自fresh检查两层立即调用，来源
+均checked；顺序及效果组合仍checked。耗时669.00秒，77个实现哈希前后一致，
+并与当前源码复核匹配。来源布尔确已从本次输入协议及最终premises移除，其余
+三项动态/有效性前提保留，无GPU执行。13bbbd4远端CI也已success。见
+`.agents/handoffs/wb04-capture-origin-20260926.md`；本次源码冻结已解除。
 
 ## 显式源引用的复制效果组合
 
