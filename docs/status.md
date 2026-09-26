@@ -2,6 +2,23 @@
 
 更新日期：2026-09-27。
 
+## 内建 ++ 递推支持与循环体边界
+
+新增精确绑定的 signed-int 内建前置/后置 ++，保留原始 AST 和步长来源；
+复杂左值、引用转换、unsigned、重载、缺类型/值类别证据继续 unknown。
+循环体副作用与溢出义务不变，未放宽先前引用别名保护。
+
+同一固定 softmax AST 的开发回放中，8 个循环头均已识别，但整体仍全部
+unknown：6 个不支持的 body effect、1 个复杂存储目标、1 个控制流。
+归约仍为 0 候选、12 个未解析调用。这不是整核支持、独立留出验收或 GPU
+执行结果；原冻结评估保留。详见
+[本轮实录](../experiments/column-increment-evidence-20260927.md)。
+
+新增 7 项测试，含真实 Clang 与安全 CPU 对照；Clang17/SDK Clang23 的
+新增源码测试通过。GPT-5.6 Sol 完成测试实现和只读复核。
+完整 926 项 CPU 测试通过（67.298 秒，匹配 native 插件启用，无跳过）；
+make demo 与 git diff --check 通过。远端 CI 尚未核验。
+
 ## 常量表达式子集扩展及真实 AST 开发回放
 
 现有integer_constants新增具体signed int模板替换literal、非负signed移位、

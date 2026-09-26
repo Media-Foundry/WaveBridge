@@ -195,6 +195,11 @@ Kernel JSON 或 oracle。输出目录必须不存在，其中 `ast.json` 与 `re
 
 `column_loops.recover(root, function_id, int_bits)` 支持 signed-int 的
 `i=start; i<bound; i+=positive_constant`，以声明 ID 匹配条件与增量。
+也支持自动存储期 mutable `int` 的内建 `++i` / `i++`：要求明确的
+prefix/postfix 值类别、唯一 int lvalue 操作数及精确 VarDecl ID，只允许
+同型 lvalue 括号，不剥离引用转换。原始 unary AST 保留，步长 1 来源记为
+`builtin_increment`；缺证据、重载、unsigned、递减和复杂左值保持 unknown。
+这只扩展循环头语法，不解除循环体检查或末次增量溢出义务。
 起点保留源码表达式引用，不预设为线程 ID；额外循环变量/边界写入、可疑引用
 别名、调用或复杂控制流保守拒绝。普通 `output[i]` 下标读取不是对 `i` 的写入。
 递推仍以无溢出、合法域、未建立的别名前提为条件；没有证明输入覆盖、launch

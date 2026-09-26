@@ -369,17 +369,49 @@ def _recover_loop(root: dict[str, Any], loop: dict[str, Any], int_bits: int) -> 
             bound = {"kind": "constant_declaration", "declaration_id": bound_id,
                      "value": constant["value"], "range": condition_children[1].get("range")}
 
-        if increment.get("kind") != "CompoundAssignOperator" or increment.get("opcode") != "+=":
+        builtin_increment = (increment.get("kind") == "UnaryOperator" and
+                             increment.get("opcode") == "++")
+        if builtin_increment:
+            postfix = increment.get("isPostfix")
+            expected_category = "prvalue" if postfix is True else "lvalue"
+            if (type(postfix) is not bool or _type(induction) != "int" or _type(increment) != "int" or
+                    increment.get("valueCategory") != expected_category):
+                raise _Unknown("builtin_increment_type_or_category", increment.get("range"))
+            operands = _children(increment)
+            if len(operands) != 1:
+                raise _Unknown("increment_operands_ambiguous", increment.get("range"))
+            target = operands[0]
+            while target.get("kind") == "ParenExpr":
+                children = _children(target)
+                if (len(children) != 1 or _type(target) != "int" or
+                        target.get("valueCategory") != "lvalue"):
+                    raise _Unknown("builtin_increment_target_unsupported", target.get("range"))
+                target = children[0]
+            declaration = target.get("referencedDecl", {})
+            if (target.get("kind") != "DeclRefExpr" or _type(target) != "int" or
+                    target.get("valueCategory") != "lvalue" or
+                    declaration.get("kind") != "VarDecl" or _type(declaration) != "int"):
+                raise _Unknown("builtin_increment_target_unsupported", target.get("range"))
+            if declaration.get("id") != induction_id:
+                raise _Unknown("increment_uses_other_induction", target.get("range"))
+            step_value = 1
+            step_source = {"kind": "builtin_increment", "postfix": postfix,
+                           "range": increment.get("range")}
+        elif increment.get("kind") != "CompoundAssignOperator" or increment.get("opcode") != "+=":
             raise _Unknown("increment_not_plus_equal", increment.get("range"))
-        increment_children = _children(increment)
-        if len(increment_children) != 2:
+        increment_children = _children(increment) if not builtin_increment else []
+        if not builtin_increment and len(increment_children) != 2:
             raise _Unknown("increment_operands_ambiguous", increment.get("range"))
-        increment_induction, _ = _declref(increment_children[0])
+        increment_induction = induction_id
+        if not builtin_increment:
+            increment_induction, _ = _declref(increment_children[0])
         if increment_induction != induction_id:
             raise _Unknown("increment_uses_other_induction", increment_children[0].get("range"))
-        step_expr = _unwrap_value(increment_children[1])
+        step_expr = increment if builtin_increment else _unwrap_value(increment_children[1])
         step_source: dict[str, Any]
-        if step_expr.get("kind") == "IntegerLiteral" and _signed_int(step_expr):
+        if builtin_increment:
+            pass  # Preserve the observed unary AST; no synthetic += expression.
+        elif step_expr.get("kind") == "IntegerLiteral" and _signed_int(step_expr):
             try:
                 step_value = int(str(step_expr["value"]), 0)
                 if not -(1 << (int_bits - 1)) <= step_value <= (1 << (int_bits - 1)) - 1:
