@@ -67,9 +67,14 @@ Lambda隔离控制转移。动态/true/continue、隐藏条件子表达式、Duf
 
 新完整TU命令：
 `WAVEBRIDGE_JSON_HASH_MODE=one-shot PYTHONPATH=src python3 artifacts/wb-source-order-do-a9Svlt/check.py`。
-exec session9477仍在执行；只读旧报告的外部ABI/输入域/capture协议，重新运行
+exec session9477已退出0；只读旧报告的外部ABI/输入域/capture协议，重新运行
 全部子检查，不消费旧成功结论。源实现冻结；完成后核对77个文件哈希。
-当前没有终态结论，不能记为完整TU顺序通过。旧unknown工件不覆盖。
+终态报告 `artifacts/wb-source-order-do-a9Svlt/report.json`：主引用闭合与
+source_order均checked，3个copy、1个switch、7个do包装；耗时
+482.2050031340041秒，77个实现文件前后哈希一致。
+报告SHA256：`670740c46e78b69306f772786d45e26c9cea2cb80741b18e50b09f7f1efee0f6`。
+旧unknown工件不覆盖；新结果仍不建立动态lifetime、执行次数、历史值保持或
+GPU保证。代码提交 `4d68f51` 已推送origin/wb03-source-ast；本记录随后补交。
 
 ## 下一步
 

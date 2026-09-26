@@ -13,7 +13,9 @@ continue及其他未支持控制流保持unknown，不按宏名放行。
 657项CPU、181项Clang专项与demo通过。顺序子报告独立于主引用闭合结果，
 不自动解除capture协议的alive/same-activation、动态lifetime或历史保持义务。
 首轮完整vLLM重放的主引用闭合checked，但顺序子报告因DoStmt保持unknown；
-旧失败证据保留。新增受限do支持后的完整TU重放尚在执行，不记为通过。
+旧失败证据保留。新增受限do支持后的完整TU重放退出0，主引用闭合与顺序
+子报告均checked：3个复制点、1个switch、7个do包装；耗时482.21秒，77个
+实现文件前后哈希一致。未运行GPU，生命周期与历史值保持仍未建立。
 完整记录见 `.agents/handoffs/wb04-source-order-20260923.md`。
 
 ## 按值实参的跨层与CPU对照回归
