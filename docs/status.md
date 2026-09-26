@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 剩余数学调用的参数转发
+
+已精确定位softmax剩余拒绝：两处循环卡在std::exp，另外两处是动态break。
+新增不依赖函数名的单float参数转发结构检查，核对每层原参数声明身份，拒绝
+改用global/local、参数修改、算术/cast和其它额外语句。固定native AST中
+exp → expf → __nv_expf两层链结构checked；值/效果和caller实参求值仍未建立，
+没有将数学调用开放给循环，整体仍unknown。详见
+[实录](../experiments/scalar-forwarding-evidence-20260927.md)。
+完整1015项测试通过（66.554秒，native插件启用，无跳过），demo/diff通过。
+GPT-5.6 Sol实现5项真实Clang回归并复核；远端CI未核验。
+
 ## 条件调用效果接入循环恢复
 
 新增独立recover_with_builtin_effects，fresh检查同次native AST上的完整调用点，

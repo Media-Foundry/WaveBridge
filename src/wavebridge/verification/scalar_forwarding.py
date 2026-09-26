@@ -1,0 +1,132 @@
+"""Exact unary-float parameter forwarding, with no external-call semantics."""
+from wavebridge.verification.builtin_calls import _children, _typed, _Unknown
+from wavebridge.verification.getter_returns import _hash
+
+MAX_AST_NODES = 1_000_000
+HARD_MAX_AST_NODES = 10_000_000
+ATTRIBUTES = {"CUDAHostAttr", "CUDADeviceAttr", "AlwaysInlineAttr", "NoInlineAttr",
+              "NoThrowAttr", "ConstAttr", "PureAttr", "UsedAttr", "BuiltinAttr"}
+
+
+def inspect_structure(root, start_declaration_id, leaf_declaration_id, *, max_ast_nodes=None):
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    result = {"schema_version": "scalar-forwarding-structure/v1", "status": "unknown", "reason": None,
+              "scope": "exact_scalar_parameter_forwarding_chain",
+              "wrapper_declaration_ids": [], "call_edges": [],
+              "source_program_checked": False, "deployable": False,
+              "value_semantics": "not_established", "effect_semantics": "not_established",
+              "assumptions": ["AST faithfully describes one valid translation unit"],
+              "limitations": ["external leaf meaning, effects and normal return are not checked",
+                              "caller argument evaluation and prior initialization are excluded",
+                              "not an FP value-equivalence or compiled-code guarantee"],
+              "budget": {"max_ast_nodes": budget, "max_wrappers": 32}}
+    try:
+        if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
+                any(not isinstance(i, str) or not i for i in (start_declaration_id, leaf_declaration_id)) or
+                type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES):
+            raise _Unknown("invalid_inputs_or_budget")
+        nodes, pending, count = {}, [root], 0
+        while pending:
+            node = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            if not isinstance(node, dict) or not isinstance(node.get("inner", []), list):
+                raise _Unknown("malformed_ast")
+            identifier = node.get("id")
+            if isinstance(identifier, str) and identifier:
+                nodes.setdefault(identifier, []).append(node)
+            pending.extend(node.get("inner", []))
+
+        def unique(identifier):
+            candidates = nodes.get(identifier, [])
+            if len(candidates) != 1:
+                raise _Unknown("declaration_or_expression_identity_not_unique")
+            return candidates[0]
+
+        def describe(identifier):
+            declaration = unique(identifier)
+            if declaration.get("kind") != "FunctionDecl" or declaration.get("variadic"):
+                raise _Unknown("not_nonvariadic_free_function")
+            signature = declaration.get("type")
+            if signature == {"qualType": "float (float)"}:
+                suffix = ""
+            elif signature == {"qualType": "float (float) noexcept"}:
+                suffix = " noexcept"
+            else:
+                raise _Unknown("function_signature_unsupported")
+            children = _children(declaration)
+            if any(c.get("kind") not in {"ParmVarDecl", "CompoundStmt"} and
+                   (c.get("kind") not in ATTRIBUTES or _children(c)) for c in children):
+                raise _Unknown("function_declaration_structure_unsupported")
+            parameters = [c for c in children if c.get("kind") == "ParmVarDecl"]
+            if (len(parameters) != 1 or parameters[0].get("type") != {"qualType": "float"} or
+                    _children(parameters[0]) or not isinstance(parameters[0].get("id"), str) or
+                    not parameters[0]["id"] or unique(parameters[0]["id"]) is not parameters[0]):
+                raise _Unknown("parameter_not_unique_plain_float")
+            return declaration, suffix, parameters[0], [c for c in children if c.get("kind") == "CompoundStmt"]
+
+        leaf, _, leaf_parameter, leaf_bodies = describe(leaf_declaration_id)
+        if leaf_bodies or leaf.get("isDeleted") or leaf.get("explicitlyDefaulted"):
+            raise _Unknown("selected_leaf_not_external_declaration")
+        if start_declaration_id == leaf_declaration_id:
+            raise _Unknown("no_wrapper_to_check")
+        visited, current = set(), start_declaration_id
+        while current != leaf_declaration_id:
+            if current in visited or len(visited) >= 32:
+                raise _Unknown("wrapper_cycle_or_depth_budget")
+            visited.add(current)
+            declaration, _, parameter, bodies = describe(current)
+            if len(bodies) != 1:
+                raise _Unknown("wrapper_unique_body_missing")
+            statements = _children(bodies[0])
+            if (len(statements) != 1 or statements[0].get("kind") != "ReturnStmt" or
+                    len(_children(statements[0])) != 1):
+                raise _Unknown("wrapper_not_single_return")
+            call = _children(statements[0])[0]
+            _typed(call, "CallExpr", "float", "prvalue")
+            if not isinstance(call.get("id"), str) or not call["id"] or unique(call["id"]) is not call:
+                raise _Unknown("call_identity_missing_or_conflicting")
+            parts = _children(call)
+            if len(parts) != 2:
+                raise _Unknown("call_not_unary")
+            decay, argument = parts
+            if (decay.get("kind") != "ImplicitCastExpr" or decay.get("castKind") != "FunctionToPointerDecay" or
+                    len(_children(decay)) != 1):
+                raise _Unknown("callee_not_direct_function_decay")
+            callee = _children(decay)[0]
+            reference = callee.get("referencedDecl")
+            if (callee.get("kind") != "DeclRefExpr" or _children(callee) or
+                    not isinstance(reference, dict) or reference.get("kind") != "FunctionDecl" or
+                    not isinstance(reference.get("id"), str) or not reference["id"]):
+                raise _Unknown("callee_not_exact_function_reference")
+            target, suffix, target_parameter, _ = describe(reference["id"])
+            _typed(callee, "DeclRefExpr", "float (float)" + suffix, "lvalue")
+            _typed(decay, "ImplicitCastExpr", "float (*)(float)" + suffix, "prvalue")
+            if reference.get("type") != target.get("type") or reference.get("name") != target.get("name"):
+                raise _Unknown("callee_declaration_mismatch")
+            _typed(argument, "ImplicitCastExpr", "float", "prvalue")
+            if argument.get("castKind") != "LValueToRValue" or len(_children(argument)) != 1:
+                raise _Unknown("argument_not_plain_parameter_read")
+            value = _children(argument)[0]
+            _typed(value, "DeclRefExpr", "float", "lvalue")
+            ref = value.get("referencedDecl")
+            if (_children(value) or not isinstance(ref, dict) or ref.get("kind") != "ParmVarDecl" or
+                    ref.get("id") != parameter["id"] or ref.get("type") != parameter.get("type") or
+                    ref.get("name") != parameter.get("name")):
+                raise _Unknown("argument_not_current_parameter")
+            result["wrapper_declaration_ids"].append(current)
+            result["call_edges"].append({"caller_id": current, "callee_id": reference["id"],
+                                         "call_expression_id": call["id"],
+                                         "source_parameter_id": parameter["id"],
+                                         "target_parameter_id": target_parameter["id"]})
+            current = reference["id"]
+        result.update(status="checked", external_leaf_declaration_id=leaf_declaration_id,
+                      external_leaf_parameter_id=leaf_parameter["id"],
+                      input_sha256={"root": _hash(root), "start_declaration_id": _hash(start_declaration_id),
+                                    "leaf_declaration_id": _hash(leaf_declaration_id)})
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result

@@ -1015,3 +1015,17 @@ FunctionToPointerDecay → childless lvalue DeclRef，再 fresh 检查目标 wra
 额外/默认实参，不省略 receiver 求值。函数体单独成功不能覆盖调用点失败。
 conclusion.subject 为 exact_call_expression；仅覆盖所选调用及其受支持目标链，
 不覆盖包围它的其它表达式/语句/循环、FP语义或机器码执行。外部效果前提不变。
+
+## 单标量参数转发结构
+
+`scalar_forwarding.inspect_structure(root, start_declaration_id, leaf_declaration_id)`
+独立检查至多32层free-function wrapper，每层恰有一个按值float参数、float
+返回、唯一body和一条return direct-call。callee须为精确声明及类型一致的
+FunctionToPointerDecay；唯一实参必须为本函数精确ParmVarDecl的无子节点
+DeclRef经LValueToRValue读取，不能换成global/local、++、算术或cast。
+指定leaf必须为无body的单float参数声明，不能只凭函数名决定终点。
+
+checked只建立typed AST结构中的参数转发关系，不建立外部leaf效果、正常
+返回、数值等价、机器码行为或起始调用者参数求值。每条edge保留caller/callee、
+call ID和source/target参数ID；报告绑定整个root和选点。部分成功边不能升级
+未知父报告。指针/引用参数、方法、额外语句、递归、复杂参数及冲突声明均unknown。
