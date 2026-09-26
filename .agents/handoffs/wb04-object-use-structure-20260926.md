@@ -25,3 +25,15 @@
 - production.py已准备：读取固定完整AST及外部ABI/初始化选择域，不读取alive/capture协议或旧成功子报告；重新运行新组合，独立核对父/顺序/效果/cleanup状态。
 - 提交后启动，句柄记录同目录NEXT.md，运行中冻结src并核对77个实现哈希；不要因观察超时启动副本。
 - 下一步先核实终态，再审剩余生命周期/历史保持义务；本轮依赖拆分不代表这些义务已被证明。
+
+## 完整生产独立组合终态（替代前述待完成状态）
+
+- 实现5c7a81bcf5e87509c373d0e7496f81f962d797dc，远端CI 36237108672 completed/success。
+- 会话31242退出0，耗时533.7326512639993秒；production.json SHA256为3af9666dccad89a5c4d141974fa26177371020e47a966a124b02859e86944eae，目录仍为artifacts/wb-object-use-structure-zMjhda。
+- 固定完整AST SHA256 f80432e744686fdc1390308073a3cd7e1b1d1ba5afd065198dcc292ab21ee9ee；source VarDecl 0x373701f0。
+- 顶层结构闭合checked：7个显式引用、4个capture initializer、0个direct copy、3个captured copy、4个不同lambda。该计数描述语法节点，不是动态执行次数。
+- source_order、source_reference_use_effects、copy_cleanup_observations均checked；三个capture_structure及其copy_structure/object_boundary/closure_origin均checked。
+- conditional_initialization.completion仍为conditional，条件是有效构造求值正常返回；lifetime、历史值保持、opaque调用效果与可达性仍not_established。
+- 仅消费外部ABI/初始化选择域，没有读取alive/capture协议或旧成功子报告。legacy_conditional_composition_replayed=False，gpu_executed=False；不将本结果表述为整核/部署通过。
+- 77个实现哈希前后一致，终态后jq提取并经sha256sum --check --status复核退出0；源码冻结解除。
+- 下一步应继续具体核实未覆盖的生命周期/隐式清理及外部效果边界，再决定能否连接初始化字段与复制点；不能仅将这些静态checked相乘为历史保持证明。

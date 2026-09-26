@@ -12,7 +12,12 @@ opaque调用和历史值保持均未建立。顺序/复制效果/祖先清理各
 693项CPU、217项Clang专项及demo通过；38个真实native样例×3协议共114份
 旧接口完整JSON与fdf3681一致。不可达if(false)样例结构checked但实际copy计数0；
 写入/逃逸拒绝、诊断属性新结构unknown而旧值checked、未知清理/顺序不升级均有回归。
-新独立组合的完整生产TU重放待完成，未运行GPU，不将旧条件重放计作本轮证据。
+新独立组合的完整生产TU重放已退出0：7个显式引用、4个capture initializer、
+3个captured copy及4个不同lambda均完成静态绑定，顺序/复制效果/祖先cleanup
+子状态均checked。耗时533.73秒，77个实现哈希前后一致且当前复核通过，冻结解除。
+初始化completion仍conditional，lifetime/历史保持/opaque效果/可达性仍未建立；
+未运行GPU，未重放旧条件接口。工件为`artifacts/wb-object-use-structure-zMjhda/production.json`。
+5c7a81b远端CI（36237108672）已success，不将此结构验收升级为整核或部署保证。
 见`.agents/handoffs/wb04-object-use-structure-20260926.md`。
 
 ## 独立捕获结构与条件身份拆分
