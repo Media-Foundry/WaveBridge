@@ -2,6 +2,20 @@
 
 更新日期：2026-09-27。
 
+## 真实 softmax 历史链的条件通过与数组初始化边界
+
+新 native AST 的第一轮完整历史重放越过 Max，在 sum 数组初始化处 unknown。
+Clang 将其语义槽位放在 array_filler 中；新增受限 float[N] 字面量/值初始化
+检查，完整检查这些槽位，复杂表达式、调用和写入保持拒绝。
+第二轮实际得到 12 条中间语句、4 个调用 checked，unused=[]，在显式外部
+前提下 local_idx `[0,31]` 保持到最终输出循环首次入口。见
+[实录](../experiments/softmax-native-history-evidence-20260927.md)。
+该报告发生在缺失/非字符串类型字段防护之前；防护已补，最终代码全量
+1122 项测试通过（75.288 秒，native 启用、无跳过），demo/diff 通过。
+最终实现的第三轮重放已启动，尚未将其记为完成；第二轮报告不能冒充最终
+实现哈希的结果。GPT-5.6 Sol 新增 4 项真实 Clang/错形回归并只读复核。
+未运行 GPU、未建立目标循环体或整核等价，外部 getter/leaf 前提仍 unverified。
+
 ## 数组调用接入初始化历史检查
 
 `initializer_domain.check_to_statement` 已接入精确绑定的数组调用请求，

@@ -181,6 +181,39 @@ BODY_KINDS = {
 }
 
 
+def _check_literal_float_array_init(node: dict[str, Any]) -> None:
+    """Check all semantic initializer slots, including Clang's array_filler.
+
+    This intentionally excludes expression/record/reference initialization.
+    array_filler is not an ordinary `inner` child and must never be ignored.
+    """
+    def unsupported():
+        raise _Unknown("unsupported_array_initializer_effect", node.get("range"))
+
+    spelling = _type(node)
+    if not isinstance(spelling, str):
+        unsupported()
+    match = re.fullmatch(r"float\s*\[([1-9][0-9]*)\]", spelling)
+    if not match or int(match.group(1)) > 4096 or node.get("valueCategory") != "prvalue":
+        unsupported()
+    count = int(match.group(1))
+    if "array_filler" in node:
+        slots = node["array_filler"]
+        if (node.get("inner", []) != [] or not isinstance(slots, list) or
+                not 1 <= len(slots) <= count + 1 or
+                not isinstance(slots[0], dict) or slots[0].get("kind") != "ImplicitValueInitExpr"):
+            unsupported()
+    else:
+        slots = node.get("inner")
+        if not isinstance(slots, list) or len(slots) != count:
+            unsupported()
+    for slot in slots:
+        if (not isinstance(slot, dict) or slot.get("kind") not in {"FloatingLiteral", "ImplicitValueInitExpr"} or
+                _type(slot) != "float" or slot.get("valueCategory") != "prvalue" or
+                slot.get("inner", []) != [] or "array_filler" in slot):
+            unsupported()
+
+
 def _check_bool_substitution(node: dict[str, Any]) -> None:
     """Trust only Clang's concrete bool-literal replacement, not an arbitrary child."""
     children = node.get("inner")
@@ -272,6 +305,9 @@ def _check_body(body: dict[str, Any], protected_ids: set[str],
                     continue  # Fresh check covers the COMPLETE call evaluation.
                 raise _Unknown("call_effect_not_checked", node.get("range"))
             raise _Unknown("call_in_body", node.get("range"))
+        if kind == "InitListExpr":
+            _check_literal_float_array_init(node)
+            continue  # Every semantic slot was checked, not just `inner`.
         # A whitelist is intentional: asm, constructors, statement expressions,
         # opaque builtins and new AST kinds cannot silently be treated as pure.
         if kind not in BODY_KINDS:
