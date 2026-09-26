@@ -2,6 +2,16 @@
 
 更新日期：2026-09-27。
 
+## 标量实参求值效果
+
+新增完整TU上的独立标量表达式无显式写入检查，覆盖普通局部固定数组读取、
+索引和int/float算术；声明类型/存储期不明确、调用及修改表达式保守unknown。
+固定softmax实参 `elements[i][it] - max_value[i]` 条件checked，见
+[回放记录](../experiments/scalar-expression-evidence-20260927.md)。初始化、存活、
+边界/算术有效性仍未证明；exp外部leaf效果未接通，循环门控没有放宽。
+GPT-5.6 Sol新增4项真实Clang回归并复核。完整1019项测试通过（67.274秒，
+native插件启用，无跳过），demo/diff通过。无新GPU，远端CI未核验。
+
 ## 剩余数学调用的参数转发
 
 已精确定位softmax剩余拒绝：两处循环卡在std::exp，另外两处是动态break。

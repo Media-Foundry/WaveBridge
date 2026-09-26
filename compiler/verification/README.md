@@ -1029,3 +1029,16 @@ checked只建立typed AST结构中的参数转发关系，不建立外部leaf效
 返回、数值等价、机器码行为或起始调用者参数求值。每条edge保留caller/callee、
 call ID和source/target参数ID；报告绑定整个root和选点。部分成功边不能升级
 未知父报告。指针/引用参数、方法、额外语句、递归、复杂参数及冲突声明均unknown。
+
+## 标量实参求值效果
+
+`scalar_expression_effects.check_no_memory_write(root, expression_id)` 从完整TU
+重新检查精确表达式，不消费转发器或生成器的成功结论。支持普通int/float
+标量参数、automatic局部标量/固定数组读取、直接array decay、int索引及受限
+算术。读取关联完整变量声明，语义类型优先desugaredQualType；别名缺展开、
+pointer/reference/volatile、global/static/TLS、调用、赋值、自增及复杂转换
+保持unknown。数组最多8维，表达式深度64，AST默认预算100万节点。
+
+checked仅条件性表示所选表达式没有显式源码内存写入。初始化历史、对象存活、
+下标范围、算术有效性和正常完成均未证明；不建立FP环境/返回值/数值等价，
+不包含包围调用、wrapper或循环。当前未接入循环放行。
