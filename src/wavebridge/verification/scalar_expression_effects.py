@@ -22,13 +22,14 @@ def _type(node):
 
 
 def _object_type(spelling):
-    match = re.fullmatch(r"(const )?(float|int|bool)((?:\[[1-9][0-9]{0,8}\]){0,8})", spelling)
+    match = re.fullmatch(r"(const )?(float|int|unsigned int|bool)((?:\[[1-9][0-9]{0,8}\]){0,8})", spelling)
     if not match:
         raise _Unknown("object_type_unsupported")
     return (match[1] or "") + match[2], re.findall(r"\[[0-9]+\]", match[3])
 
 
-def check_no_memory_write(root, expression_id, *, max_ast_nodes=None):
+def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
+                          allow_constant_globals=False, allow_integer_bitwise=False):
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result = {"schema_version": "scalar-expression-no-memory-write/v1", "status": "unknown", "reason": None,
               "scope": "explicit_source_memory_writes_in_one_restricted_scalar_expression",
@@ -45,7 +46,8 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None):
     try:
         if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
                 not isinstance(expression_id, str) or not expression_id or
-                type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES):
+                type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES or
+                type(allow_constant_globals) is not bool or type(allow_integer_bitwise) is not bool):
             raise _Unknown("invalid_inputs_or_budget")
         index, automatic, pending, count = {}, set(), [(root, False)], 0
         while pending:
@@ -101,9 +103,18 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None):
                     raise _Unknown("reference_not_plain_declaration")
                 declaration = unique(ref["id"])
                 kind = declaration.get("kind")
+                constant_global = False
+                if allow_constant_globals and kind == "VarDecl" and spelling in {"const int", "const unsigned int"}:
+                    initializers = [n for n in _children(declaration) if n.get("kind") not in
+                                    {"CUDADeviceAttr", "CUDAConstantAttr"}]
+                    constant_global = (all(declaration.get(k) is None for k in
+                                          ("tls", "tlsKind", "thread_local", "threadLocal")) and
+                                       len(initializers) == 1 and initializers[0].get("kind") == "IntegerLiteral" and
+                                       not _children(initializers[0]) and
+                                       _type(initializers[0]) == spelling.removeprefix("const "))
                 if (kind not in {"VarDecl", "ParmVarDecl"} or ref.get("kind") != kind or
                         _type(ref) != spelling or _type(declaration) != spelling or
-                        (kind == "VarDecl" and ref["id"] not in automatic) or
+                        (kind == "VarDecl" and ref["id"] not in automatic and not constant_global) or
                         (kind == "ParmVarDecl" and dimensions)):
                     raise _Unknown("reference_not_supported_local_or_parameter")
                 reads.add(ref["id"])
@@ -128,7 +139,7 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None):
 
         def value(node, depth):
             spelling, children = prepare(node, depth, "prvalue")
-            if spelling not in {"float", "int", "bool"}:
+            if spelling not in {"float", "int", "unsigned int", "bool"}:
                 raise _Unknown("scalar_value_type_unsupported")
             kind = node.get("kind")
             if kind == "ParenExpr" and len(children) == 1:
@@ -144,12 +155,16 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None):
                     raise _Unknown("conditional_value_type_mismatch")
             elif kind == "BinaryOperator" and node.get("opcode") in {"<", "<=", ">", ">=", "==", "!="} and len(children) == 2:
                 operands = [value(child, depth + 1) for child in children]
-                if spelling != "bool" or operands[0] not in {"int", "float"} or operands[0] != operands[1]:
+                if spelling != "bool" or operands[0] not in {"int", "unsigned int", "float"} or operands[0] != operands[1]:
                     raise _Unknown("comparison_operand_type_mismatch")
+            elif (allow_integer_bitwise and kind == "BinaryOperator" and
+                  node.get("opcode") in {"&", "|", "^", "<<", ">>"} and len(children) == 2):
+                if spelling not in {"int", "unsigned int"} or any(value(child, depth + 1) != spelling for child in children):
+                    raise _Unknown("bitwise_operand_type_mismatch")
             elif kind == "BinaryOperator" and node.get("opcode") in {"+", "-", "*", "/", "%"} and len(children) == 2:
                 if spelling == "bool":
                     raise _Unknown("arithmetic_type_unsupported")
-                if node.get("opcode") == "%" and spelling != "int":
+                if node.get("opcode") == "%" and spelling not in {"int", "unsigned int"}:
                     raise _Unknown("remainder_not_int")
                 if any(value(child, depth + 1) != spelling for child in children):
                     raise _Unknown("arithmetic_operand_type_mismatch")
@@ -160,7 +175,8 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None):
                 if spelling != "bool" or type(node.get("value")) is not bool:
                     raise _Unknown("literal_type_or_value_missing")
             elif kind in {"IntegerLiteral", "FloatingLiteral"} and not children:
-                if spelling != ("int" if kind == "IntegerLiteral" else "float") or not isinstance(node.get("value"), str):
+                if ((spelling not in {"int", "unsigned int"} if kind == "IntegerLiteral" else spelling != "float") or
+                        not isinstance(node.get("value"), str)):
                     raise _Unknown("literal_type_or_value_missing")
             else:
                 raise _Unknown("unsupported_scalar_expression")

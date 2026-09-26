@@ -5,10 +5,11 @@ from wavebridge.analysis.column_loops import ASSIGNMENT_OPCODES, _hinted_loop, _
 from wavebridge.verification.builtin_calls import _Unknown
 from wavebridge.verification.getter_returns import _hash
 from wavebridge.verification.scalar_expression_effects import _type, check_no_memory_write
+from wavebridge.verification.accessible_call_effects import check_callee
 
 
 def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_scalar_operators=False,
-          native_payload=None, use_literal_defaults=False):
+          native_payload=None, use_literal_defaults=False, accessible_call_protocols=None):
     budget = 1_000_000 if max_ast_nodes is None else max_ast_nodes
     result = {"schema_version": "array-call-write-footprint/v1", "status": "unknown", "reason": None,
               "scope": "restricted_single_array_call_preserves_distinct_caller_local",
@@ -31,12 +32,19 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
     if use_literal_defaults is True:
         result["default_argument_checks"] = []
         result["literal_default_mode"] = True
+    if accessible_call_protocols is not None:
+        result["accessible_call_checks"] = []
+        result["external_leaf_effects_verified"] = False
     try:
         if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
                 any(not isinstance(value, str) or not value for value in (call_id, protected_declaration_id)) or
                 type(budget) is not int or not 1 <= budget <= 10_000_000 or
                 type(use_scalar_operators) is not bool or type(use_literal_defaults) is not bool):
             raise _Unknown("invalid_inputs_or_budget")
+        if accessible_call_protocols is not None and (
+                not isinstance(accessible_call_protocols, dict) or native_payload is None or
+                any(not isinstance(k, str) or not k for k in accessible_call_protocols)):
+            raise _Unknown("accessible_call_protocols_invalid")
         if native_payload is not None and (
                 not isinstance(native_payload, dict) or native_payload.get("ast") is not root or
                 native_payload.get("schema_version") != "clang-native-captures/v1" or
@@ -333,6 +341,7 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
                    "IfStmt", "NullStmt", "ReturnStmt"}
         calls = {"CallExpr", "CXXMemberCallExpr", "CXXOperatorCallExpr", "CXXConstructExpr", "CXXDefaultArgExpr"}
         resolved_defaults = set()
+        consumed_accessible_protocols = set()
         pending = [(body, [])]
         while pending:
             node, path = pending.pop()
@@ -356,6 +365,15 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
                 continue
             if kind in calls:
                 effect = {"kind": kind, "id": node.get("id"), "callee_body_child_path": path}
+                accessible_checked = False
+                if kind == "CallExpr" and accessible_call_protocols and node.get("id") in accessible_call_protocols:
+                    consumed_accessible_protocols.add(node["id"])
+                    checked = check_callee(native_payload, node["id"], accessible_call_protocols[node["id"]],
+                                           max_ast_nodes=budget)
+                    result["accessible_call_checks"].append(checked)
+                    accessible_checked = checked["status"] == "checked"
+                    if accessible_checked:
+                        result["assumptions"].extend(checked["assumptions"])
                 if kind == "CallExpr" and use_literal_defaults and any(
                         n.get("kind") == "CXXDefaultArgExpr" for n in children(node)[1:]):
                     try:
@@ -372,7 +390,7 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
                     except _Unknown as error:
                         effect["reason"] = str(error)
                         result["pending_effects"].append(effect)
-                elif not (kind == "CXXDefaultArgExpr" and node.get("id") in resolved_defaults):
+                elif not accessible_checked and not (kind == "CXXDefaultArgExpr" and node.get("id") in resolved_defaults):
                     result["pending_effects"].append(effect)
             elif kind not in allowed:
                 raise _Unknown("unsupported_helper_effect_node:" + str(kind))
@@ -403,6 +421,8 @@ def check(root, call_id, protected_declaration_id, *, max_ast_nodes=None, use_sc
                         effect["reason"] = str(error)
             result["pending_effects"] = [e for e in result["pending_effects"] if (e["kind"], e["id"]) not in discharged]
             result["native_payload_sha256"] = _hash(native_payload)
+        if accessible_call_protocols is not None and set(accessible_call_protocols) != consumed_accessible_protocols:
+            raise _Unknown("unused_accessible_call_protocols")
         result.update(explicit_write_targets_checked=True,
                       input_sha256={"root": _hash(root), "call_id": _hash(call_id),
                                     "protected_declaration_id": _hash(protected_declaration_id)})

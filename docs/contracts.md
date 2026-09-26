@@ -1,5 +1,21 @@
 # 模型、检查与证据协议
 
+## builtin程序可访问存储协议
+
+`builtin-accessible-storage-assumption/v1`与no_memory_write协议不同：允许
+intrinsic具有inaccessible-memory效果和convergence约束，不声称完全无副作用。
+协议绑定同次native envelope哈希、外层call ID、精确leaf call/decl ID，要求
+`leaf_preserves_accessible_storage_assumed: true`及
+`valid_execution_and_normal_return_assumed: true`，并保留非空evidence_reference。
+这些是显式外部前提，probe IR不自动验证完整生产调用的参与、有效性或lowering。
+
+`accessible_call_effects.check_callee`从完整AST fresh检查受限单return的
+标量wrapper链、全部内层实参效果及native builtin身份。不检查外层实参；
+其结论subject明确为callee_execution_only，outer_argument_effects_checked=false。
+数组检查器消费该报告后仍遍历全部外层实参、默认实参、写入与对象效果，
+所有义务通过且输入协议精确消费后才能条件建立保护对象存储保持。
+protocol错绑、未知实参、额外未使用协议均不接受。无整核或部署保证。
+
 ## 单标量外部调用效果协议
 
 `scalar-leaf-effect-assumption/v1` 绑定完整TU的`root_sha256`、外层完整

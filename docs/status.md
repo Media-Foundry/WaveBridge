@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## Max helper对独立局部存储的条件保持
+
+新增accessible_call_effects，fresh检查单return wrapper链、全部内层实参
+和native builtin身份；leaf保持程序可访问存储与有效参与仍是显式外部前提。
+数组组合继续检查所有外层实参/defaultarg及写入，unused协议拒绝。
+真实Max helper两层wrapper、8个内层实参通过，pending首次清空，在记录前提
+下protected_storage_preserved=true；见
+[实录](../experiments/array-accessible-evidence-20260927.md)。不是整核验证，
+尚未接入完整initializer历史链；source/deploy仍false，leaf evidence仍unverified。
+1113项测试通过（75.974秒，native启用、无跳过），demo/diff通过。
+GPT-5.6 Sol新增8项真实native/组合回归并复核；无GPU，远端CI未核验。
+
 ## 默认实参与shuffle leaf边界
 
 array_call_effects显式use_literal_defaults模式只检查精确形参位置的同型

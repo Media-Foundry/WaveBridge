@@ -1,0 +1,10 @@
+{
+  "schema_version": "builtin-accessible-storage-assumption/v1",
+  "native_envelope_sha256": "1aeb23bc4c4bb7891060ac378c5405873b429451471a8c51e96bfed1781e880b",
+  "call_expression_id": "0x30dce1d0",
+  "leaf_call_expression_id": "0x2e2c8318",
+  "leaf_declaration_id": "0x2e2c7d78",
+  "leaf_preserves_accessible_storage_assumed": true,
+  "valid_execution_and_normal_return_assumed": true,
+  "evidence_reference": "experiments/array-defaults-evidence-20260927.md: AOCC17 probe IR e80272fa322a4b42237f8d33a210c120f3552120c2fa9daae5926db59fa9c641 reports inaccessiblemem readwrite/convergent/nocallback; compiler-to-production binding and valid participation remain assumptions, not verified facts"
+}
