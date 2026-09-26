@@ -23,3 +23,17 @@ WB_NATIVE_CAPTURE_COMPILER=/opt/AMD/aocc-compiler-5.1.0/bin/clang++
 ADR 0003与检查器说明、docs/status.md已同步。工作区变更均属于本轮，待此交接写入后提交推送。
 
 下一项：在冻结源码后重放固定生产TU，核对独立结构入口与既有组合检查；再设计显式消费结构效果的生命周期组合，不引入noalias/value-preserved同义假设。
+
+## 后续完整TU终态（同日）
+
+- 实现固定454f5749d765eb7d887dc34da9876d906da47ff1；其CI 36233180736 completed/success。
+- 目录artifacts/wb-independent-effects-r0Eik8；check.py与run.log、三个复制点JSON、report.json均保存。
+- 命令：PYTHONPATH=src WAVEBRIDGE_JSON_HASH_MODE=one-shot python3 artifacts/wb-independent-effects-r0Eik8/check.py。
+- 执行会话95200／宿主PID254894已退出0，未重启；耗时773.8515560439992秒。
+- 输入AST文件SHA256 f80432e744686fdc1390308073a3cd7e1b1d1ba5afd065198dcc292ab21ee9ee；只从旧工件读取外部ABI、domain、capture协议，不复用旧子报告。
+- 三个独立结构点0x37382628、0x37388288、0x3738de68均checked；root均ce0f70bbec8ae7dfc727882d5185a1e13982c9facc32c52346e4f5878413f7ba，源均0x373701f0，按值目标形参均0x2135ca90、位置1。
+- fresh object_use_closure主状态、source_order、source_reference_use_effects均checked；三个capture-source-check/v3仍保留source_initialized_alive_assumed及source_program_valid_assumed。
+- 独立结构仅记录direct_same_field_read_initializer，不带值关系/live/readable/normal-return前提；仍信任完整AST和整数ABI。
+- 报告SHA256：2435d06e172c423c691b7675f8a3a2ab6de51b873a4dec646539dbc0d58290f4。
+- 77个实现哈希运行前后一致；从report.json提取implementation_hashes经sha256sum --check --status复核当前源码，退出0。源码冻结已解除。
+- 未运行GPU，不推出lifetime/历史保持/部署能力。下一步是受限对象分离与trivial析构/cleanup门控；析构反例见wb04-copy-cleanup-audit-20260926.md。

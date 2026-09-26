@@ -12,7 +12,15 @@
 分别读3与99，不可用外层引用闭合推导历史值保持。capture的alive前提未删除。
 673项CPU、197项Clang专项及demo通过，匹配原生插件已启用。
 本轮验收记录见 `.agents/handoffs/wb04-independent-copy-effects-20260926.md`；
-未重新执行5GB完整生产TU或GPU，不将上一轮完整TU结果算作本轮新验证。
+随后完整生产TU独立结构+v3组合重放已退出0：三个结构点均checked，
+组合主状态、顺序及效果子报告均checked，三个capture v3仍明确保留alive与
+source-valid前提。耗时773.85秒，77个实现哈希前后一致且与当前源码匹配。
+目录`artifacts/wb-independent-effects-r0Eik8`、会话95200已结束，源码冻结解除。
+本次未运行GPU，仍不建立生命周期、历史保持或部署能力。
+454f574远端CI（36233180736）已success。
+另以真实CPU反例确认隐式trivial copy不意味着析构无副作用：按值参数及source
+析构分别更新计数，结构checked而cleanup正确保持未建立。未修改实现或增加
+测试数，见`.agents/handoffs/wb04-copy-cleanup-audit-20260926.md`。
 
 ## 生命周期前提审计：禁止循环解除alive
 
