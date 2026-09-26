@@ -339,6 +339,42 @@ class ObjectUseClosureClangTests(unittest.TestCase):
         self.assertFalse(report["source_program_checked"])
         self.assertFalse(report["deployable"])
 
+    def test_ancestor_cleanup_does_not_cover_other_earlier_cleanup(self):
+        for name in ("standalone_temporary_before_copy", "ended_scope_before_copy"):
+            with self.subTest(name=name):
+                report = self.run_structure(name)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["source_order"]["status"], "checked")
+                self.assertEqual(report["source_reference_use_effects"]["status"], "checked")
+                cleanup = report["copy_cleanup_observations"]
+                self.assertEqual(cleanup["status"], "checked")
+                self.assertEqual(cleanup["other_scope_destructors_and_cleanup_events"], "not_established")
+                self.assertEqual(report["source_object_preservation"], "not_established")
+                self.assertFalse(report["deployable"])
+                if name == "standalone_temporary_before_copy":
+                    function = next(n for n in _walk(self.payload["ast"])
+                                    if n.get("kind") == "FunctionDecl" and n.get("name") == name)
+                    wrapper_ids = {n["id"] for n in _walk(function)
+                                   if n.get("kind") == "ExprWithCleanups"}
+                    side_effecting = {observation["expression_id"]
+                                      for observation in self.payload["expression_cleanups"]
+                                      if observation["expression_id"] in wrapper_ids
+                                      and observation["cleanups_have_side_effects"] is True}
+                    self.assertTrue(side_effecting)
+                    self.assertTrue(side_effecting.isdisjoint(
+                        {observation["expression_id"] for observation in cleanup["wrappers"]}))
+        # CPU main verifies each earlier destructor increments a global count
+        # before the later copy, while the copied source field remains 3.
+        # This is a scope-boundary witness, not a source-mutation counterexample.
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "earlier-cleanups"
+            built = subprocess.run([COMPILER, "-std=c++17", "-DWAVEBRIDGE_OBJECT_USES_EXECUTION",
+                                    str(Path(__file__).parent / "fixtures/object_uses.cpp"),
+                                    "-o", str(executable)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(built.returncode, 0, built.stderr)
+            run = subprocess.run([str(executable)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(run.returncode, 0, run.stderr)
+
     def test_cleanup_metadata_must_exactly_bind_copy_ancestor_wrappers(self):
         baseline = self.run_check("captured_by_value_flow")
         cleanup = baseline["copy_cleanup_observations"]

@@ -2,6 +2,20 @@
 
 更新日期：2026-09-26。
 
+## 复制前其他清理的范围回归
+
+新增真实源码/native/CPU回归：独立完整表达式中的临时对象，以及复制前已结束
+嵌套作用域的自动对象，均可先执行有副作用的析构，而复制祖先cleanup子报告仍
+checked。这符合其当前范围：`other_scope_destructors_and_cleanup_events`及
+`source_object_preservation`仍未建立，不构成已证明的错误放行。两个析构只增加
+独立全局计数，复制值仍为3；不能把该样例称为源对象被修改的反例。
+694项CPU、218项Clang专项及demo通过，原生插件已启用；日志位于
+`artifacts/wb-earlier-cleanup-ymF4CV/`。本轮未修改checker、未重跑生产TU或GPU。
+下一步应区分先前已结束的清理与包围复制点的作用域退出清理；生产案例中的
+`OptionalCUDAGuard`属于后者，不能一概拒绝所有非平凡局部对象。自动局部对象
+的作用域退出析构尚需精确声明/作用域/析构绑定，现有expression cleanup观测
+不提供完整证据。不得由祖先检查通过推出整个复制前缀无清理效果。
+
 ## 独立显式引用结构组合
 
 `object_use_closure.inspect_structure`不接收capture/alive协议，使用独立复制与

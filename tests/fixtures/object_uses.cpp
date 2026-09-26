@@ -115,6 +115,16 @@ void side_effect_cleanup_copy() {
   Config source(3);
   (SideEffectTemporary{}, [&]() { Config target(source); }());
 }
+void standalone_temporary_before_copy() {
+  Config source(3);
+  SideEffectTemporary{};
+  observe_value(source);
+}
+void ended_scope_before_copy() {
+  Config source(3);
+  { SideEffectTemporary local; }
+  observe_value(source);
+}
 void by_reference_flow() {
   Config source(3);
   change_reference(source);
@@ -189,6 +199,11 @@ int main() {
   if (observed_value != 3 || mutation_calls != 2) return 2;
   by_reference_flow();
   if (observed_value != 99 || mutation_calls != 3) return 3;
+  cleanup_observation_count = 0;
+  standalone_temporary_before_copy();
+  if (cleanup_observation_count != 1 || observed_value != 3) return 5;
+  ended_scope_before_copy();
+  if (cleanup_observation_count != 2 || observed_value != 3) return 6;
   return 0;
 }
 #endif

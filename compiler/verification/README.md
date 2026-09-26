@@ -588,6 +588,12 @@ one-shot会分配完整字符串与UTF-8字节缓冲区，仅适用于已评估�
 
 ## 包围复制点的原生清理观测
 
+真实回归额外覆盖两类不在祖先范围内的清理：复制前独立语句的临时对象析构、
+复制前已经结束的嵌套作用域中的自动对象析构。二者可增加全局计数，同时祖先
+检查仍checked；报告中的其他作用域清理和源对象保持仍未建立。该样例没有修改
+源值，不是源值错误放行的反例。包围复制点的作用域正常退出清理与先前已经结束
+的清理必须分别处理；当前尚无完整复制前清理清单或自动局部对象析构效果证明。
+
 `object_use_closure.copy_cleanup_observations` 是另一个独立状态的子报告，
 schema为`copy-enclosing-cleanup-observations/v1`。它沿所选copy的唯一语义祖先链
 收集所有`ExprWithCleanups`，检查重复AST节点一致，并要求同次native metadata
