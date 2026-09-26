@@ -905,6 +905,11 @@ unknown。原先闭合扫描拒绝的空AST placeholder仍然拒绝，不为顺�
 `frozen_reference_implementation_checked`、`rsqrt_contract_verified` 和
 `deployable` 均保持 false，不进入 GPU 放行门控。
 
+首例的 [rsqrt ISA 核验](../../experiments/rsqrt-isa-evidence-20260927.md) 将当前
+编译链与 RDNA3 指令文档分开记录；`experiments.rsqrt_domain_audit` 对冻结
+长度域重新计算正分母区间，不依赖预先假设的 rsqrt 精度。文档支持的精度
+前提不等于已验证实际执行契约，也不会自动填入上述 checker 或放宽数值协议。
+
 ## 显式源引用的复制效果组合
 
 `object_use_closure.source_reference_use_effects` 只消费本次fresh执行的

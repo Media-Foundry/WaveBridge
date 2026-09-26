@@ -275,3 +275,65 @@ $G=(1+\rho)(1+h)I\le F$ 及 $(1+u)XG+\eta\le F$，从而覆盖rsqrt结果和
 lowering不能自动继承该结论。真实rsqrt相对误差、除法/乘法误差律仍未验证。
 当前参考是理想实数函数，不是仓库float64 fsum/sqrt及float32输出的已执行
 reference；后者误差未连接，因此 numeric_contract_checked 继续为false。
+
+## ISA Applicability Lemma：正规数区间与 ULP 转换
+
+### Claim and Status
+
+PROVABLE AS STATED（条件数学命题；不证明硬件符合 ISA）。若下述区间检查
+成立，后缀的 rsqrt 输入不进入已观察到的非正规数缩放分支；若进一步采用
+文档化的单 ULP 精度契约，则保守相对界 $\rho=2^{-22}$ 足够。
+
+### Assumptions and Notation
+
+保留平方和及 division/addition 的外部误差律与非负性。转换前 epsilon
+位于 $[e_0,e_1]$，转换也满足 $u,\eta$ 的局部律。单侧平方和报告给出
+$|R-Q|\le aQ+b$，$Q\le NX^2$。rsqrt 区间的计算不依赖任何 rsqrt 误差假设。
+
+ISA 精度是额外可信基础，不是前一段假设的推论。
+[RDNA3 ISA §16.8、印刷页276](https://docs.amd.com/api/khub/documents/UkT_UPQL21KfKAMUBFnZTw/content)
+记载该指令的单 ULP 精度与非正规数处理。为避免把 ULP 转换定义藏在推导里，
+此处明确覆盖两种契约解释：精确实数结果所在 binade 的一 ULP；或相对正确
+舍入 binary32 结果至多一个相邻表示值。更弱的测量统计不属于该契约。
+
+### Strategy and Dependencies
+
+先只用总和界和转换/加法误差律建立正区间，再推断 rsqrt 输出量级；最后
+使用 binary32 间距转换 ULP 界。没有用所求 rsqrt 界反向建立输入域。
+
+### Proof Step 1：不依赖 rsqrt 的输入区间
+
+令 $e_-=(1-u)e_0-\eta$、$e_+=(1+u)e_1+\eta$，
+$R_+=(1+a)NX^2+b$。由 division 非负性，$d\ge0$。于是
+$$
+L=(1-u)e_- -\eta\le E,
+\qquad
+E\le H=(1+u)((1+u)R_+/N+\eta+e_+)+\eta.
+$$
+若 $L\ge2^{-20}$ 且 $H\le16$，则 $E\in[2^{-20},16]$，严格高于最小
+binary32 正规数 $2^{-126}$，且 $z=E^{-1/2}\in[1/4,1024]$。
+精确 division/addition 结果由对应非负上界覆盖且不超过 $H$，所以这些
+步骤的有限域条件也得到满足。此结论仅在同一局部误差律和非负性前提下。
+
+### Proof Step 2：保守 ULP 转换
+
+对正常 binade 内精确值 $z\in[2^k,2^{k+1})$，binary32 间距为 $2^{k-23}$，
+不超过 $2^{-23}z=2uz$。按精确值 binade 定义的一 ULP 因而给出 $2u$ 相对界。
+
+另一种解释下令 $z_0=\operatorname{RN}_{32}(z)$。上述范围远离溢出和
+非正规数边界，所以 $|z_0-z|\le uz$，$z_0\le(1+u)z$。与 $z_0$ 相邻
+表示值的最大距离不超过 $2uz_0$；在二的幂边界，较小一侧间距更小，仍成立。
+若硬件结果与 $z_0$ 至多相差一个相邻值，则
+$$
+|g-z|\le2uz_0+uz\le(3u+2u^2)z<4uz=2^{-22}z.
+$$
+两种明确的解释均由 $\rho=2^{-22}$ 覆盖。零输入到 rsqrt 已被 $L>0$ 排除；
+原始行全零仍可由正 epsilon 满足区间。∎
+
+### Open Risks
+
+`experiments.rsqrt_domain_audit` 遍历冻结长度和两种累计模式/宽度，报告精确
+区间；这不是输入值抽样，但依赖显式路由和局部误差律。当前编译 IR/汇编
+已人工核对直接 rsq 与缩放选择链；未自动验证所有执行机器码、实际入口与
+运行环境对应，也未建立其他运算误差律和冻结 reference 的误差。
+不能把文档精度、有限模型域检查或人工指令核对单独当作整核部署许可。

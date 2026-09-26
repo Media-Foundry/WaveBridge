@@ -2,6 +2,27 @@
 
 更新日期：2026-09-27。
 
+## rsqrt 的 ISA 依据与完整列长域检查
+
+本轮核对既有 gfx1100 基线 IR/汇编与当前 SDK，确认正常支路为
+rsqrtf→OCML→amdgcn.rsq→V_RSQ_F32；非正规数支路有缩放和恢复。官方RDNA3
+ISA记载单ULP精度与denorm刷新，不能用HIP API有限测试表代替这一依据。
+详见 [指令路径与文档证据](../experiments/rsqrt-isa-evidence-20260927.md)。
+
+新增CPU审计从fresh平方和界与其他显式误差律计算分母范围，不使用rsqrt
+误差假设。冻结 ncols=1..1023、FMA/分离、显式宽度32/64共4092个配置，
+聚合区间约 `[9.999998807907139e-7, 4.001004530074643]`，严格位于正规域；
+输入值和epsilon按区间处理而非抽样。条件证明明确两种ULP解释均可用保守
+rho=2^-22覆盖，因此后续有了文档支持的数值前提，而不只是假设一个常数。
+
+实际运行binary/设备与ISA适用对应、其他实际算术律、冻结reference舍入和
+容限仍待连接。没有编译/GPU新运行，不授权native64，所有部署标记仍false。
+proof-writer补齐条件命题与依赖；GPT-5.6 Sol只读独立复核未发现阻断问题。
+
+新增3项回归；完整869项CPU测试通过（68.464秒，匹配native插件启用，无跳过），
+demo与diff检查通过。工件 artifacts/wb-rsqrt-domain-yOlR83/，报告SHA256：
+`8da39ee1f0a9a8238946e710a2d0143ada021b9987f37d1b645172f9637a2ea9`。
+
 ## 归一化输出的条件误差界
 
 新增 `verification.rmsnorm_roundoff.compare`，fresh 连接局部平方和/路由误差，
