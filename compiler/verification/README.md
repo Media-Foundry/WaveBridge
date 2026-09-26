@@ -1224,3 +1224,14 @@ checked仅表示正常到达目标首次入口时，在源有效、无别名、�
 允许 Clang 模板共享 ID，且所有出现必须内容完全一致；根、变量引用与其他
 表达式仍须唯一。报告记录共享次数，内容冲突不放行。guarded-store 层启用
 此选项，并保留失败效果子报告及表达式 ID；不会把 unknown 隐去。
+
+`guarded_stores.check_entry_pointer` 在 fresh 相对写入检查之后，绑定入口
+输出参数、直接自动 int offset 声明、唯一直接 builtin `+=` 与外层循环顺序。
+offset 必须为精确 typed `row*stride+source`，逐乘/加检查溢出；row/stride
+区间是 offset 初始化求值时的显式外部快照域，不是由声明初始化推得。
+全函数闭合审计指针变量与 offset 的读写/逃逸，包含 `array_filler`；
+除唯一更新 LHS 外仅接受按值读，地址/引用逃逸与不支持的控制/捕获拒绝。
+结果是入口指针相对元素偏移
+`row_snapshot*stride_snapshot+source+outer*count+inner*step`，不合并 stride/count。
+标准抽象机、无非局部控制转移、有效同一数组对象等仍是显式条件；分配容量、
+动态别名、完整 lane 集合、浮点及部署均未建立。旧 `check` 不升级该保证。

@@ -2,6 +2,20 @@
 
 更新日期：2026-09-27。
 
+## 入口输出指针到 store 的条件历史
+
+新增 `guarded_stores.check_entry_pointer`：fresh 相对 store 检查之后，绑定
+同一直接函数体中的自动 offset 声明、唯一 `dst += offset` 与目标外层循环。
+恢复 `row*stride+source` 的有类型快照，再闭合审计 dst/offset 的全部引用；
+数组 `array_filler` 也必须遍历，引用/地址逃逸、二次或条件更新、跳转等拒绝。
+只签发入口指针相对元素偏移，不推断 stride=count、分配容量或完整 lane 集合。
+GPT-5.6 Sol 补充真实 Clang 回归并只读复核，隔离工作树完整 1148 项通过
+（92.048 秒，native 启用）。代码与测试逐字节移回后，主树完整 1148 项
+再次通过（91.888 秒，native 启用、无跳过），demo/diff 通过。
+真实 pointer-history 重放已启动，尚未取得终态；见
+[记录](../experiments/softmax-pointer-history-evidence-20260927.md)。新 row/stride
+快照域明确为外部开发窗口，不是源码恢复或实际 launch 证据。
+
 ## 真实 store 条件的转换与模板字面量边界
 
 原真实重放停在 `sum[i]==0`：IntegralToFloating 未支持，开启受限转换后
@@ -12,9 +26,12 @@
 GPT-5.6 Sol 补充 6 项真实 Clang/错形回归并复核；完整 1143 项测试通过
 （82.527 秒，native 启用、无跳过），demo/diff 通过。日志在
 `artifacts/wb-store-cast-check-WTH9q6/`。
-新完整重放运行于 `artifacts/wb-softmax-store-cast-wsoFEy/`，尚未取得终态。
-原 `e546efa` 的远端 CI 三项已核验成功，不作为本轮修复的远端 CI 证据。
-指针历史扩展暂缓，优先关闭当前真实源码阻断；无 GPU 或数值保证升级。
+该完整重放已 checked，inputs_unchanged=true，核对当时实现哈希一致。
+两个互斥静态 store、每 work 路径一次，真实相对下标为 outer*count+it*32。
+报告 SHA256 为 `54f69184c333675a3e45abd693df8f9b70e57ea18ebefa7301a27f566a9307eb`。
+`f19281c` 的远端 CI `36279805954` 已核验 completed/success。
+该报告仍保留 pointer-history/full-output-coverage/source/deployable=false；
+无 GPU 或数值保证升级，随后才继续上面的独立指针历史层。
 
 ## 实际 work 路径与相对输出下标
 

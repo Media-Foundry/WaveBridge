@@ -1,0 +1,11 @@
+{
+  "schema_version": "softmax-pointer-snapshot-domain/v1",
+  "native_sha256": "a59c12247f796fe2034ba03ecc43782f77ac3942496b18a140ceacbb24c7ff45",
+  "offset_declaration_name": "idx_offset",
+  "row_declaration_name": "first_batch",
+  "stride_parameter_position": 3,
+  "stride_parameter_name": "stride",
+  "row_interval": [0, 4095],
+  "stride_interval": [0, 128],
+  "scope": "UNVERIFIED external development analysis window at idx_offset initializer evaluation, frozen before pointer-history replay; not recovered launch/row facts or a GPU workload. This window covers up to 4096 row indices and nonnegative stride up to the existing 128-column analysis capacity. It does not assert stride equals element_count or validate allocation."
+}

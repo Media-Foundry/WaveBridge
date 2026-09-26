@@ -44,7 +44,9 @@ def direct_target(call):
 
 
 def run(native, leaf_protocol, output, *, nested_entry=False, iteration_domain_protocol=None,
-        guarded_stores=False):
+        guarded_stores=False, pointer_domain_protocol=None):
+    if pointer_domain_protocol is not None and not guarded_stores:
+        raise ValueError("pointer_domain_requires_guarded_stores")
     if guarded_stores and (not nested_entry or iteration_domain_protocol is None):
         raise ValueError("guarded_stores_requires_nested_iteration_domain")
     if sha(native) != NATIVE_SHA or sha(leaf_protocol) != LEAF_PROTOCOL_SHA or output.exists():
@@ -52,6 +54,13 @@ def run(native, leaf_protocol, output, *, nested_entry=False, iteration_domain_p
     dependencies = {str(p): sha(p) for p in (Path(__file__), leaf_protocol,
                     Path(__file__).with_name("pytorch_softmax_intake.py"))}
     external_domain = None
+    pointer_domain = None
+    if pointer_domain_protocol is not None:
+        dependencies[str(pointer_domain_protocol)] = sha(pointer_domain_protocol)
+        pointer_domain = json.loads(pointer_domain_protocol.read_text())
+        if (pointer_domain.get("schema_version") != "softmax-pointer-snapshot-domain/v1" or
+                pointer_domain.get("native_sha256") != NATIVE_SHA):
+            raise ValueError("pointer_domain_native_mismatch")
     if iteration_domain_protocol is not None:
         if not nested_entry:
             raise ValueError("iteration_domain_requires_nested_entry")
@@ -172,8 +181,32 @@ def run(native, leaf_protocol, output, *, nested_entry=False, iteration_domain_p
                 output_parameter = parameters[0]
                 if output_parameter.get("name") != "dst":
                     raise ValueError("output_parameter_binding_mismatch")
-                checked = check_stores(*arguments, output_parameter["id"],
-                                       use_static_branches=True, use_source_constants=True)
+                if pointer_domain is None:
+                    checked = check_stores(*arguments, output_parameter["id"],
+                                           use_static_branches=True, use_source_constants=True)
+                else:
+                    from wavebridge.verification.guarded_stores import check_entry_pointer
+
+                    positions = pointer_domain.get("stride_parameter_position")
+                    if type(positions) is not int or not 0 <= positions < len(parameters):
+                        raise ValueError("pointer_stride_position_invalid")
+                    stride = parameters[positions]
+                    if stride.get("name") != pointer_domain.get("stride_parameter_name"):
+                        raise ValueError("pointer_stride_binding_mismatch")
+                    pointer_roles = {}
+                    for role in ("offset", "row"):
+                        matches = [n for n in walk(entry) if n.get("kind") == "VarDecl" and
+                                   n.get("name") == pointer_domain.get(role + "_declaration_name")]
+                        if len(matches) != 1:
+                            raise ValueError("pointer_snapshot_selection_not_unique")
+                        pointer_roles[role] = matches[0]["id"]
+                    binding = {"offset_declaration_id": pointer_roles["offset"],
+                               "row_declaration_id": pointer_roles["row"],
+                               "stride_parameter_id": stride["id"],
+                               "row_interval": pointer_domain["row_interval"],
+                               "stride_interval": pointer_domain["stride_interval"]}
+                    checked = check_entry_pointer(*arguments, output_parameter["id"], pointer_binding=binding,
+                                                  use_static_branches=True, use_source_constants=True)
             else:
                 checked = check_nested_iteration_bounds(*arguments,
                     use_static_branches=True, use_source_constants=True)
@@ -188,6 +221,7 @@ def run(native, leaf_protocol, output, *, nested_entry=False, iteration_domain_p
               "native_sha256": NATIVE_SHA, "call_protocols": history_protocols, "leaf_contract": contract,
               "nested_entry": nested_entry, "work_call_protocols": work_protocols,
               "guarded_stores": guarded_stores,
+              "pointer_domain_protocol": pointer_domain,
               "iteration_domain_protocol": external_domain,
               "integer_types": abi, "implementation_before": before, "implementation_after": after,
               "driver_dependencies": dependencies, "GPU_executed": False,
@@ -209,6 +243,8 @@ if __name__ == "__main__":
     parser.add_argument("--nested-entry", action="store_true")
     parser.add_argument("--iteration-domain-protocol", type=Path)
     parser.add_argument("--guarded-stores", action="store_true")
+    parser.add_argument("--pointer-domain-protocol", type=Path)
     args = parser.parse_args()
     run(args.native, args.leaf_protocol, args.output, nested_entry=args.nested_entry,
-        iteration_domain_protocol=args.iteration_domain_protocol, guarded_stores=args.guarded_stores)
+        iteration_domain_protocol=args.iteration_domain_protocol, guarded_stores=args.guarded_stores,
+        pointer_domain_protocol=args.pointer_domain_protocol)

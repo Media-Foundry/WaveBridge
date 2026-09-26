@@ -65,8 +65,16 @@ literal、冲突副本、转换操作数写入/调用、类型与预算负例；
 
 最终实现已重新启动完整重放，同上命令仅更换输出目录为
 `artifacts/wb-softmax-store-cast-wsoFEy/replay.json`，日志为同目录 `run.log`。
-该新重放尚未取得终态，不记为通过；原 unknown 报告保留，不覆盖。
+该新重放已结束为 checked、inputs_unchanged=true，并核对终态实现哈希一致。
+报告 SHA256 为 `54f69184c333675a3e45abd693df8f9b70e57ea18ebefa7301a27f566a9307eb`。
+store IDs 为 `0x30de61a0`、`0x30de6678`，路径计数集合 `[1]`；相对下标
+为 outer*element_count+it*32。条件子报告记录 12 个内容一致的共享零字面量。
+三个效果子报告全部 checked；原 unknown 报告保留，不覆盖。
+完整输出覆盖、pointer-history、lane-family、source 与 deployable 仍 false。
 
 修复后完整验收：1143 项通过、82.527 秒，native 启用且无跳过，demo/diff
 通过；日志 `artifacts/wb-store-cast-check-WTH9q6/`。新增 6 项转换回归由
 GPT-5.6 Sol 提供并只读复核，包含真实模板共享及冲突变体；没有数值/GPU结论。
+远端修复提交 `f19281cb4923a697f862a3cfeb1dd213d03425f5` 的
+[CI 36279805954](https://github.com/Media-Foundry/WaveBridge/actions/runs/36279805954)
+已只读核验为 completed/success。
