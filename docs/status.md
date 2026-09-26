@@ -2,6 +2,20 @@
 
 更新日期：2026-09-27。
 
+## 数组调用接入初始化历史检查
+
+`initializer_domain.check_to_statement` 已接入精确绑定的数组调用请求，
+重新运行数组 checker 并要求 protected_storage_preserved=true；不接受
+旧成功报告代替检查。子检查外部假设传入父报告，错绑、未知效果与未消费请求
+保持 unknown。协议见 [contracts](contracts.md#初始化历史中的数组调用请求)。
+GPT-5.6 Sol 新增 5 项真实 Clang/native 组合回归，完整 1118 项测试通过
+（75.302 秒，native 启用、无跳过），demo/diff 通过。日志在
+`artifacts/wb-initializer-array-history-c8qvc6/`。
+本次未重放真实 softmax 新 AST 的完整历史链，未运行 GPU 或核验远端 CI；
+不能把 fixture 条件通过升级为生产 kernel 验证，source/deploy 仍 false。
+下一步在新 AST 上重新绑定初始化、最终输出循环和全部实际消费的调用协议。
+交接见 `.agents/handoffs/initializer-array-history-20260927.md`。
+
 ## Max helper对独立局部存储的条件保持
 
 新增accessible_call_effects，fresh检查单return wrapper链、全部内层实参

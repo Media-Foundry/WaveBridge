@@ -469,3 +469,21 @@ checked只表示两处指针更新的整数RHS关系及无溢出；矩形域可�
 路径并核对每层原生正面映射；不通过元数据缺失推导任何否定事实。
 条件身份结论不覆盖对象内容、调用是否发生或 launch；evidence_reference 只记录，
 不当作已核实证据。原生元数据属于可信前端，既有部署门控仍保持 false。
+
+## 初始化历史中的数组调用请求
+
+`initializer_domain.check_to_statement` 的 `call_protocols` 可包含
+`array-call-preservation-request/v1`。这是重新检查的请求，不是成功证明；
+仅允许以下五个字段：`schema_version`、`native_envelope_sha256`、
+`call_expression_id`、`protected_declaration_id`、`accessible_call_protocols`。
+哈希绑定当前完整 native payload，两个 ID 分别绑定实际调用和历史链保护变量；
+内层 accessible 协议映射最多 64 项，交由数组 checker 重新绑定、检查。
+
+历史检查器启用数组 checker 的 scalar-operator、literal-default 和 native
+对象检查，要求 fresh 结果同时满足 `status=checked` 和
+`protected_storage_preserved=true`。成功子检查的假设并入父报告；失败调用 ID
+保留用于诊断。旧成功报告、错绑请求和未消费请求不能解除义务。
+
+该结果仅覆盖初始化之后到目标语句首次正常进入前的值保持，不覆盖目标语句体、
+后续迭代、可达性、线程坐标含义或 GPU 执行。数组范围、对象存活、有效执行、
+外部 leaf 效果等条件不会因组合而被证明；source/deploy 标记仍为 false。

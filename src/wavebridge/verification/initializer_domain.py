@@ -24,6 +24,7 @@ def check_to_statement(payload, declaration_id, statement_id, leaf_contract, int
         _check_body, _static_bool_value, _hinted_loop, _Unknown as BodyUnknown)
     from wavebridge.verification.builtin_calls import check_call_no_memory_write
     from wavebridge.verification.scalar_call_effects import check_no_memory_write as check_scalar_call
+    from wavebridge.verification.array_call_effects import check as check_array_call
 
     result = {"schema_version": "initializer-to-statement-preservation/v1", "status": "unknown", "reason": None,
               "scope": "local_value_at_first_entry_to_later_direct_statement",
@@ -95,8 +96,10 @@ def check_to_statement(payload, declaration_id, statement_id, leaf_contract, int
                                "target_statement_id": statement_id, "declaration_statement_index": begin,
                                "target_statement_index": end}
         loops_used = 0
+        native_hash = None
 
         def call_effect(node):
+            nonlocal native_hash
             identifier = node.get("id")
             if identifier not in call_protocols:
                 result["unknown_call_id"] = identifier
@@ -104,10 +107,33 @@ def check_to_statement(payload, declaration_id, statement_id, leaf_contract, int
             checks = result["call_effect_checks"]
             if identifier not in checks:
                 protocol = call_protocols[identifier]
-                checks[identifier] = (check_scalar_call(root, identifier, protocol, max_ast_nodes=max_ast_nodes)
+                if protocol.get("schema_version") == "array-call-preservation-request/v1":
+                    if native_hash is None:
+                        native_hash = _hash(payload)
+                    expected_keys = {"schema_version", "native_envelope_sha256", "call_expression_id",
+                                     "protected_declaration_id", "accessible_call_protocols"}
+                    effects = protocol.get("accessible_call_protocols")
+                    if (set(protocol) != expected_keys or protocol.get("native_envelope_sha256") != native_hash or
+                            protocol.get("call_expression_id") != identifier or
+                            protocol.get("protected_declaration_id") != declaration_id or
+                            not isinstance(effects, dict) or len(effects) > 64):
+                        checks[identifier] = {"status": "unknown", "reason": "array_request_missing_or_misbound"}
+                    else:
+                        checks[identifier] = check_array_call(root, identifier, declaration_id,
+                            max_ast_nodes=max_ast_nodes, use_scalar_operators=True, use_literal_defaults=True,
+                            native_payload=payload, accessible_call_protocols=effects)
+                        if (checks[identifier]["status"] == "checked" and
+                                checks[identifier].get("protected_storage_preserved") is not True):
+                            checks[identifier] = {"status": "unknown", "reason": "array_storage_preservation_missing"}
+                else:
+                    checks[identifier] = (check_scalar_call(root, identifier, protocol, max_ast_nodes=max_ast_nodes)
                                       if protocol.get("schema_version") == "scalar-leaf-effect-assumption/v1"
                                       else check_call_no_memory_write(payload, identifier, protocol,
                                                                      max_ast_nodes=max_ast_nodes))
+                if checks[identifier]["status"] == "checked":
+                    result["assumptions"].extend(checks[identifier].get("assumptions", []))
+            if checks[identifier]["status"] != "checked":
+                result["unknown_call_id"] = identifier
             return checks[identifier]["status"] == "checked"
 
         def branch(node):
