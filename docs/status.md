@@ -2,6 +2,19 @@
 
 更新日期：2026-09-27。
 
+## softmax 调用身份审计
+
+新增固定 AST 调用清单 driver，保留生产解析结果与诊断观察 ID 的区别。
+观察到 26 个声明身份/30 个调用位置（17 个唯一 body、9 个无 body），不算
+动态可达性或效果证明。独立复核定位：三处 numeric_limits 调用使用
+DeclRefExpr → static CXXMethodDecl，而现有该分支只接受 FunctionDecl。
+唯一 method body 可继续追到 builtin 外部叶，但返回值/无写/正常完成未建立。
+下一步修精确 static method 身份路径，不按函数名字开放调用。
+详见 [审计实录](../experiments/softmax-call-audit-20260927.md)。本轮核心门控
+未改变，softmax 总体仍 unknown，无新 GPU、前端重采集或留出结论。
+完整 963 项 CPU 测试通过（66.917 秒，匹配 native 插件启用，无跳过）；
+新增 4 项定向测试及 demo/diff 检查通过，远端 CI 未核验。
+
 ## 模板 bool、循环 hint 与首个 softmax 局部递推
 
 新增具体 bool literal 替换的受限 effect 检查，不删除未选分支；body 中无
