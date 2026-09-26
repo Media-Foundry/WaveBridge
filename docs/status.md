@@ -2,6 +2,16 @@
 
 更新日期：2026-09-27。
 
+## 完整单返回 builtin wrapper 检查
+
+新入口从完整 AST fresh 检查最多32层零参float free/static单返回链，并接入
+末端 builtin 条件效果检查；不会因内部子调用通过而提升任意函数。写入、额外
+语句、递归、未知调用、复杂返回等拒绝。真实CUDA numeric_limits两层链在显式
+未验证前提下checked；不是整核、浮点值或GPU结论。外部caller求值仍排除，
+循环门控不变。详见 [回放与范围](../experiments/builtin-wrapper-evidence-20260927.md)。
+最终完整1000项测试通过（66.335秒，native插件启用，无跳过），demo/diff通过。
+GPT-5.6 Sol实现5项真实Clang回归并复核；无新GPU，远端CI未核验。
+
 ## builtin 条件无写入组合
 
 新增 builtin_calls.check_no_memory_write：fresh 核对原生结构后，消费绑定

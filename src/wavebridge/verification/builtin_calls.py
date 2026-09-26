@@ -212,3 +212,124 @@ def check_no_memory_write(payload, call_expression_id, effect_protocol, *, max_a
     except (TypeError, ValueError, RecursionError):
         result["reason"] = "unsupported_effect_protocol_representation"
     return result
+
+
+def check_wrapper_no_memory_write(payload, start_declaration_id, effect_protocol, *, max_ast_nodes=None):
+    """Check entire single-return wrapper bodies, not their external call sites."""
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    result = {
+        "schema_version": "builtin-wrapper-no-memory-write/v1", "status": "unknown", "reason": None,
+        "scope": "restricted_single_return_wrapper_chain_under_external_builtin_effect",
+        "source_program_checked": False, "deployable": False,
+        "value_semantics": "not_established", "external_leaf_effect_verified": False,
+        "wrapper_declaration_ids": [], "leaf_check": None,
+        "assumptions": ["native envelope and embedded AST faithfully describe one compiler ASTContext",
+                        "source calls and wrapper definitions are valid and denote the bound implementations",
+                        "the supplied builtin no-write and normal-return premises hold"],
+        "limitations": ["external caller receiver and argument evaluation are excluded",
+                        "no return value, FP-environment, purity or machine-code equivalence guarantee",
+                        "external effect evidence remains unverified; no loop or deployment acceptance"],
+        "budget": {"max_ast_nodes_per_scan": budget, "max_wrappers": 32},
+    }
+    try:
+        if (type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES or
+                not isinstance(payload, dict) or not isinstance(effect_protocol, dict) or
+                not isinstance(start_declaration_id, str) or not start_declaration_id):
+            raise _Unknown("invalid_inputs_or_budget")
+        leaf_call_id = effect_protocol.get("call_expression_id")
+        if not isinstance(leaf_call_id, str) or not leaf_call_id:
+            raise _Unknown("external_leaf_call_id_missing")
+        index, pending, count = {}, [payload.get("ast")], 0
+        while pending:
+            node = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            if not isinstance(node, dict) or not isinstance(node.get("inner", []), list):
+                raise _Unknown("malformed_ast")
+            identifier = node.get("id")
+            if isinstance(identifier, str) and identifier:
+                index.setdefault(identifier, []).append(node)
+            pending.extend(node.get("inner", []))
+
+        def unique(identifier):
+            found = index.get(identifier, [])
+            if len(found) != 1:
+                raise _Unknown("wrapper_identity_not_unique")
+            return found[0]
+
+        def signature(declaration):
+            info = declaration.get("type")
+            if info == {"qualType": "float ()"}:
+                return ""
+            if info == {"qualType": "float () noexcept"}:
+                return " noexcept"
+            raise _Unknown("wrapper_signature_unsupported")
+
+        current = start_declaration_id
+        visited = set()
+        while True:
+            if current in visited or len(visited) >= 32:
+                raise _Unknown("wrapper_cycle_or_depth_budget")
+            visited.add(current)
+            declaration = unique(current)
+            kind = declaration.get("kind")
+            if (kind not in {"FunctionDecl", "CXXMethodDecl"} or
+                    (kind == "CXXMethodDecl" and declaration.get("storageClass") != "static") or
+                    declaration.get("virtual") or declaration.get("variadic")):
+                raise _Unknown("wrapper_declaration_unsupported")
+            signature(declaration)
+            children = _children(declaration)
+            allowed_attrs = {"CUDAHostAttr", "CUDADeviceAttr", "AlwaysInlineAttr", "NoInlineAttr",
+                             "NoThrowAttr", "ConstAttr", "PureAttr", "UsedAttr"}
+            bodies = [c for c in children if c.get("kind") == "CompoundStmt"]
+            if (len(bodies) != 1 or any(c.get("kind") != "CompoundStmt" and
+                    (c.get("kind") not in allowed_attrs or _children(c)) for c in children)):
+                raise _Unknown("wrapper_body_or_declaration_effect_unsupported")
+            statements = _children(bodies[0])
+            if (len(statements) != 1 or statements[0].get("kind") != "ReturnStmt" or
+                    len(_children(statements[0])) != 1):
+                raise _Unknown("wrapper_not_single_return")
+            call = _children(statements[0])[0]
+            _typed(call, "CallExpr", "float", "prvalue")
+            call_id = call.get("id")
+            if not isinstance(call_id, str) or not call_id or unique(call_id) is not call:
+                raise _Unknown("wrapper_return_call_identity_mismatch")
+            result["wrapper_declaration_ids"].append(current)
+            if call_id == leaf_call_id:
+                leaf = check_no_memory_write(payload, call_id, effect_protocol, max_ast_nodes=budget)
+                result["leaf_check"] = leaf
+                if leaf.get("status") != "checked":
+                    raise _Unknown("fresh_builtin_effect_not_checked")
+                result["input_sha256"] = dict(leaf["input_sha256"], start_declaration_id=_hash(start_declaration_id))
+                result.update(status="checked", conclusion={
+                    "status": "conditional", "property": "no_memory_write",
+                    "subject": "restricted_single_return_wrapper_chain",
+                    "start_declaration_id": start_declaration_id,
+                    "external_leaf_call_expression_id": call_id})
+                return result
+            parts = _children(call)
+            if len(parts) != 1:
+                raise _Unknown("wrapper_call_arguments_unsupported")
+            decay = parts[0]
+            if (decay.get("kind") != "ImplicitCastExpr" or
+                    decay.get("castKind") != "FunctionToPointerDecay" or len(_children(decay)) != 1):
+                raise _Unknown("wrapper_callee_decay_unsupported")
+            callee = _children(decay)[0]
+            ref = callee.get("referencedDecl")
+            if (callee.get("kind") != "DeclRefExpr" or _children(callee) or
+                    not isinstance(ref, dict) or not isinstance(ref.get("id"), str) or not ref["id"]):
+                raise _Unknown("wrapper_callee_not_direct_reference")
+            target = unique(ref["id"])
+            suffix = signature(target)
+            _typed(callee, "DeclRefExpr", "float ()" + suffix, "lvalue")
+            _typed(decay, "ImplicitCastExpr", "float (*)()" + suffix, "prvalue")
+            if (ref.get("kind") != target.get("kind") or ref.get("type") != target.get("type") or
+                    ref.get("name") != target.get("name")):
+                raise _Unknown("wrapper_callee_declaration_mismatch")
+            current = ref["id"]
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, RecursionError):
+        result["reason"] = "unsupported_wrapper_representation"
+    return result

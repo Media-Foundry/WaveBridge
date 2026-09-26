@@ -2,7 +2,8 @@
 import copy
 import unittest
 
-from wavebridge.verification.builtin_calls import inspect_structure, check_no_memory_write
+from wavebridge.verification.builtin_calls import (
+    inspect_structure, check_no_memory_write, check_wrapper_no_memory_write)
 
 
 def fixture():
@@ -26,6 +27,42 @@ def fixture():
 
 
 class BuiltinCallStructureTests(unittest.TestCase):
+    @staticmethod
+    def wrapped():
+        payload = fixture()
+        call = payload["ast"]["inner"].pop()
+        wrapper = {"id": "wrapper", "kind": "FunctionDecl", "name": "renamed",
+                   "type": {"qualType": "float ()"}, "inner": [{"kind": "CompoundStmt",
+                   "inner": [{"kind": "ReturnStmt", "inner": [call]}]}]}
+        payload["ast"]["inner"].append(wrapper)
+        return payload
+
+    def test_wrapper_preserves_conditional_scope(self):
+        payload = self.wrapped()
+        result = check_wrapper_no_memory_write(payload, "wrapper", self.protocol(payload))
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["conclusion"]["status"], "conditional")
+        self.assertEqual(result["wrapper_declaration_ids"], ["wrapper"])
+        self.assertFalse(result["external_leaf_effect_verified"])
+        self.assertFalse(result["deployable"])
+
+    def test_wrapper_extra_statements_and_attributes_fail(self):
+        for extra in ({"kind": "VarDecl"}, {"kind": "AsmLabelAttr"},
+                      {"kind": "NoThrowAttr", "inner": [{"kind": "CallExpr"}]}):
+            payload = self.wrapped()
+            payload["ast"]["inner"][-1]["inner"].append(extra)
+            self.assertEqual(check_wrapper_no_memory_write(payload, "wrapper", self.protocol(payload))["status"], "unknown")
+        payload = self.wrapped()
+        payload["ast"]["inner"][-1]["inner"][0]["inner"].insert(0, {"kind": "NullStmt"})
+        self.assertEqual(check_wrapper_no_memory_write(payload, "wrapper", self.protocol(payload))["status"], "unknown")
+
+    def test_wrapper_ambiguous_identity_and_budget_fail(self):
+        payload = self.wrapped()
+        protocol = self.protocol(payload)
+        self.assertEqual(check_wrapper_no_memory_write(payload, "wrapper", protocol, max_ast_nodes=1)["status"], "unknown")
+        payload["ast"]["inner"].append(copy.deepcopy(payload["ast"]["inner"][-1]))
+        self.assertEqual(check_wrapper_no_memory_write(payload, "wrapper", protocol)["status"], "unknown")
+
     @staticmethod
     def protocol(payload):
         report = inspect_structure(payload, "call")

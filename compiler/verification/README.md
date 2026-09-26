@@ -992,3 +992,16 @@ coroutine/function-try-body、具名或传出的receiver等不支持，返回unk
 返回 conclusion.status 为 conditional，external_leaf_effect_verified 为 false。
 无写不等于纯度，不解除 FP 环境、返回值、外层表达式/函数/循环的任何义务，
 更不会把上一轮合成 IR 观察转换成生产工具链的普遍无写证明。
+
+`builtin_calls.check_wrapper_no_memory_write(payload, start_declaration_id,
+effect_protocol)` 再从完整 AST 检查最多 32 层单返回 wrapper：唯一零参 float
+free function 或 static/nonvirtual method，body 恰为一条直接调用的 return。
+每条内部边要求精确声明及类型、FunctionToPointerDecay 和 childless DeclRef，
+末端重新执行 builtin 结构与外部效果协议检查。不支持前向声明寻体、参数、
+非静态方法、额外语句、局部变量/析构、复杂返回表达式或递归；保守 unknown。
+属性只允许无表达式的窄集合，不从 const/pure 等属性推断效果。
+
+结论仅为这些完整受限函数体在外部前提下不写内存；进入起始 wrapper 之前的
+receiver/实参求值、运行时定义绑定和机器码仍是边界。报告可能保留先前成功
+绑定的部分链；仅当主 status checked 且 conclusion conditional 时成立，
+不能把 unknown 报告中的 partial wrapper_declaration_ids 当作接受。
