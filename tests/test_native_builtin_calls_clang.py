@@ -10,7 +10,8 @@ import unittest
 
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.frontend.native_captures import collect
-from wavebridge.verification.builtin_calls import inspect_structure
+from wavebridge.verification.builtin_calls import check_no_memory_write, inspect_structure
+from wavebridge.verification.getter_returns import _hash
 
 
 PLUGIN = os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
@@ -98,6 +99,19 @@ class NativeBuiltinCallsClangTests(unittest.TestCase):
                    (token is None or self.argument_token(record) == token)]
         self.assertEqual(len(matches), 1, (name, token, matches))
         return matches[0]
+
+    def effect_protocol(self, record):
+        structure = inspect_structure(self.payload, record["call_expression_id"])
+        self.assertEqual(structure["status"], "checked", structure)
+        return {
+            "schema_version": "builtin-leaf-effect-assumption/v1",
+            "native_envelope_sha256": structure["input_sha256"]["native_envelope"],
+            "call_expression_id": record["call_expression_id"],
+            "callee_declaration_id": record["callee_declaration_id"],
+            "builtin_no_memory_write_assumed": True,
+            "valid_call_and_normal_return_assumed": True,
+            "evidence_reference": "test-native-builtin-effect-evidence",
+        }
 
     def test_builtin_records_bind_exact_same_context_ast_nodes(self):
         records = self.payload["builtin_calls"]
@@ -217,6 +231,81 @@ class NativeBuiltinCallsClangTests(unittest.TestCase):
         result = inspect_structure(payload, selected["call_expression_id"])
         self.assertEqual(result["status"], "unknown", result)
         self.assertEqual(result["reason"], "native_builtin_id_invalid")
+
+    def test_conditional_no_write_requires_fresh_structure_and_exact_protocol(self):
+        records = [self.builtin_record("__builtin_huge_valf"),
+                   self.builtin_record("__builtin_nanf", '""')]
+        for record in records:
+            protocol = self.effect_protocol(record)
+            with self.subTest(name=record["builtin_name"]):
+                result = check_no_memory_write(
+                    self.payload, record["call_expression_id"], protocol)
+                self.assertEqual(result["status"], "checked", result)
+                self.assertEqual(result["conclusion"]["status"], "conditional")
+                self.assertEqual(result["conclusion"]["property"], "no_memory_write")
+                self.assertEqual(result["conclusion"]["subject"],
+                                 "exact_builtin_call_expression")
+                self.assertFalse(result["external_leaf_effect_verified"])
+                self.assertEqual(result["value_semantics"], "not_established")
+                self.assertFalse(result["source_program_checked"])
+                self.assertFalse(result["deployable"])
+
+    def test_effect_protocol_missing_stale_or_false_never_checks(self):
+        record = self.builtin_record("__builtin_nanf", '""')
+        call_id = record["call_expression_id"]
+        valid = self.effect_protocol(record)
+        variants = [None]
+        for key, value in (
+                ("native_envelope_sha256", "stale"),
+                ("call_expression_id", "other"),
+                ("callee_declaration_id", "other"),
+                ("builtin_no_memory_write_assumed", False),
+                ("valid_call_and_normal_return_assumed", False),
+                ("evidence_reference", "")):
+            protocol = deepcopy(valid)
+            protocol[key] = value
+            variants.append(protocol)
+        for protocol in variants:
+            with self.subTest(protocol=protocol):
+                result = check_no_memory_write(self.payload, call_id, protocol)
+                self.assertEqual(result["status"], "unknown", result)
+                self.assertFalse(result["source_program_checked"])
+                self.assertFalse(result["deployable"])
+
+        nonempty = self.builtin_record("__builtin_nanf", '"1"')
+        forged = deepcopy(valid)
+        forged["call_expression_id"] = nonempty["call_expression_id"]
+        forged["callee_declaration_id"] = nonempty["callee_declaration_id"]
+        result = check_no_memory_write(self.payload, nonempty["call_expression_id"], forged)
+        self.assertEqual(result["status"], "unknown", result)
+
+    def test_effectful_builtin_argument_cannot_be_overridden_by_protocol(self):
+        source = Path(self.temporary.name) / "effectful_builtin_argument.cpp"
+        source.write_text(r'''int counter;
+float effectful_argument() { return __builtin_nanf((counter++, "")); }
+''')
+        collected = collect(source, COMPILER, Path(PLUGIN), ["-std=c++17"])
+        self.assertEqual(collected["status"], "collected", collected)
+        payload = collected["payload"]
+        records = [record for record in payload["builtin_calls"]
+                   if record["builtin_name"] == "__builtin_nanf"]
+        self.assertEqual(len(records), 1, records)
+        record = records[0]
+        structure = inspect_structure(payload, record["call_expression_id"])
+        self.assertEqual(structure["status"], "unknown", structure)
+        forged = {
+            "schema_version": "builtin-leaf-effect-assumption/v1",
+            "native_envelope_sha256": _hash(payload),
+            "call_expression_id": record["call_expression_id"],
+            "callee_declaration_id": record["callee_declaration_id"],
+            "builtin_no_memory_write_assumed": True,
+            "valid_call_and_normal_return_assumed": True,
+            "evidence_reference": "must-not-override-effectful-argument",
+        }
+        result = check_no_memory_write(payload, record["call_expression_id"], forged)
+        self.assertEqual(result["status"], "unknown", result)
+        self.assertEqual(result["reason"], "fresh_builtin_structure_not_checked")
+        self.assertNotIn("conclusion", result)
 
 
 if __name__ == "__main__":

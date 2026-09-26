@@ -977,3 +977,18 @@ coroutine/function-try-body、具名或传出的receiver等不支持，返回unk
 不跨编译器版本解释。缺失、重复、错绑和不支持结构均 `unknown`。
 调用者须将完整 envelope 与实际采集报告的编译器、插件、源码/依赖协议绑定；
 成功报告保存 envelope/选点哈希，旧 AST ID 不可跨采集复用。
+
+`builtin_calls.check_no_memory_write(payload, call_expression_id, effect_protocol)`
+在本次调用内重新执行上述结构检查，再连接外部效果协议。它不接收旧结构报告。
+协议格式为 `builtin-leaf-effect-assumption/v1`，必须包含精确的
+`native_envelope_sha256`、`call_expression_id`、`callee_declaration_id`，以及
+严格为 true 的 `builtin_no_memory_write_assumed`、
+`valid_call_and_normal_return_assumed` 和非空 `evidence_reference`。
+
+第一条假设仅描述 builtin 实现本身，不覆盖参数求值。checker 另外检查参数为
+零参数或仅空字符串 literal decay，从而条件组合完整所选 CallExpr 的
+`no_memory_write`。例如 `nanf((counter++, ""))` 即使有外部假设仍 unknown。
+协议不是证书，reference 不自动下载/验证；没有协议或错绑时保持 unknown。
+返回 conclusion.status 为 conditional，external_leaf_effect_verified 为 false。
+无写不等于纯度，不解除 FP 环境、返回值、外层表达式/函数/循环的任何义务，
+更不会把上一轮合成 IR 观察转换成生产工具链的普遍无写证明。

@@ -152,3 +152,63 @@ def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
     except (TypeError, ValueError, RecursionError):
         report["reason"] = "unsupported_input_representation"
     return report
+
+
+def check_no_memory_write(payload, call_expression_id, effect_protocol, *, max_ast_nodes=None):
+    """Compose restricted argument evaluation with an explicit external leaf effect.
+
+    The protocol is an assumption, not a certificate. No return value, FP
+    environment, purity, enclosing expression or invocation history is proved.
+    """
+    structure = inspect_structure(payload, call_expression_id, max_ast_nodes=max_ast_nodes)
+    result = {
+        "schema_version": "builtin-call-no-memory-write/v1", "status": "unknown", "reason": None,
+        "scope": "exact_builtin_call_expression_under_explicit_external_leaf_effect",
+        "structure_check": structure, "source_program_checked": False, "deployable": False,
+        "value_semantics": "not_established", "external_leaf_effect_verified": False,
+        "assumptions": ["native envelope and embedded AST faithfully describe one compiler ASTContext",
+                        "compiler and native plugin are trusted frontend components",
+                        "the exact builtin callee implementation performs no memory writes (argument evaluation excluded)",
+                        "the selected source call is valid and returns normally"],
+        "limitations": ["external evidence reference is recorded but not verified",
+                        "only no-memory-write is composed, not purity or complete absence of effects",
+                        "builtin return value and floating-point environment behavior are not established",
+                        "enclosing expression, wrapper body, loop, and invocation history are excluded",
+                        "no machine-code or GPU execution guarantee"],
+    }
+    if structure.get("status") != "checked":
+        result["reason"] = "fresh_builtin_structure_not_checked"
+        return result
+    if not isinstance(effect_protocol, dict):
+        result["reason"] = "invalid_effect_protocol"
+        return result
+    try:
+        hashes = structure["input_sha256"]
+        result["input_sha256"] = dict(hashes, effect_protocol=_hash(effect_protocol))
+        observation = structure["observation"]
+        evidence = effect_protocol.get("evidence_reference")
+        if (effect_protocol.get("schema_version") != "builtin-leaf-effect-assumption/v1" or
+                effect_protocol.get("native_envelope_sha256") != hashes["native_envelope"] or
+                effect_protocol.get("call_expression_id") != call_expression_id or
+                effect_protocol.get("callee_declaration_id") != observation["callee_declaration_id"] or
+                effect_protocol.get("builtin_no_memory_write_assumed") is not True or
+                effect_protocol.get("valid_call_and_normal_return_assumed") is not True or
+                not isinstance(evidence, str) or not evidence.strip()):
+            result["reason"] = "effect_protocol_not_applicable"
+            return result
+        # Fresh structure admits only a direct builtin decay plus either no
+        # operands or a literal array-to-pointer decay. No hidden argument
+        # evaluation is removed by trusting the leaf's effect assumption.
+        result.update(status="checked", effect_evidence={
+            "reference": evidence, "verification_status": "unverified"},
+            argument_evaluation={"status": "checked_in_supported_structure",
+                                 "property": "no_memory_write",
+                                 "shape": structure["argument_structure"]},
+            conclusion={"status": "conditional", "property": "no_memory_write",
+                        "subject": "exact_builtin_call_expression",
+                        "call_expression_id": call_expression_id,
+                        "callee_declaration_id": observation["callee_declaration_id"],
+                        "premise": "the call is valid and returns normally; the exact builtin implementation performs no memory writes, excluding argument evaluation"})
+    except (TypeError, ValueError, RecursionError):
+        result["reason"] = "unsupported_effect_protocol_representation"
+    return result

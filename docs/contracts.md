@@ -1,5 +1,30 @@
 # 模型、检查与证据协议
 
+## builtin 无写入条件协议
+
+`builtin-leaf-effect-assumption/v1` 不提供返回值或浮点等价保证，只向独立结构
+检查后的精确 callee 提供外部“实现不写内存”与有效/正常返回前提。结构检查
+必须重新执行；零参或仅空字符串 literal decay 的参数求值另行确认，不能让
+callee 前提覆盖 `counter++` 等外围求值。外部 evidence_reference 仅记录为
+unverified，不由本协议自动核验。示例（占位哈希/ID 不能通过实际检查）：
+
+```json
+{
+  "schema_version": "builtin-leaf-effect-assumption/v1",
+  "native_envelope_sha256": "<full-envelope-sha256>",
+  "call_expression_id": "<same-context-call-id>",
+  "callee_declaration_id": "<same-context-callee-id>",
+  "builtin_no_memory_write_assumed": true,
+  "valid_call_and_normal_return_assumed": true,
+  "evidence_reference": "<externally supplied justification, not verified by this checker>"
+}
+```
+
+仅当实参/函数引用求值不写内存、精确 builtin 实现也不写内存，并且源调用有效
+且正常返回时，组合所选 CallExpr 的 no_memory_write。结论为 conditional，
+不是纯度、完整无副作用、外层函数/循环保持性或设备部署保证。没有此协议、
+哈希/身份不一致或结构 unknown 时不得给出该条件结论。
+
 ## 当前模型：`qdot-model/v1`
 
 示例见 `examples/qdot/source.json`。字段必须齐全；未知字段、重复 JSON 字段、布尔值冒充整数、非法版本和非正尺寸均被拒绝。输入文件上限 64 KiB。

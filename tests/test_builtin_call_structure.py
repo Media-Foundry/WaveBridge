@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from wavebridge.verification.builtin_calls import inspect_structure
+from wavebridge.verification.builtin_calls import inspect_structure, check_no_memory_write
 
 
 def fixture():
@@ -26,6 +26,53 @@ def fixture():
 
 
 class BuiltinCallStructureTests(unittest.TestCase):
+    @staticmethod
+    def protocol(payload):
+        report = inspect_structure(payload, "call")
+        return {"schema_version": "builtin-leaf-effect-assumption/v1",
+                "native_envelope_sha256": report["input_sha256"]["native_envelope"],
+                "call_expression_id": "call", "callee_declaration_id": "decl",
+                "builtin_no_memory_write_assumed": True,
+                "valid_call_and_normal_return_assumed": True,
+                "evidence_reference": "test-only external assumption, not attestation"}
+
+    def test_effect_conclusion_remains_conditional(self):
+        payload = fixture()
+        protocol = self.protocol(payload)
+        before = copy.deepcopy((payload, protocol))
+        result = check_no_memory_write(payload, "call", protocol)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["conclusion"]["status"], "conditional")
+        self.assertEqual(result["conclusion"]["subject"], "exact_builtin_call_expression")
+        self.assertIs(result["external_leaf_effect_verified"], False)
+        self.assertEqual(result["effect_evidence"]["verification_status"], "unverified")
+        self.assertEqual(result["value_semantics"], "not_established")
+        self.assertFalse(result["deployable"])
+        self.assertEqual((payload, protocol), before)
+
+    def test_effect_protocol_is_bound_and_boolean_strict(self):
+        payload = fixture()
+        for field in self.protocol(payload):
+            protocol = self.protocol(payload)
+            protocol.pop(field)
+            with self.subTest(field=field):
+                self.assertEqual(check_no_memory_write(payload, "call", protocol)["status"], "unknown")
+        for field in ("builtin_no_memory_write_assumed", "valid_call_and_normal_return_assumed"):
+            protocol = self.protocol(payload)
+            protocol[field] = 1
+            self.assertEqual(check_no_memory_write(payload, "call", protocol)["status"], "unknown")
+        self.assertEqual(check_no_memory_write(payload, "call", None)["status"], "unknown")
+
+    def test_stale_structure_cannot_override_fresh_failure(self):
+        payload = fixture()
+        protocol = self.protocol(payload)
+        payload["builtin_calls"] = []
+        self.assertEqual(check_no_memory_write(payload, "call", protocol)["status"], "unknown")
+        payload = fixture()
+        payload["plugin_build_clang_version"] = "changed"
+        self.assertEqual(check_no_memory_write(payload, "call", protocol)["status"], "unknown")
+        self.assertEqual(check_no_memory_write(fixture(), "call", protocol, max_ast_nodes=1)["status"], "unknown")
+
     def test_checked_scope_and_input_immutability(self):
         payload = fixture()
         before = copy.deepcopy(payload)

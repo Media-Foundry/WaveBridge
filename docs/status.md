@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## builtin 条件无写入组合
+
+新增 builtin_calls.check_no_memory_write：fresh 核对原生结构后，消费绑定
+envelope/call/callee 的显式外部无写与有效返回假设，条件组合所选 CallExpr
+（包括受支持的实参求值）无内存写入。协议证据仍 unverified，不证明返回值、
+FP 环境或纯度；核心循环门控不变。真实 `nanf((counter++, ""))` 即便提供
+精确绑定的协议也被结构拒绝。新增 3 项 fixture 与 3 项真实 Clang 回归。
+本轮没有 GPU、生产 AST 重采或留出结论；不将前轮 IR 观察升级为源程序证明。
+完整 992 项测试通过（66.713 秒，匹配 native 插件启用，无跳过）；强化精确
+哈希副作用负例后 9 项真实 Clang 专项再次通过。demo/diff通过，远端CI未核验。
+
 ## builtin 身份与实参结构检查
 
 新增独立 builtin_calls.inspect_structure，fresh 核对 native envelope 中的
