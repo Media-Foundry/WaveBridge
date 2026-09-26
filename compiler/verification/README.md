@@ -14,6 +14,24 @@ thread_binding, int_bits=32, use_host_guard_assumptions=False)`从同AST fresh�
 
 当前包含 Python 无界整数参考 checker、条件列覆盖/归约关系检查和整数转换检查；没有编译器级证明或真实 HIP 等价验证。
 
+## 精确 kernel/launch 静态绑定
+
+`verification.launch_binding.check(root, selection)`从完整单TU Clang AST重新读取
+launch，不接受先前分析成功报告。`selection`采用`launch-selection/v1`，包含
+`ast_root_sha256`、`kernel_declaration_id`、`launch_id`、
+`configuration_declaration_id`和按位置排列的四个`configuration_expression_ids`。
+这些ID仅是选点，不是值、效果或正确性oracle。
+
+`kernel-launch-binding/v1`检查唯一kernel定义及CUDA属性、直接callee声明与
+类型链、形参/实参位置、四个配置槽位的完整表达式身份；同ID冲突保持unknown，
+只有同ID完整节点相同的launch重复可归一。配置声明的相同副本数量另行记录。
+默认最多一百万AST节点，可显式提高至一千万；缺失工具证据或不支持形状不放行。
+
+checked仅表示这一静态配对。槽位0–3没有自动获得grid/block/shared/stream的
+API语义，参数值、对象历史保持、host可达性与配置函数语义均未建立；完整AST
+忠实性是前端前提。报告始终source_program_checked=false、deployable=false。
+它不是GPU候选验收入口，不能替代设备关系、目标重提取或数值检查。
+
 ## 条件配置字段检查
 
 ```bash

@@ -2,6 +2,23 @@
 
 更新日期：2026-09-26。
 
+## kernel/launch 精确静态绑定入口
+
+新增`verification.launch_binding.check`，复用fresh launch恢复，在同一完整AST
+内核对选定kernel定义/直接callee类型链、形参位置、配置函数声明和四个配置
+表达式ID。选点协议绑定root哈希；同ID冲突、错配或交换槽位、缺失身份和不支持
+形状均unknown。保留原表达式与哈希，不从函数或变量名推断语义。
+checked只描述静态配对，不证明配置值、API语义、对象历史保持、host可达性或
+整核正确性，不改变此前生产前缀unknown，也不授权部署。
+
+721项CPU、245项Clang专项和demo通过，匹配native插件已启用；新增8项真实
+Clang回归包含合法lambda重复、选点错绑及AST证据篡改拒绝（后者不是GPU反例）。
+源码哈希`af450c78904e3e1d6c7a51fe1cbd9e74146b4d9728cf28398e4a23f241bfe79d`。
+固定完整vLLM生产AST的Float配对重放已启动，会话34115仍运行，src暂时冻结；
+尚无生产通过结论。日志和脚本位于`artifacts/wb-launch-binding-urZCXK/`。
+未重编译生产TU、生成GPU候选或执行GPU。下一步消费该绑定，在同一AST/协议下
+原子调用已有设备局部门控，逐项保留未解除义务，不将全部局部checked冒充整核保证。
+
 ## 评估范围与下一交付校正
 
 vLLM首次固定分析器评估保留，但后续反复开发/调试已经使它成为开发反馈输入，

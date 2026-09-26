@@ -42,6 +42,12 @@
 
 恢复器、lowering 和模型解释器属于各自保证的可信基础。目标代码与被检查模型之间还需要 translation validation 或明确的可信 lowering 假设；检查了模型不自动证明发出的机器代码。
 
+`verification.launch_binding`提供真实kernel/launch成对工件的静态选点边界：
+从同一完整AST fresh绑定kernel定义、callee类型链、形参位置和四个配置表达式。
+选择协议绑定root哈希及精确ID，不输入成功结论；输出槽位原始AST和哈希。
+它不推断槽位的API语义或字段值，不解除对象保持和设备执行义务，不能单独
+作为候选放行门控。此入口与qdot模型pipeline仍分开。
+
 对象复制与捕获各有独立结构入口（`record_copy_check.inspect_effects`、
 `capture_source_check.inspect_structure`），不通过假设源存活的值检查去证明源存活。
 捕获结构与旧条件身份接口共享路径解析，动态身份仍由旧接口在明确协议下给出。
