@@ -47,6 +47,22 @@ runner只用于冻结logical32基线，不接受自动生成的候选：任何�
 该打印字段只是协议一致性检查，不证明物理wave或真实机器码采用对应宽度。
 width64候选需要自己的执行协议与全部验收门槛，不能借用本runner的passed。
 
+runner 另保存 `rmsnorm-baseline-build-binding/v1`：将实际编译命令及摘要、
+工作目录、源码/协议/reference/runner/provenance、输入/reference 输出、探针
+与二进制连接到同一次运行。编译前、执行前、执行后重新核对文件哈希；变化或
+缺失返回 `artifact_integrity_mismatch`，不进行数值比较。编译退出零但无非空
+二进制返回 `invalid_binary`。这不能排除检查之间的短暂修改，也不是沙箱或
+完整编译依赖闭包。配置描述的是 runner 层命令；wrapper 可另含 target/SDK
+选项，不从这些字段断言最终 FP 模式或真实机器码波宽。
+
+这里不会消费独立 device-only IR/汇编报告作为 host binary 的正确性证明，
+也不把数值 passed 升级为静态等价。2026-09-26 的新 runner 在重新通过探针的
+W7900 上重跑 `3×777`，2331 个输出通过原冻结容限，最大绝对误差
+`1.1920928955078125e-07`，三个文件完整性检查点均 unchanged。
+报告 `artifacts/wb02-20260926T154202Z-d8e8d1/report.json`，SHA256
+`50748668e07eb74e231d7ba7a3a3a3d0864de7be8b601310c4f6490279c820ac`。
+这是一个已有输入的工程回归，不是新增独立目标或全协议域验证。
+
 `evidence.json` 索引九份有效 sanity 报告：在已验证 wave32 的 W7900 上，固定
 `nrows=3`，`ncols∈{1,31,32,33,255,256,257,777,1023}` 的全部输出均满足预冻结
 容差，观测到的最大绝对误差不超过 `1.1920928955078125e-07`。这些只建立九个

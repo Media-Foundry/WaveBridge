@@ -2,6 +2,32 @@
 
 更新日期：2026-09-26。
 
+## 数值 runner 的实际构建绑定与 W7900 重放
+
+冻结 logical32 runner 新增 build_binding 与编译前/执行前/执行后文件哈希核验，
+连接源码、协议、reference、输入、探针和实际 binary。观察到变化/缺失即停止，
+编译退出零但缺/空 binary 也不运行；原 O2 命令及数值容限不变。此处的配置是
+runner 层请求，不能代表 wrapper/后端的全部有效参数，更不是 FP 语义证明。
+
+本机 W7900 预检空闲；普通 hipcc 探针因 SDK 缺 libamdhip64.so 开发链接名
+失败，复用历史项目内 SDK view 后可链接，但沙箱执行返回 no_device。两次
+记录分别在 artifacts/wb01-20260926T153905Z-2-f56e97/ 和
+artifacts/wb01-20260926T153940Z-2-a2fff5/。获准设备访问后，新探针 verified，
+原始报告 artifacts/wb01-20260926T154137Z-491033-59f66f/report.json，SHA256
+`2478fa66e31249628543e77b0574b4dc93f7260fd2cb74b7424b820932cdb0ff`。
+
+新 runner 在同一 PCI 0000:53:00.0 W7900 上执行 3×777，2331 个输出通过原
+冻结协议，最大绝对误差 1.1920928955078125e-07；三个完整性检查点均 unchanged。
+报告 artifacts/wb02-20260926T154202Z-d8e8d1/report.json，SHA256
+`50748668e07eb74e231d7ba7a3a3a3d0864de7be8b601310c4f6490279c820ac`。
+这是已有 baseline 输入的工程回归，不是 native64、自动候选或新谱系结果。
+完整依赖闭包、实际编译进程身份、无竞态文件消费及整核等价仍未建立。
+
+完整 841 项 CPU 测试通过（64.003 秒，匹配 native 插件启用），demo、diff
+检查通过。新增 6 项 mock 测试方法覆盖各阶段变更、缺/空 binary 与原失败
+分类；它们与上述真实 GPU 工程回归分开计。日志保留在本轮沙箱 no_device
+工件目录，runner 当前哈希与实际 GPU 报告中的副本一致。
+
 ## 可复用的 FP 编译证据采集入口
 
 新增 `wavebridge.frontend.device_compile`，固定 O2 device-only IR/汇编编译，

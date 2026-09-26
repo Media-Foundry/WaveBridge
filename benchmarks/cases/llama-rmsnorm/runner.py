@@ -83,6 +83,23 @@ def canonical_json(value) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+def check_artifact_integrity(bindings: dict[str, dict]) -> dict:
+    """Observe hashes at a boundary, not a race-free filesystem or build closure."""
+    observed = {}
+    changed = []
+    for name, binding in bindings.items():
+        try:
+            value = digest(Path(binding["path"]))
+        except OSError:
+            value = None
+        observed[name] = value
+        if value != binding["sha256"]:
+            changed.append(name)
+    return {"status": "unchanged" if not changed else "changed_or_missing",
+            "observed_sha256": observed, "changed": changed,
+            "race_free_execution_established": False}
+
+
 def validate_baseline_inputs(source: Path, protocol: Path, provenance: Path) -> dict:
     """Bind this runner to the frozen logical32 baseline before invoking a command."""
     result = {"status": "rejected", "reason": None, "source_sha256": None,
@@ -185,6 +202,7 @@ def run(output_base: Path, hipcc: str, probe_report: Path, nrows: int,
         "input_protocol_validation": None, "runtime_protocol_validation": None,
         "nrows": nrows, "ncols": ncols, "epsilon": 1.0e-5,
         "toolchain": None, "compile": None, "execute": None, "comparison": None,
+        "build_binding": None, "artifact_integrity": {},
     }
     copies = [(SOURCE, source_copy), (Path(__file__), runner_copy),
               (HERE / "protocol.json", protocol_copy), (HERE / "reference.py", reference_copy),
@@ -225,19 +243,60 @@ def run(output_base: Path, hipcc: str, probe_report: Path, nrows: int,
         return finish(report, artifact, 2)
     report["probe_validation"] = {"status": "verified_report_accepted",
                                   "physical_wave_width": probe.get("physical_wave_width")}
+    compile_command = [hipcc, "-O2", str(source_copy), "-o", str(binary)]
+    bound_files = {name: {"path": str(path), "sha256": report[name + "_sha256"]}
+                   for name, path in (("source", source_copy), ("protocol", protocol_copy),
+                                      ("reference", reference_copy), ("runner", runner_copy),
+                                      ("provenance", provenance_copy), ("input", input_path),
+                                      ("expected", expected_path), ("probe_report", probe_report.resolve()))}
+    report["build_binding"] = {
+        "schema_version": "rmsnorm-baseline-build-binding/v1",
+        "command": compile_command,
+        "command_sha256": hashlib.sha256(canonical_json(compile_command).encode()).hexdigest(),
+        "cwd": str(Path.cwd()), "files": bound_files,
+        "optimization": "O2", "contraction": "compiler_default_not_overridden",
+        "target": "compiler_default_not_overridden",
+        "compiler_process_identity_established": False,
+        "compilation_input_closure_established": False,
+        "compile_only_observation_used_as_binary_proof": False,
+        "floating_point_equivalence_checked": False,
+    }
     toolchain = command([hipcc, "--version"], timeout)
     report["toolchain"] = toolchain
     if toolchain["status"] != "completed" or toolchain["returncode"] != 0:
         report["status"] = "toolchain_unavailable"
         return finish(report, artifact, 2)
-    compile_result = command([hipcc, "-O2", str(source_copy), "-o", str(binary)], timeout)
+    integrity = check_artifact_integrity(bound_files)
+    report["artifact_integrity"]["before_compile"] = integrity
+    if integrity["status"] != "unchanged":
+        report["status"] = "artifact_integrity_mismatch"
+        return finish(report, artifact, 2)
+    compile_result = command(compile_command, timeout)
     report["compile"] = compile_result
     if compile_result["status"] != "completed" or compile_result["returncode"] != 0:
         report["status"] = "compile_timeout" if compile_result["status"] == "timeout" else "compile_failed"
         return finish(report, artifact, 2)
-    report["binary_sha256"] = digest(binary)
+    try:
+        if not binary.is_file() or binary.stat().st_size == 0:
+            raise OSError("compiler did not produce a nonempty binary")
+        report["binary_sha256"] = digest(binary)
+    except OSError as error:
+        report["status"] = "invalid_binary"
+        report["binary_error"] = str(error)
+        return finish(report, artifact, 2)
+    bound_files["binary"] = {"path": str(binary), "sha256": report["binary_sha256"]}
+    integrity = check_artifact_integrity(bound_files)
+    report["artifact_integrity"]["before_execute"] = integrity
+    if integrity["status"] != "unchanged":
+        report["status"] = "artifact_integrity_mismatch"
+        return finish(report, artifact, 2)
     execute = command([str(binary), str(input_path), str(output_path), str(nrows), str(ncols)], timeout)
     report["execute"] = execute
+    integrity = check_artifact_integrity(bound_files)
+    report["artifact_integrity"]["after_execute"] = integrity
+    if integrity["status"] != "unchanged":
+        report["status"] = "artifact_integrity_mismatch"
+        return finish(report, artifact, 2)
     if execute["status"] != "completed" or execute["returncode"] != 0:
         report["status"] = "run_timeout" if execute["status"] == "timeout" else "run_failed"
         return finish(report, artifact, 2)
