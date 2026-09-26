@@ -1,5 +1,19 @@
 # 关系恢复
 
+## 协作宽度的显式引用用途
+
+`width_uses.inspect(root, kernel_id, int_bits)`从完整TU fresh恢复归约链及block/XOR，
+以两者共同width声明ID选点，不按变量名或字面量值选择。遍历整个TU的该声明
+DeclRefExpr，按精确AST位置分类：XOR初始偏移、intrinsic宽度、group除数、lane
+余数和partial组数除数。重复/冲突身份、类型证据缺失和未展开别名保持unknown。
+不支持的引用（包括取址、额外算法用途、未调用函数和printf诊断）保留完整祖先
+与所属函数并使总体unknown，不提供“诊断无害”的例外。
+
+即使五类显式用途均分类，结果也只是evidence，checked/source_program_checked/
+deployable均false。它不覆盖AST中被折叠或省略的语义引用，不验证转换、全部
+副作用或源目标等价；不能作为单独的改写许可。默认100万节点，最多1000万，
+预算不包含fresh子恢复器的全部时间/内存开销。
+
 ## 同 TU launch 身份归一化
 
 launch_facts 在解释目标前按非空 Clang ID 收集 CUDAKernelCallExpr，仅完整节点

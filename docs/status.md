@@ -2,6 +2,30 @@
 
 更新日期：2026-09-26。
 
+## 显式宽度用途清单与目标条件证据
+
+新增`analysis.width_uses.inspect`：从fresh归约链共同width声明选点，在完整TU
+枚举显式DeclRefExpr并按精确位置分类五类归约用途；额外引用、身份/类型冲突、
+未展开别名和不支持结构保持unknown。不按名称赋义，不把printf当成安全例外。
+evidence也仅描述显式引用清单，不覆盖折叠/省略用途、转换或改写安全。
+766项CPU、260项Clang专项和demo通过；新增6项单测与4项真实Clang方法。
+
+固定源/候选两份完整AST重放均发现6处引用：5类归约用途各1，host诊断读取1。
+两侧均unknown（explicit_width_uses_not_fully_classified），不放行候选。
+另为新目标AST手工重绑外部ABI/API精确ID，独立运行collect_rmsnorm；147.62秒
+后返回evidence，整数包evidence、输出结构recovered、XOR/block条件计数checked。
+模型width64/block256，需要4个partial（16 bytes），可用128 bytes即32 float槽。
+barrier仍是全员到达/可见性条件，非同步证明；协议重绑不是自动API语义推断。
+
+工件`artifacts/wb-width-use-target-PrXkck/`：width.json SHA256
+`1245b769b71ca9eba27e82e305de2ab69fba13043b27042c914e331279a13a04`；target.json
+`562616f09f1ec2a4eb838e5a01c4a06b39819ef5bdcbc50fa390d905e7d2fc74`。
+全部会话退出0，81个实现哈希前后/当前一致。外部声明逐ID唯一性和kind检查在
+运行后receipt中完成，未重写成预启动验收。未重编译或运行GPU。
+用途unknown不被目标局部成功覆盖，源目标值关系、FP/同步/实际wave64仍未建立。
+下一步处理诊断用途的明确观察边界及缺失用途问题，再建立源目标关系门控；
+不以当前清单或条件模型结果宣布安全适配、完整WB-05或研究贡献成立。
+
 ## 首个离线源码候选与目标重分析
 
 新增`transforms.source_token.edit`：按精确声明ID、主文件位置和源码哈希，仅替换
