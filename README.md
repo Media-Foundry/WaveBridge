@@ -6,7 +6,7 @@ WaveBridge 面向既有 ML kernel 中的显式子组通信，研究跨 lane 数�
 
 ## 快速开始
 
-需要 Python 3.11+；本地检查仅使用标准库，不需要 GPU、网络或额外依赖。
+需要 Python 3.11+；基础模型检查仅使用标准库，不需要 GPU 或网络。真实源码回归需要Clang；原生capture/cleanup回归还需要编译器匹配的插件。缺少工具时相应测试显式跳过，不能把基础检查通过当成源码回归全部执行。
 
 ```bash
 make check
@@ -38,7 +38,7 @@ AGENTS.md                  中文回复与全仓工程/证据规则
 .agents/                   角色边界、执行流程、任务与交接模板
 docs/                      架构、协议、当前状态、决策记录、阶段门槛
 src/wavebridge/             Python 参考模型、检查、候选生成与 CLI
-compiler/                   后续 Clang/LLVM 源码分析与变换的接入边界
+compiler/                   源码分析/验证边界、原生 Clang 插件；变换后端待实现
 runtime/                    最小 HIP 设备探测器；通用执行与 fallback 待实现
 examples/qdot/              量化点积的结构化模型与错误候选
 tests/                     CPU 语义回归和命令行集成测试
@@ -46,7 +46,7 @@ benchmarks/                 真实语料纳入协议、谱系拆分、基线定�
 experiments/                实验协议、设备模板、结果记录格式
 research/                  候选主张、相关工作核实、差异验证案例
 artifacts/                 本地产物（默认不入版本控制）
-.github/workflows/          CPU 测试、演示和包安装检查工作流
+.github/workflows/          CPU、真实 Clang/原生插件回归、演示和包安装检查
 ```
 
 参考模型沿着 `frontend → ir → analysis / verification → transforms → pipeline` 组织。它针对固定形状、无界整数的量化点积，显式模拟 guarded shuffle-down 和唯一输出写入者，检查加乘表达式及重复计数。输入模型是人工提供的，不是从源码恢复的。

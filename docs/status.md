@@ -10,7 +10,9 @@ copy的局部效果，核对root hash、源声明、copy集合及捕获路径类
 真实带未支持参数属性的copy已覆盖direct和captured两条路径，旧引用闭合与
 顺序仍checked，新效果保持unknown。普通局部copy和按值调用正例继续支持。
 661项CPU、185项Clang专项与demo通过；不建立动态非重叠、lifetime或历史保持。
-固定vLLM完整TU新重放正在执行，尚不记为通过；执行期间冻结src。
+固定vLLM完整TU新重放退出0：3个复制点的效果组合checked，原引用闭合和顺序
+检查仍checked。耗时469.32秒，77个实现文件前后哈希稳定且与当前源码一致；
+没有GPU执行。README/架构入口同步真实AST与原生插件现状，区分局部保证。
 句柄和工件见 `.agents/handoffs/wb04-use-effects-20260926.md`。
 
 ## 源声明、复制语句与立即调用链的结构顺序

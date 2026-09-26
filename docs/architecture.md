@@ -12,16 +12,16 @@
 
 | 层 | 目录 | 输入 → 输出 | 职责和约束 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| 源码接入 | `compiler/frontend/`、`src/wavebridge/frontend/` | 源文件、编译命令、launch → 原始语义工件 | 保留源码位置、宏展开、intrinsic 语义和 host/device 关联；不猜测数值容限 | JSON fixture 与真实 Clang AST 采集；launch/调用闭包尚未恢复 |
+| 源码接入 | `compiler/frontend/`、`src/wavebridge/frontend/` | 源文件、编译命令 → 原始语义工件 | 保留源码位置、宏展开、编译输入与视图；不猜测数值容限 | JSON fixture、真实 Clang AST、依赖/工具链记录与编译器匹配的原生 capture/cleanup 观测 |
 | 关系表示 | `compiler/ir/`、`src/wavebridge/ir/` | 原始语义 → 显式关系模型 | 数据索引、运算、路由、参与条件、存储阶段、输出归属、假设、来源 | 仅版本化 qdot 专用模型 |
-| 关系恢复 | `compiler/analysis/`、`src/wavebridge/analysis/` | 原始语义 → 关系模型或拒绝原因 | 支持范围内联合推断；冲突和不确定性必须保留 | 精确调用发现、列递推、局部平方和与归约结构；外部语义/整核关系未完成 |
-| 关系检查 | `compiler/verification/`、`src/wavebridge/verification/` | 源/目标、输入域、数值协议 → 检查报告 | 独立于生成器；比较输出计算，保留重复计数和保证范围 | qdot 整数模型、条件 XOR/共享 partial 贡献计数与列覆盖；不证明真实源码 |
+| 关系恢复 | `compiler/analysis/`、`src/wavebridge/analysis/` | 原始语义 → 关系模型或拒绝原因 | 支持范围内联合推断；冲突和不确定性必须保留 | 精确调用、列递推、归约、输出后缀、launch 实参及构造字段的受限恢复；调用闭包完整性与整核语义未建立 |
+| 关系检查 | `compiler/verification/`、`src/wavebridge/verification/`、顶层 `*_check.py` | 源/目标、输入域、数值协议 → 检查报告 | 独立于生成器；比较输出计算，保留重复计数和保证范围 | qdot 模型及真实 AST 的条件整数、索引、存储、对象初始化/复制检查；仍不证明整核或跨波宽等价 |
 | 候选生成 | `compiler/transforms/`、`src/wavebridge/transforms/` | 关系与目标能力 → kernel/launch 候选对 | 数据格式不可随协作宽度修改；候选尚不可信 | qdot 模型 32/64 重新分工 |
 | 决策编排 | `src/wavebridge/pipeline.py` | 候选与检查证据 → 接受、拒绝或验证过的 fallback | 未知不接受；所有调用者遵循同一门槛 | 只接受模型候选，不部署 |
 | 执行与测量 | `runtime/`、`experiments/` | 已检查代码、设备协议 → 原始执行记录 | 能力探测、正确性测试、计时与环境隔离 | 最小设备探测器；通用执行器待实现 |
 | 研究评估 | `benchmarks/`、`research/` | 原始证据、预先声明的协议 → 主张评估 | 覆盖/拒绝/有效接受/错误放行、强基线、成本和性能分开报告 | 登记模板与阶段门槛 |
 
-`compiler/` 保存设计边界说明；真实 AST 采集入口位于 `src/wavebridge/frontend/clang_ast.py`，尚不恢复协作关系。`runtime/probes/` 已有可调用的最小 HIP 探测器。尚无通用编译器、HIP 执行库或需要配置的 CMake 工程。探针编译失败、未建立元数据或运行证据不一致，都不能作为目标能力通过的依据。
+`compiler/` 保存边界说明和 `frontend/native/capture_plugin.cpp` 原生插件实现；Python采集入口为 `frontend/clang_ast.py` 与 `frontend/native_captures.py`。插件必须匹配Clang版本，观测属于可信前端证据，不是独立证明。`runtime/probes/` 已有可调用的最小 HIP 探测器。尚无通用编译后端或完整适配执行器。探针编译失败、未建立元数据或运行证据不一致，都不能作为目标能力通过的依据。
 
 ## 工件流与信任边界
 
@@ -38,14 +38,16 @@
 
 当前参考路径覆盖第 3 步的人工结构化输入、第 4 步的特定模型构造和第 5 步的有限模型关系检查。它没有建立源码与模型的对应。独立的 WB-01 探针和 WB-02 手工基线已覆盖第 6 步的局部设备/数值证据，但没有打通自动适配路径，也没有第 7～8 步的性能比较或部署决策能力。
 
+真实源码路径与qdot参考路径分开：`source.py` 编排受限恢复，各组合checker从绑定的AST重新检查局部义务，而非将分析报告的成功状态直接当作证明。`object_use_closure`的主状态只描述显式引用闭合；`source_order`和`source_reference_use_effects`分别描述结构顺序与复制效果，可能各自unknown。后续历史值保持必须显式消费所需子报告并解除生命周期、动态非重叠等剩余义务，不能只检查父级status。所有这些路径仍保留整核与部署标记为false。
+
 恢复器、lowering 和模型解释器属于各自保证的可信基础。目标代码与被检查模型之间还需要 translation validation 或明确的可信 lowering 假设；检查了模型不自动证明发出的机器代码。
 
 ## 依赖规则
 
 - `ir` 只使用标准库，不能依赖候选生成、硬件或 CLI。
-- `frontend` 依赖 `ir`；当前负责严格的结构化输入解析。
-- `analysis` 依赖 `ir`；后续源码恢复与人工契约输入必须带不同的来源标签。
-- `verification` 依赖 `ir` 和输入校验，不能导入 `transforms`、`pipeline` 或候选搜索组件。
+- `frontend` 同时包含严格模型解析与真实编译器采集；源码路径不要求先转成人工qdot IR。
+- `analysis` 分别处理参考模型与真实AST；源码恢复与人工契约输入必须带不同的来源标签。
+- `verification`及顶层组合checker可调用受限分析器和其他独立checker以fresh重建证据，不能导入 `transforms`、`pipeline` 或候选搜索组件。不能由候选生成器提供自己的通过报告。
 - `transforms` 依赖 `ir`；不得改变检查状态，也不得修改 checker 的支持范围。
 - `pipeline` 组合生成器和检查器；CLI 只负责命令、序列化与退出码。
 - runtime 不参与签发静态关系结论；benchmark harness 不参与核心分析算法。
@@ -64,7 +66,9 @@
 
 参考模型支持固定正整数行列数、32/64 逻辑协作组、块内完整逻辑组、规则列遍历、guarded 同步 shuffle-down 加法和每行单一 writer。输出由 `q × scale × x` 单项式累加组成，采用数学无界整数语义。
 
-不支持浮点重排保证、机器整数溢出、ballot、共享内存、真实掩码/收敛语义、任意别名、矩阵指令、warp specialization、动态 shape 或真实物理 wave。尾行按完整逻辑组退出；读取退出组中的 lane 返回 `unknown`。超出资源上限同样返回 `unknown`。
+上述qdot参考模型不支持浮点重排保证、机器整数溢出、ballot、共享内存、真实掩码/收敛语义、任意别名、矩阵指令、warp specialization、动态 shape 或真实物理 wave。尾行按完整逻辑组退出；读取退出组中的 lane 返回 `unknown`。超出资源上限同样返回 `unknown`。
+
+真实AST条件检查另有整数溢出、共享存储/索引等受限支持，不受上述qdot模型列表概括；准确子集和未解除前提见 [检查器说明](../compiler/verification/README.md)。这些局部支持不能升级为完整共享内存并发语义或浮点等价保证。
 
 ## 部署与复现
 
