@@ -17,6 +17,64 @@ from wavebridge.verification.kernel_arguments import _abi_type, _Unknown
 MAX_CASTS = 32
 
 
+def check_nested_entry(payload, declaration_id, outer_loop_id, inner_loop_id, leaf_contract,
+                       integer_types, history_call_protocols, work_call_protocols, *,
+                       max_ast_nodes=None, use_static_branches=False):
+    """Freshly carry one local's initializer domain to each reached nested entry.
+
+    Outer siblings before AND after the selected child must preserve storage;
+    preserving only the child's own dependency set is insufficient.
+    """
+    from wavebridge.verification.loop_exit_guards import _check_work_preservation
+
+    result = {"schema_version": "initializer-to-nested-entry/v1", "status": "unknown", "reason": None,
+              "scope": "initialized_local_at_each_reached_nested_loop_entry",
+              "history_check": None, "work_check": None, "value_preserved_to_nested_entry": False,
+              "nested_loop_reachability_established": False, "source_program_checked": False,
+              "deployable": False, "assumptions": [],
+              "limitations": ["not reachability, termination, trip count, iteration-domain or output equivalence",
+                              "all external getter, call-effect, valid-execution and no-alias premises remain conditional"]}
+    try:
+        abi = integer_types.get("int") if isinstance(integer_types, dict) else None
+        if (not isinstance(abi, dict) or abi.get("signed") is not True or
+                type(abi.get("bits")) is not int or not 1 <= abi["bits"] <= 64 or
+                not isinstance(inner_loop_id, str) or not inner_loop_id or inner_loop_id == outer_loop_id):
+            raise _Unknown("invalid_integer_abi_or_nested_selection")
+        history = check_to_statement(payload, declaration_id, outer_loop_id, leaf_contract,
+                                     integer_types, history_call_protocols, max_ast_nodes=max_ast_nodes,
+                                     use_static_branches=use_static_branches)
+        result["history_check"] = history
+        if history["status"] != "checked" or history.get("value_preserved_to_statement") is not True:
+            raise _Unknown("outer_entry_history_not_checked")
+        work = _check_work_preservation(payload, outer_loop_id, abi["bits"], work_call_protocols,
+                                        max_ast_nodes=max_ast_nodes, use_static_branches=use_static_branches,
+                                        use_nested_loops=True, extra_protected_ids=(declaration_id,))
+        result["work_check"] = work
+        if (work["status"] != "checked" or
+                work.get("outer_header_and_prefix_preserve_additional_storage") != "conditional"):
+            raise _Unknown("outer_loop_storage_preservation_not_checked")
+        if history["input_sha256"]["root"] != work["input_sha256"]["root"]:
+            raise _Unknown("input_changed_between_checks")
+        selected = [item for item in work["nested_loop_checks"] if item.get("loop_id") == inner_loop_id]
+        if (len(selected) != 1 or selected[0].get("status") != "checked" or
+                declaration_id not in selected[0].get("ancestor_protected_declaration_ids", [])):
+            raise _Unknown("selected_nested_entry_not_checked")
+        result.update(status="checked", value_preserved_to_nested_entry=True,
+                      result_interval=history["result_interval"], declaration_id=declaration_id,
+                      outer_loop_id=outer_loop_id, inner_loop_id=inner_loop_id,
+                      nested_loop_relative_child_path=selected[0]["loop_relative_child_path"],
+                      input_sha256={"history": history["input_sha256"], "work": work["input_sha256"],
+                                    "inner_loop_id": _hash(inner_loop_id)})
+        result["assumptions"].extend(history["assumptions"] + work["assumptions"])
+        for child in work["call_effect_checks"].values():
+            result["assumptions"].extend(child.get("assumptions", []))
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, KeyError, IndexError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
 def check_to_statement(payload, declaration_id, statement_id, leaf_contract, integer_types,
                        call_protocols, *, max_ast_nodes=None, use_static_branches=False):
     """Preserve an initialized local up to a later direct statement's first entry."""

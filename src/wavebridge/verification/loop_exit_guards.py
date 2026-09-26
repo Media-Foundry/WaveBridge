@@ -480,6 +480,15 @@ def check_header_connection(root, loop_id, int_bits, *, max_ast_nodes=None):
 def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_ast_nodes=None,
                             use_static_branches=False, use_nested_loops=False):
     """Check all selected work statements, not just successfully checked calls."""
+    return _check_work_preservation(payload, loop_id, int_bits, call_protocols,
+                                   max_ast_nodes=max_ast_nodes, use_static_branches=use_static_branches,
+                                   use_nested_loops=use_nested_loops)
+
+
+def _check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_ast_nodes=None,
+                             use_static_branches=False, use_nested_loops=False,
+                             extra_protected_ids=()):
+    """Internal worker; extra storage has no initializer-domain claim by itself."""
     from wavebridge.analysis.column_loops import _check_body, _static_bool_value, _Unknown as BodyUnknown
     from wavebridge.verification.builtin_calls import check_call_no_memory_write
     from wavebridge.verification.scalar_call_effects import check_no_memory_write as check_scalar_call
@@ -496,6 +505,9 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
                               "external leaf effects remain unverified; all consumed call premises apply"],
               "budget": {"max_call_protocols": 64}}
     if (type(use_static_branches) is not bool or type(use_nested_loops) is not bool or
+            not isinstance(extra_protected_ids, tuple) or len(extra_protected_ids) > 64 or
+            any(not isinstance(i, str) or not i for i in extra_protected_ids) or
+            len(set(extra_protected_ids)) != len(extra_protected_ids) or
             not isinstance(payload, dict) or not isinstance(payload.get("ast"), dict) or
             not isinstance(call_protocols, dict) or len(call_protocols) > 64 or
             any(not isinstance(key, str) or not key or not isinstance(value, dict)
@@ -528,16 +540,25 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
             return protected
 
         prefix = connection["prefix_check"]
-        protected = dependencies(connection)
+        protected = dependencies(connection) | set(extra_protected_ids)
         result["protected_declaration_ids"] = sorted(protected)
         loops, pending = [], [root]
+        extra_declarations = {identifier: [] for identifier in extra_protected_ids}
         while pending:
             node = pending.pop()
             if node.get("id") == loop_id:
                 loops.append(node)
+            if node.get("id") in extra_declarations:
+                extra_declarations[node["id"]].append(node)
             pending.extend(node.get("inner", []))
         if len(loops) != 1:
             raise _Unknown("loop_identity_changed")
+        for declarations in extra_declarations.values():
+            if (len(declarations) != 1 or declarations[0].get("kind") != "VarDecl" or
+                    _type(declarations[0]) not in {"int", "const int"} or
+                    declarations[0].get("storageClass") not in (None, "auto", "register") or
+                    declarations[0].get("tls") is not None or declarations[0].get("thread_local") is not None):
+                raise _Unknown("additional_storage_not_unique_automatic_int")
         paths, pending = {}, [(loops[0], [])]
         while pending:
             node, path = pending.pop()
@@ -630,6 +651,20 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
             report.update(status="checked", body_preserves_combined_dependencies="conditional")
             result["assumptions"].extend(child["assumptions"])
 
+        if extra_protected_ids:
+            result["additional_protected_declaration_ids"] = list(extra_protected_ids)
+            result["outer_header_and_prefix_preserve_additional_storage"] = "not_established"
+            # The entry domain holds BEFORE the outer header executes. Check
+            # init, condition and increment, including later outer iterations.
+            parts = loops[0]["inner"]
+            for expression in (parts[0], parts[2], parts[3]):
+                scan(expression, set(extra_protected_ids), 0)
+            partition = prefix["partition_check"]
+            for binding in partition["prefix_statement_bindings"]:
+                scan(bound_statement(loops[0], binding), protected, 0)
+            scan(partition["guard_ast"], protected, 0)
+            result["outer_header_and_prefix_preserve_additional_storage"] = "conditional"
+            result["assumptions"].append("additional protected automatic storage is alive throughout this loop execution")
         for binding in prefix["partition_check"]["work_statement_bindings"]:
             scan(bound_statement(loops[0], binding), protected, 0)
         unused = sorted(set(call_protocols) - set(result["call_effect_checks"]))
@@ -638,6 +673,8 @@ def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_a
             raise _Unknown("unused_call_protocols")
         result.update(status="checked", work_preserves_protected="conditional",
                       input_sha256={**connection["input_sha256"], "call_protocols": _hash(call_protocols)})
+        if extra_protected_ids:
+            result["input_sha256"]["extra_protected_ids"] = _hash(extra_protected_ids)
         result["assumptions"].extend(connection["assumptions"])
     except BodyUnknown as error:
         result["reason"], result["unknown_range"] = error.reason, error.range

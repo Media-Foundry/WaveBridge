@@ -6,7 +6,7 @@ from pathlib import Path
 from experiments.pytorch_softmax_intake import implementation_hashes, select_entry, sha, walk
 from wavebridge.analysis.column_loops import _hinted_loop, _static_bool_value, _Unknown
 from wavebridge.verification.getter_returns import _hash
-from wavebridge.verification.initializer_domain import check_to_statement
+from wavebridge.verification.initializer_domain import check_to_statement, check_nested_entry
 
 NATIVE_SHA = "a59c12247f796fe2034ba03ecc43782f77ac3942496b18a140ceacbb24c7ff45"
 LEAF_PROTOCOL_SHA = "c9a085aa07bf43e2e3a9221dc92bce58b5237e9ddc4a1b9568ca454b1f065996"
@@ -42,7 +42,7 @@ def direct_target(call):
     return node["referencedDecl"]["id"]
 
 
-def run(native, leaf_protocol, output):
+def run(native, leaf_protocol, output, *, nested_entry=False):
     if sha(native) != NATIVE_SHA or sha(leaf_protocol) != LEAF_PROTOCOL_SHA or output.exists():
         raise ValueError("fixed_input_mismatch_or_output_exists")
     dependencies = {str(p): sha(p) for p in (Path(__file__), leaf_protocol,
@@ -94,8 +94,12 @@ def run(native, leaf_protocol, output):
     base = json.loads(leaf_protocol.read_text())
     if base["native_envelope_sha256"] != native_hash:
         raise ValueError("leaf_native_mismatch")
+    history_ids = {n["id"] for statement in statements[8:20] for n in calls_on_supported_paths(statement)}
+    work_ids = {n["id"] for n in calls_on_supported_paths(target)} if nested_entry else set()
+    if history_ids & work_ids:
+        raise ValueError("history_and_work_call_identity_overlap")
     protocols = {}
-    for statement in statements[8:20]:
+    for statement in statements[8:20] + ([target] if nested_entry else []):
         for call in calls_on_supported_paths(statement):
             callee = declaration(direct_target(call))
             signature = callee.get("type", {}).get("qualType")
@@ -129,12 +133,21 @@ def run(native, leaf_protocol, output):
     contract = {"schema_version": "getter-leaf-domain/v1", "declaration_id": getter["id"],
                 "arguments": [], "return_type": {"qualType": "int"}, "lower": 0, "upper": 31}
     abi = {"int": {"bits": 32, "signed": True}, "unsigned int": {"bits": 32, "signed": False}}
-    print(json.dumps({"phase": "protocols_bound", "calls": list(protocols), "target": target["id"]}), flush=True)
-    checked = check_to_statement(payload, protected["id"], target["id"], contract, abi,
-                                 protocols, use_static_branches=True)
+    history_protocols = {k: v for k, v in protocols.items() if k in history_ids}
+    work_protocols = {k: v for k, v in protocols.items() if k in work_ids}
+    print(json.dumps({"phase": "protocols_bound", "history_calls": list(history_protocols),
+                      "work_calls": list(work_protocols), "target": target["id"]}), flush=True)
+    if nested_entry:
+        inner, = [n for n in walk(target) if n.get("kind") == "ForStmt" and n is not target]
+        checked = check_nested_entry(payload, protected["id"], target["id"], inner["id"], contract, abi,
+                                     history_protocols, work_protocols, use_static_branches=True)
+    else:
+        checked = check_to_statement(payload, protected["id"], target["id"], contract, abi,
+                                     history_protocols, use_static_branches=True)
     after = implementation_hashes()
     report = {"schema_version": "softmax-native-history-development/v1", "check": checked,
-              "native_sha256": NATIVE_SHA, "call_protocols": protocols, "leaf_contract": contract,
+              "native_sha256": NATIVE_SHA, "call_protocols": history_protocols, "leaf_contract": contract,
+              "nested_entry": nested_entry, "work_call_protocols": work_protocols,
               "integer_types": abi, "implementation_before": before, "implementation_after": after,
               "driver_dependencies": dependencies, "GPU_executed": False,
               "source_program_checked": False, "deployable": False,
@@ -152,5 +165,6 @@ if __name__ == "__main__":
     parser.add_argument("--native", type=Path, required=True)
     parser.add_argument("--leaf-protocol", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--nested-entry", action="store_true")
     args = parser.parse_args()
-    run(args.native, args.leaf_protocol, args.output)
+    run(args.native, args.leaf_protocol, args.output, nested_entry=args.nested_entry)

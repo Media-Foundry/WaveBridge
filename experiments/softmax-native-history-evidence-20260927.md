@@ -77,3 +77,14 @@ local_idx 的 `[0,31]` 保持到目标首次入口；目标循环体仍未检查
 最终代码完整 1122 项测试通过（75.288 秒，native 启用、无跳过），
 日志为 `check-final.log`；demo-final.log 对应演示通过，git diff --check 通过。
 定向回归 4 项通过（0.038 秒）；GPT-5.6 Sol 另行只读复核和重跑亦通过。
+
+## 最终实现重放（0faa378）
+
+`replay-final.json` 已完成，SHA256：
+`eca78b45ec85313ed7024b648d478871f3e4b3da5ffa14181cf5eb4d096ba533`。
+status=checked，inputs_unchanged=true，12 条中间顶层语句、4 个调用通过，
+unused=[]，条件 result_interval=[0,31]。结束后逐文件核对报告中的实现哈希
+与当时工作树一致；随后才开始内层入口组合的实现。
+
+本结论到外层输出循环首次入口为止。local_idx 的消费者在内层循环中，不能
+未经检查就把该域用于内层每次入口：外层中内层前后语句以及循环头也须保持它。

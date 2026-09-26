@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 初始化域到内层每次入口的组合检查
+
+新增 `initializer_domain.check_nested_entry`：fresh 建立初始化到外层首次入口，
+再从外层扫描开始保护同一个源声明，覆盖 outer header/prefix/guard、内层
+前后兄弟语句及嵌套内容，最后精确绑定内层 ID/path。不能只依赖内层自身的
+依赖集合；否则外层兄弟语句仍可能改变下一次内层入口值。
+5 项新增真实 Clang 回归通过，GPT-5.6 Sol 只读复核无阻断；完整 1127 项
+测试通过（75.954 秒，native 启用、无跳过），demo/diff 通过。
+真实 softmax 的 nested-entry 重放已启动，历史 4 项调用与工作区 1 项调用
+已绑定，尚未记为完成；见 [实录](../experiments/softmax-nested-entry-evidence-20260927.md)。
+本次未运行 GPU；完整迭代域和循环整数安全未由该入口建立。
+
 ## 真实 softmax 历史链的条件通过与数组初始化边界
 
 新 native AST 的第一轮完整历史重放越过 Max，在 sum 数组初始化处 unknown。
@@ -12,8 +24,9 @@ Clang 将其语义槽位放在 array_filler 中；新增受限 float[N] 字面�
 [实录](../experiments/softmax-native-history-evidence-20260927.md)。
 该报告发生在缺失/非字符串类型字段防护之前；防护已补，最终代码全量
 1122 项测试通过（75.288 秒，native 启用、无跳过），demo/diff 通过。
-最终实现的第三轮重放已启动，尚未将其记为完成；第二轮报告不能冒充最终
-实现哈希的结果。GPT-5.6 Sol 新增 4 项真实 Clang/错形回归并只读复核。
+`0faa378` 最终实现的第三轮重放已完成：checked、inputs_unchanged=true，
+12 条语句及 4 个调用通过，unused=[]；已核对当时逐文件实现哈希一致。
+GPT-5.6 Sol 新增 4 项真实 Clang/错形回归并只读复核。
 未运行 GPU、未建立目标循环体或整核等价，外部 getter/leaf 前提仍 unverified。
 
 ## 数组调用接入初始化历史检查

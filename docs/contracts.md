@@ -496,3 +496,18 @@ checked只表示两处指针更新的整数RHS关系及无溢出；矩形域可�
 两种布局混用、非浮点槽位、复杂表达式、调用、写入、引用/record 构造保持
 unknown。这里检查的是效果，不推导数组值、不支持一般聚合初始化；不能
 因普通 AST 遍历没有看到 `array_filler` 内容就将其视为无副作用。
+
+### 初始化域到嵌套循环入口
+
+`initializer_domain.check_nested_entry` 重新运行初始化到外层首次入口的历史
+检查，再将同一个源声明加入外层受保护集合。私有 work worker 检查原始外层
+init/condition/increment、prefix/guard 和全部 work；内层前后兄弟语句不能
+绕过保护，嵌套 header/prefix/guard/work 继承该保护。公开的原有 work API
+不接收成功报告或额外的“已证明域”，其默认行为保持不变。
+
+组合要求相同 root 哈希、整数 ABI、精确 inner ID 和唯一的 checked 嵌套路径，
+历史和工作调用协议分别重新检查，未消费协议保持拒绝。
+`initializer-to-nested-entry/v1` 的 `value_preserved_to_nested_entry=true`
+仅表示：在显式前提下，每次实际到达该内层循环入口时保留初始化域。
+它不证明实际到达、执行次数、终止、整数溢出或完整迭代域；所有外部 leaf、
+有效执行、存活、无别名和无异步干扰条件仍须成立，source/deploy 保持 false。
