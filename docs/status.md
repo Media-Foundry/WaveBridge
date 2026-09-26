@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 提前退出结构与上下文绑定
+
+新增loop_exit_guards检查直接退出guard分区，区分首句true-break与末句else-break，
+保留退出迭代也会执行的prefix；fresh检查int比较操作数无显式写入。
+真实softmax两处结构checked，但header、body效果、guard稳定性和有效迭代域
+尚未建立，因此条件循环恢复仍6/8、整体unknown，不升级为整核或GPU保证。
+Clang模板共享BreakStmt ID问题以root+唯一loop+child-path绑定结构语句处理，
+语义表达式身份门槛不放宽；原失败与修复回放均保留，见
+[实录](../experiments/exit-guard-evidence-20260927.md)。
+最终完整1035项测试通过（69.179秒，native插件启用，无跳过），demo/diff通过。
+GPT-5.6 Sol新增回归并复核；无GPU，远端CI未核验。
+
 ## 混合调用效果接入循环恢复
 
 新增独立recover_with_call_effects，fresh分派builtin/scalar完整调用检查；

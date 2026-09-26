@@ -1050,3 +1050,27 @@ checked仅条件性表示所选表达式没有显式源码内存写入。初始�
 只读对象限制、循环外求值等边界不放宽；间接调用、receiver和逗号callee拒绝。
 外部协议见docs/contracts.md。成功仅条件无写，不表示leaf性质已验证；
 子报告成功也不能覆盖未知父报告，外部leaf假设不能掩盖实参副作用。
+
+## 直接循环退出分区
+
+`loop_exit_guards.inspect_structure(root, loop_id)` 从完整TU检查受限ForStmt的
+直接break所属关系与guard。只接受首句`if (condition) break;`后接work，或
+末句`if (condition) { work } else break;`前有prefix。嵌套loop/switch里的break
+绑定最近owner，不能误算成外层退出。所选loop有多个break、其它位置的break、
+continue/return/goto/throw或复杂if初始化时保守unknown。
+
+condition必须为bool类型的int二元比较；两个操作数分别fresh执行独立无写
+检查，未知调用、++、指针/引用读取等不接受。报告保存精确guard AST、break
+极性、prefix/work语句ID和子检查前提。**prefix在guard前执行，包括随后break
+的迭代**，不能把它当作仅在work条件成立时才执行。
+
+checked只表示直接退出分区结构和guard操作数条件无写；不检查header、prefix/
+work效果、guard变量稳定性、实际整数值或迭代域。后续需要证明这些关系，才能
+推导有效bound/coverage。入口不删除break、不修改AST、不放宽原循环恢复器，
+也不声称所有动态退出已穷尽或整核有效。
+
+Clang可以在不同模板实例中共享非dependent的BreakStmt身份。因此branch/
+break/prefix/work语句绑定为`完整root哈希 + 唯一loop ID + loop_relative_child_path`
+（路径索引包括AST的空占位），statement ID只作为辅助信息，不能独立定位。
+这个语句位置规则不放宽guard、操作数和变量声明的语义身份检查，也不把不同
+实例的变量或动态迭代合并。任何下游消费必须保留上下文绑定。
