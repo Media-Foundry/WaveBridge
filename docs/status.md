@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 真实 softmax 的精确启动点绑定
+
+复用已有 launch_binding 在新 native AST 上 checked：唯一匹配选定 kernel
+的 launch，4 个配置槽位与 8 个形参位置精确绑定，输入/实现哈希一致。
+block 槽位来自 threads 对象复制；其字段值和复制前保持性尚未证明。
+完整 TU 另有 22 个未解析启动位置，保持原样，不记为全部解析成功。
+见 [实录](../experiments/softmax-launch-binding-evidence-20260927.md)。
+8 项既有真实 Clang 回归通过（0.137 秒）；未改 checker 或运行 GPU。
+此结果不建立完整 lane 家族或 store 参与性。不能由 getter `[0,31]` 单次
+值域直接推出完整起点多重集；后续先处理实际 threads 对象与 API 绑定。
+
 ## 入口输出指针到 store 的条件历史
 
 新增 `guarded_stores.check_entry_pointer`：fresh 相对 store 检查之后，绑定
