@@ -13,6 +13,14 @@
 - 提交与远端：提交本实现/测试/文档并push当前分支；本地artifacts忽略不上传。最终提交ID由git记录，不合并master。
 - 阻塞：无；完整生产重放进行中不是阻塞。
 
+## 生产终态补记
+
+- 实现已提交并推送c69ecce。随后会话34115退出2：unknown / unresolved_launch_sites，耗时135.3214133230067秒；不是生产绑定通过。
+- production.json SHA256：4c67d67a4f0e85aa0eae1ec35a1a35127b473d3c7186783121a475c0bbd5bf92。
+- 78个实现哈希运行前后一致，与当前源码逐项sha256sum复核通过，src冻结解除。
+- 同目录diagnose.py只读重放launch_facts以记录未解析位置，不改变checker结果；输出diagnostic.json/log。会话61247仍运行，继续轮询同一会话，不重启。
+- 后续61247已退出0。唯一unresolved为kernel_not_exact_declref，range includedFrom指向CUB dispatch_merge_sort.cuh；选定Float launch恢复且parameter_binding_status=bound_by_position。当前checker因全TU任一未解析位置提前退出，后续目标义务尚未执行。下一步可精确区分选定launch检查与全TU发现完整性；必须保留same-ID冲突全局拒绝并加入真实多launch负例，不可直接忽略所有unresolved或将该诊断改写为生产通过。
+
 ## 下一步可复用链（Sol只读核查）
 
 首例llama手工baseline可按launch_binding → row_offset_check → 复用其fresh

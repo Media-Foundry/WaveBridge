@@ -14,8 +14,15 @@ checked只描述静态配对，不证明配置值、API语义、对象历史保�
 721项CPU、245项Clang专项和demo通过，匹配native插件已启用；新增8项真实
 Clang回归包含合法lambda重复、选点错绑及AST证据篡改拒绝（后者不是GPU反例）。
 源码哈希`af450c78904e3e1d6c7a51fe1cbd9e74146b4d9728cf28398e4a23f241bfe79d`。
-固定完整vLLM生产AST的Float配对重放已启动，会话34115仍运行，src暂时冻结；
-尚无生产通过结论。日志和脚本位于`artifacts/wb-launch-binding-urZCXK/`。
+固定完整vLLM生产AST的Float配对重放已结束，会话34115退出2，耗时135.32秒，
+结果unknown（unresolved_launch_sites），不是生产通过。78个实现哈希前后及
+结束后复核一致，src冻结解除。报告SHA256为
+`4c67d67a4f0e85aa0eae1ec35a1a35127b473d3c7186783121a475c0bbd5bf92`。
+日志和脚本位于`artifacts/wb-launch-binding-urZCXK/`；保留未解析位置待诊断。
+只读诊断已结束：选定Float launch被恢复且参数按位置绑定；唯一未解析位置为
+包含链指向CUB dispatch_merge_sort.cuh的kernel_not_exact_declref。当前入口会因
+全TU任一未解析launch停止，尚未检查选定目标后续义务。下一步需区分目标选点
+义务与全TU发现完整性，保留同ID冲突拒绝，不能据诊断直接签发生产checked。
 未重编译生产TU、生成GPU候选或执行GPU。下一步消费该绑定，在同一AST/协议下
 原子调用已有设备局部门控，逐项保留未解除义务，不将全部局部checked冒充整核保证。
 
