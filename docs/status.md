@@ -9,7 +9,25 @@ vLLM首次固定分析器评估保留，但后续反复开发/调试已经使它
 正式案例、未下载新语料。冻结后的新谱系验收仍未建立。
 路线图下一交付聚焦真实kernel/launch成对工件与已有设备关系的原子门控，不能
 靠更多host局部子报告替代闭环，也不把关键unknown改成外部假设以放行候选。
-本次仅校正研究/工程状态；生产前缀检查会话17514仍在运行，src保持冻结。
+生产前缀检查会话17514已退出2，新增子项unknown；77个实现哈希复核一致，
+本轮src冻结解除。该结果不授权候选生成或部署。
+
+## 生产前缀检查结果与诊断
+
+固定完整生产AST的fresh组合耗时525.43秒：父显式闭合以及原有顺序、复制效果、
+复制祖先cleanup、局部record作用域四项checked；新增前缀子项unknown，原因为
+`cleanup_native_flag_not_supported_side_effect_free_shape`。父状态不覆盖子项。
+报告为`artifacts/wb-production-prefix-oiP4Ih/production.json`，SHA256为
+`f1d2910ed91cebe3e24d0db0ba93bf2b6b3d7903c8e1b35e8f08764b00904d9e`。
+77个Python实现哈希运行前后一致，结束后与当前源码复核通过。
+
+只读诊断定位三个true wrapper到Torch dispatch错误消息构造，而非device_guard：
+它们分别位于Float/Half/BFloat16分支，包含std::string临时对象及析构声明引用。
+其祖先IfStmt均为isConstexpr=true，条件为bool ConstantExpr false。
+当前checker尚未验证这种控制排除，故上述人工诊断不将生产报告升级为checked；
+native count=0也不表示没有析构。保留原始unknown，不放宽副作用标志检查。
+9e9cfa0的CI 36240080816已success。本轮没有重编译、GPU执行或性能结果。
+详见`.agents/handoffs/wb04-production-prefix-20260926.md`。
 
 ## 复制前词法表达式清理检查
 
@@ -20,7 +38,7 @@ vLLM首次固定分析器评估保留，但后续反复开发/调试已经使它
 判定位置时unknown，不按offset猜实参/分支执行顺序。
 此项不证明真实运行顺序、全部析构、生命周期、opaque调用效果或源值保持。
 未调用lambda的body也只是词法子树，不能被描述成析构已经执行。
-本轮未重新采集生产TU或运行GPU；生产前缀子项验收仍待完成。
+实现验收未重新采集生产TU或运行GPU；后续生产重放结果见上节，子项未通过。
 713项CPU、237项Clang专项和demo通过；46项对象闭合专项包含真实native正负例
 与CPU未调用lambda计数。49个真实源码函数×3协议共147份旧接口完整报告与
 d4ca05c相同；49份独立结构报告移除新增子项后也相同。最终实现SHA及完整比较
