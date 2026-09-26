@@ -2,6 +2,29 @@
 
 更新日期：2026-09-26。
 
+## W7900 wave64 编译预检：不建立运行时能力
+
+对未修改的device_probe.hip.cpp，以本机HIP 7.15.26333 / AMD Clang 23.0.0git
+分别执行gfx1100默认与-mwavefrontsize64的device-only编译，两者退出0。
+从实际输出offload bundle提取hipv4-amdgcn-amd-amdhsa--gfx1100成员，再用
+llvm-readobj检查wavebridge_probe元数据，分别为32/64；成员SHA与相应链接
+临时产物一致。并非仅根据请求参数或任意临时汇编推定波宽。
+
+这不是设备执行。HIP develop硬件文档明确将RDNA该实验选项列为运行时不支持；
+该文档不是本机SDK版本的运行验证。没有执行probe或candidate，没有新增数值
+结果，runtime_verified=false、deployable=false，W7900 native64门槛不解除。
+依赖参数-MF被当前device-only路径忽略，清单缺失，dependency_closure=unknown；
+保存预处理输入哈希不能替代完整工具链/设备库依赖闭包。首次直接对bundle运行
+readobj失败的原报告保留，后续成员提取记录不覆盖失败。
+
+工件`artifacts/wb-wave64-compile-gloEbQ/`（本地忽略目录，不随Git上传），
+bundle-inspection.json SHA256为
+`37a41d11dcbf8cb09e20358759c63bf1a95e9e8f42f9c99ec9aecd346d8043fd`。
+复现命令及完整边界见[编译观察记录](../experiments/wave64-compile-observation-20260926.md)。
+本轮只修改证据文档，未重跑772项历史测试，不将其记为本轮结果。
+后续继续离线源目标关系检查及logical32回归；native64执行需另有已确认支持的
+运行时/设备证据，不把W7900实验选项作为WB-05必须成功的前提。
+
 ## 冻结基线执行入口的输入与宽度门槛
 
 核对发现protocol仍固定logical_width=32；旧runner只记录源码SHA，未在执行前
