@@ -27,6 +27,39 @@ def _typed(node, kind, spelling, category):
         raise _Unknown("selected_expression_shape_mismatch")
 
 
+def _wrapper_signature(declaration):
+    info = declaration.get("type")
+    if info == {"qualType": "float ()"}:
+        return ""
+    if info == {"qualType": "float () noexcept"}:
+        return " noexcept"
+    raise _Unknown("wrapper_signature_unsupported")
+
+
+def _direct_wrapper_target(call, unique):
+    _typed(call, "CallExpr", "float", "prvalue")
+    parts = _children(call)
+    if len(parts) != 1:
+        raise _Unknown("wrapper_call_arguments_unsupported")
+    decay = parts[0]
+    if (decay.get("kind") != "ImplicitCastExpr" or
+            decay.get("castKind") != "FunctionToPointerDecay" or len(_children(decay)) != 1):
+        raise _Unknown("wrapper_callee_decay_unsupported")
+    callee = _children(decay)[0]
+    ref = callee.get("referencedDecl")
+    if (callee.get("kind") != "DeclRefExpr" or _children(callee) or
+            not isinstance(ref, dict) or not isinstance(ref.get("id"), str) or not ref["id"]):
+        raise _Unknown("wrapper_callee_not_direct_reference")
+    target = unique(ref["id"])
+    suffix = _wrapper_signature(target)
+    _typed(callee, "DeclRefExpr", "float ()" + suffix, "lvalue")
+    _typed(decay, "ImplicitCastExpr", "float (*)()" + suffix, "prvalue")
+    if (ref.get("kind") != target.get("kind") or ref.get("type") != target.get("type") or
+            ref.get("name") != target.get("name")):
+        raise _Unknown("wrapper_callee_declaration_mismatch")
+    return ref["id"]
+
+
 def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     report = {
@@ -258,14 +291,6 @@ def check_wrapper_no_memory_write(payload, start_declaration_id, effect_protocol
                 raise _Unknown("wrapper_identity_not_unique")
             return found[0]
 
-        def signature(declaration):
-            info = declaration.get("type")
-            if info == {"qualType": "float ()"}:
-                return ""
-            if info == {"qualType": "float () noexcept"}:
-                return " noexcept"
-            raise _Unknown("wrapper_signature_unsupported")
-
         current = start_declaration_id
         visited = set()
         while True:
@@ -278,7 +303,7 @@ def check_wrapper_no_memory_write(payload, start_declaration_id, effect_protocol
                     (kind == "CXXMethodDecl" and declaration.get("storageClass") != "static") or
                     declaration.get("virtual") or declaration.get("variadic")):
                 raise _Unknown("wrapper_declaration_unsupported")
-            signature(declaration)
+            _wrapper_signature(declaration)
             children = _children(declaration)
             allowed_attrs = {"CUDAHostAttr", "CUDADeviceAttr", "AlwaysInlineAttr", "NoInlineAttr",
                              "NoThrowAttr", "ConstAttr", "PureAttr", "UsedAttr"}
@@ -308,28 +333,75 @@ def check_wrapper_no_memory_write(payload, start_declaration_id, effect_protocol
                     "start_declaration_id": start_declaration_id,
                     "external_leaf_call_expression_id": call_id})
                 return result
-            parts = _children(call)
-            if len(parts) != 1:
-                raise _Unknown("wrapper_call_arguments_unsupported")
-            decay = parts[0]
-            if (decay.get("kind") != "ImplicitCastExpr" or
-                    decay.get("castKind") != "FunctionToPointerDecay" or len(_children(decay)) != 1):
-                raise _Unknown("wrapper_callee_decay_unsupported")
-            callee = _children(decay)[0]
-            ref = callee.get("referencedDecl")
-            if (callee.get("kind") != "DeclRefExpr" or _children(callee) or
-                    not isinstance(ref, dict) or not isinstance(ref.get("id"), str) or not ref["id"]):
-                raise _Unknown("wrapper_callee_not_direct_reference")
-            target = unique(ref["id"])
-            suffix = signature(target)
-            _typed(callee, "DeclRefExpr", "float ()" + suffix, "lvalue")
-            _typed(decay, "ImplicitCastExpr", "float (*)()" + suffix, "prvalue")
-            if (ref.get("kind") != target.get("kind") or ref.get("type") != target.get("type") or
-                    ref.get("name") != target.get("name")):
-                raise _Unknown("wrapper_callee_declaration_mismatch")
-            current = ref["id"]
+            current = _direct_wrapper_target(call, unique)
     except _Unknown as error:
         result["reason"] = str(error)
     except (TypeError, ValueError, RecursionError):
         result["reason"] = "unsupported_wrapper_representation"
+    return result
+
+
+def check_call_no_memory_write(payload, call_expression_id, effect_protocol, *, max_ast_nodes=None):
+    """Freshly bind a complete direct call site and its restricted target chain."""
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    result = {
+        "schema_version": "builtin-callsite-no-memory-write/v1", "status": "unknown", "reason": None,
+        "scope": "complete_selected_direct_call_expression_under_external_builtin_effect",
+        "source_program_checked": False, "deployable": False,
+        "value_semantics": "not_established", "external_leaf_effect_verified": False,
+        "target_check": None,
+        "assumptions": ["native envelope and AST faithfully describe one valid translation unit",
+                        "compiler and plugin are trusted; source calls denote the bound definitions",
+                        "the supplied exact builtin no-write and normal-return premises hold"],
+        "limitations": ["only no-memory-write is composed; return values, FP effects and purity are not established",
+                        "enclosing expressions and statements, loop and invocation history are not checked",
+                        "external effect evidence is unverified; machine code and GPU execution are not checked"],
+        "budget": {"max_ast_nodes_per_scan": budget},
+    }
+    try:
+        if (type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES or
+                not isinstance(payload, dict) or not isinstance(effect_protocol, dict) or
+                not isinstance(call_expression_id, str) or not call_expression_id):
+            raise _Unknown("invalid_inputs_or_budget")
+        index, pending, count = {}, [payload.get("ast")], 0
+        while pending:
+            node = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            if not isinstance(node, dict) or not isinstance(node.get("inner", []), list):
+                raise _Unknown("malformed_ast")
+            identifier = node.get("id")
+            if isinstance(identifier, str) and identifier:
+                index.setdefault(identifier, []).append(node)
+            pending.extend(node.get("inner", []))
+
+        def unique(identifier):
+            nodes = index.get(identifier, [])
+            if len(nodes) != 1:
+                raise _Unknown("callsite_identity_not_unique")
+            return nodes[0]
+
+        call = unique(call_expression_id)
+        _typed(call, "CallExpr", "float", "prvalue")
+        if call_expression_id == effect_protocol.get("call_expression_id"):
+            target = check_no_memory_write(payload, call_expression_id, effect_protocol, max_ast_nodes=budget)
+            result["dispatch"] = "direct_builtin"
+        else:
+            target_id = _direct_wrapper_target(call, unique)
+            result["callee_declaration_id"] = target_id
+            target = check_wrapper_no_memory_write(payload, target_id, effect_protocol, max_ast_nodes=budget)
+            result["dispatch"] = "direct_zero_argument_wrapper"
+        result["target_check"] = target
+        if target.get("status") != "checked":
+            raise _Unknown("fresh_call_target_not_checked")
+        result["input_sha256"] = dict(target["input_sha256"], selected_call_expression_id=_hash(call_expression_id))
+        result.update(status="checked", conclusion={
+            "status": "conditional", "property": "no_memory_write", "subject": "exact_call_expression",
+            "call_expression_id": call_expression_id},
+            callsite_evaluation="checked_in_supported_direct_callee_and_argument_subset")
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, RecursionError):
+        result["reason"] = "unsupported_callsite_representation"
     return result

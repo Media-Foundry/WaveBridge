@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 完整 builtin/wrapper 调用点
+
+新增 check_call_no_memory_write：fresh 选唯一完整 CallExpr，检查直接 builtin
+或零参float direct callee，并重新检查其目标wrapper链。调用点与内部链共用
+严格callee结构门槛。真实Clang证明目标wrapper通过不代表带副作用callee或
+receiver的调用点通过；逗号、MemberExpr、间接调用继续unknown。条件无写结论
+仅针对所选完整CallExpr，不建立值/FP/纯度、循环保持性或部署保证。
+固定CUDA工件4个调用点在显式未验证协议下checked，见
+[实录](../experiments/builtin-callsite-evidence-20260927.md)。完整1006项测试通过
+（66.906秒，native插件启用，无跳过），demo/diff通过。远端CI未核验，无新GPU。
+
 ## 完整单返回 builtin wrapper 检查
 
 新入口从完整 AST fresh 检查最多32层零参float free/static单返回链，并接入

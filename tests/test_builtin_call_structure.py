@@ -3,7 +3,8 @@ import copy
 import unittest
 
 from wavebridge.verification.builtin_calls import (
-    inspect_structure, check_no_memory_write, check_wrapper_no_memory_write)
+    inspect_structure, check_no_memory_write, check_wrapper_no_memory_write,
+    check_call_no_memory_write)
 
 
 def fixture():
@@ -27,6 +28,51 @@ def fixture():
 
 
 class BuiltinCallStructureTests(unittest.TestCase):
+    @classmethod
+    def callsite(cls):
+        payload = cls.wrapped()
+        wrapper = payload["ast"]["inner"][-1]
+        callee = {"kind": "DeclRefExpr", "type": wrapper["type"], "valueCategory": "lvalue",
+                  "referencedDecl": {k: wrapper[k] for k in ("id", "kind", "type", "name")}}
+        call = {"id": "outer-call", "kind": "CallExpr", "type": {"qualType": "float"},
+                "valueCategory": "prvalue", "inner": [{"kind": "ImplicitCastExpr",
+                "castKind": "FunctionToPointerDecay", "type": {"qualType": "float (*)()"},
+                "valueCategory": "prvalue", "inner": [callee]}]}
+        payload["ast"]["inner"].append(call)
+        return payload
+
+    def test_callsite_binds_whole_selected_call(self):
+        payload = self.callsite()
+        protocol = self.protocol(payload)
+        result = check_call_no_memory_write(payload, "outer-call", protocol)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["target_check"]["wrapper_declaration_ids"], ["wrapper"])
+        self.assertEqual(result["conclusion"]["subject"], "exact_call_expression")
+        self.assertEqual(result["conclusion"]["call_expression_id"], "outer-call")
+        self.assertFalse(result["deployable"])
+        leaf = check_call_no_memory_write(payload, "call", protocol)
+        self.assertEqual(leaf["status"], "checked", leaf)
+        self.assertEqual(leaf["dispatch"], "direct_builtin")
+
+    def test_callsite_hidden_children_and_casts_fail(self):
+        for mutation in ("child", "cast", "argument"):
+            payload = self.callsite()
+            call = payload["ast"]["inner"][-1]
+            if mutation == "child":
+                call["inner"][0]["inner"][0]["inner"] = [{"kind": "CallExpr"}]
+            elif mutation == "cast":
+                call["inner"][0]["castKind"] = "BitCast"
+            else:
+                call["inner"].append({"kind": "IntegerLiteral"})
+            self.assertEqual(check_call_no_memory_write(payload, "outer-call", self.protocol(payload))["status"], "unknown")
+
+    def test_callsite_duplicate_id_and_budget_fail(self):
+        payload = self.callsite()
+        protocol = self.protocol(payload)
+        self.assertEqual(check_call_no_memory_write(payload, "outer-call", protocol, max_ast_nodes=1)["status"], "unknown")
+        payload["ast"]["inner"].append(copy.deepcopy(payload["ast"]["inner"][-1]))
+        self.assertEqual(check_call_no_memory_write(payload, "outer-call", protocol)["status"], "unknown")
+
     @staticmethod
     def wrapped():
         payload = fixture()

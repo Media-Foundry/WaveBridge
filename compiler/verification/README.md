@@ -1005,3 +1005,13 @@ free function 或 static/nonvirtual method，body 恰为一条直接调用的 re
 receiver/实参求值、运行时定义绑定和机器码仍是边界。报告可能保留先前成功
 绑定的部分链；仅当主 status checked 且 conclusion conditional 时成立，
 不能把 unknown 报告中的 partial wrapper_declaration_ids 当作接受。
+
+`builtin_calls.check_call_no_memory_write(payload, call_expression_id,
+effect_protocol)` 将范围扩展到一个完整调用点：从完整 AST 选唯一 CallExpr，
+fresh 检查直接 builtin，或检查零参 float callee 的精确
+FunctionToPointerDecay → childless lvalue DeclRef，再 fresh 检查目标 wrapper 链。
+两处内部边/调用点共用同一严格 callee 结构检查，避免名字或错误转换绕过。
+本入口拒绝 MemberExpr（包括通过对象调用静态方法）、函数指针、逗号 callee、
+额外/默认实参，不省略 receiver 求值。函数体单独成功不能覆盖调用点失败。
+conclusion.subject 为 exact_call_expression；仅覆盖所选调用及其受支持目标链，
+不覆盖包围它的其它表达式/语句/循环、FP语义或机器码执行。外部效果前提不变。
