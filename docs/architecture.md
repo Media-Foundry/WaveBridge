@@ -16,7 +16,7 @@
 | 关系表示 | `compiler/ir/`、`src/wavebridge/ir/` | 原始语义 → 显式关系模型 | 数据索引、运算、路由、参与条件、存储阶段、输出归属、假设、来源 | 仅版本化 qdot 专用模型 |
 | 关系恢复 | `compiler/analysis/`、`src/wavebridge/analysis/` | 原始语义 → 关系模型或拒绝原因 | 支持范围内联合推断；冲突和不确定性必须保留 | 精确调用、列递推、归约、输出后缀、launch 实参及构造字段的受限恢复；调用闭包完整性与整核语义未建立 |
 | 关系检查 | `compiler/verification/`、`src/wavebridge/verification/`、顶层 `*_check.py` | 源/目标、输入域、数值协议 → 检查报告 | 独立于生成器；比较输出计算，保留重复计数和保证范围 | qdot 模型及真实 AST 的条件整数、索引、存储、对象初始化/复制检查；仍不证明整核或跨波宽等价 |
-| 候选生成 | `compiler/transforms/`、`src/wavebridge/transforms/` | 关系与目标能力 → kernel/launch 候选对 | 数据格式不可随协作宽度修改；候选尚不可信 | qdot 模型 32/64 重新分工 |
+| 候选生成 | `compiler/transforms/`、`src/wavebridge/transforms/` | 关系与目标能力 → kernel/launch 候选对 | 数据格式不可随协作宽度修改；候选尚不可信 | qdot 模型 32/64 重新分工；精确声明与主源码绑定的单 token 离线改写原语，不签发安全适配 |
 | 决策编排 | `src/wavebridge/pipeline.py` | 候选与检查证据 → 接受、拒绝或验证过的 fallback | 未知不接受；所有调用者遵循同一门槛 | 只接受模型候选，不部署 |
 | 执行与测量 | `runtime/`、`experiments/` | 已检查代码、设备协议 → 原始执行记录 | 能力探测、正确性测试、计时与环境隔离 | 最小设备探测器；通用执行器待实现 |
 | 研究评估 | `benchmarks/`、`research/` | 原始证据、预先声明的协议 → 主张评估 | 覆盖/拒绝/有效接受/错误放行、强基线、成本和性能分开报告 | 登记模板与阶段门槛 |
@@ -56,6 +56,11 @@
 部署安全证明；归约值、同步/参与和浮点输出尚未接成统一验证结论。
 `collect_rmsnorm`进一步绑定同次归约链、helper、shared索引/容量与fresh输出
 结构，再独立检查条件贡献计数；其输出仍为结构证据包，不消除上述语义缺口。
+
+`transforms.source_token.edit`仅生成一个精确主源码 literal 的 byte-token 替换，
+不选择常量语义，不判断全部引用用途，不推断目标能力。输出完整源码和变更
+清单但始终未验收；其结果不进入现有qdot部署决策。更高层必须恢复角色、检查
+用途、重采目标AST并独立检查关系，不能以生成器的manifest代替目标分析。
 
 对象复制与捕获各有独立结构入口（`record_copy_check.inspect_effects`、
 `capture_source_check.inspect_structure`），不通过假设源存活的值检查去证明源存活。

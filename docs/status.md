@@ -2,6 +2,35 @@
 
 更新日期：2026-09-26。
 
+## 首个离线源码候选与目标重分析
+
+新增`transforms.source_token.edit`：按精确声明ID、主文件位置和源码哈希，仅替换
+一个直接整数初始化token，返回完整源码bytes及变更清单。它不判断语义角色，
+不调用checker，成功仅为generated_unvalidated_candidate；所有检查/部署标记false。
+宏、头文件、类型别名、身份冲突、未知属性和不完整位置拒绝，AST遍历有预算。
+756项完整CPU测试、256项Clang专项和demo通过，匹配native插件已启用；新增
+13项单元/真实Clang测试含UTF-8字节偏移、目标重解析和主文件/头文件边界。
+
+首例手工HIP standalone已完成一次离线提案生成：从fresh block/XOR恢复报告的
+共同width声明ID选点，不按名称选常量；静态kernel/launch配对重新检查。仅修改
+offset486的初始化32→64，其余源码bytes（包括launch的共享内存参数）保持原样。
+随后通过hipcc device-only syntax-only重新采集完整目标AST和依赖记录，未生成
+机器代码或执行GPU。目标恢复width64、block256、offsets[32,16,8,4,2,1]及输出
+后缀，目标kernel/launch使用新ID重新静态绑定；并非源目标语义共同验收。
+
+工件位于`artifacts/wb-source-candidate-1sKytL/`，生成/重分析/测试会话均退出0。
+候选SHA256为`2bf010241f268b2bbc96e77e67a9e888690ee9bd81ae676fdaa80f9072c987cb`；
+target.json为`914615ff57690dc7cbe8241a382311cfe7218cdfa3cc9dfde1ff8e9cd3fd0f24`。
+独立字节receipt串联源、候选、目标AST和报告，并复核80个实现文件哈希前后及
+当前一致；该receipt只说明工件完整性，不是语义checker。src冻结已解除。
+
+限制：这还是人工提取输入上的实验脚本加窄改写原语，不是完整候选后端。全部
+6处width引用的语义用途尚未闭合（报告明确false）；目标外部设备协议未重新绑定，
+源目标值关系、同步/参与、intrinsic对应、FP契约及W7900 wave64能力仍未建立。
+因此不接入部署或性能测试，不把原logical32数值结果迁移给新候选。
+下一步先建立全部width用途分类与保守拒绝，并从新目标AST重建设备协议绑定，
+再调用独立目标关系检查；不能把当前结构恢复写成WB-05完整验收。
+
 ## 同次归约计数与输出结构连接
 
 新增`device_evidence.collect_rmsnorm`，保持原整数入口不变，使用同次生成且
