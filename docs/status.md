@@ -2,6 +2,20 @@
 
 更新日期：2026-09-26。
 
+## 复制目标对象与record析构门控
+
+`record_copy_check.object_boundary` 在独立结构检查之后绑定普通自动完整目标
+或精确按值参数，并核对同一record的正面implicit trivial析构证据。目标与源
+同声明、placement-new、引用、static/TLS及未支持析构/属性均unknown。
+成功只描述有效C++复制求值下的抽象对象边界，不表示物理ABI非重叠；外围完整
+表达式cleanup、callee及其他实参效果、source lifetime/历史保持仍未建立。
+不会将父结构checked升级为所有子报告checked，capture的alive前提保留。
+678项CPU、202项Clang专项及demo通过。固定完整生产TU的三个复制点均fresh
+通过新对象门控，绑定到精确按值参数，并观察到同一record的implicit trivial
+析构声明。重放耗时154.85秒、退出0；77个实现哈希前后及当前复核一致，冻结解除。
+本次未重跑整个v3组合，也未运行GPU；见
+`.agents/handoffs/wb04-copy-object-boundary-20260926.md`。
+
 ## 独立复制结构效果入口
 
 `record_copy_check.inspect_effects` 已与条件字段值检查分离：复用同一私有结构

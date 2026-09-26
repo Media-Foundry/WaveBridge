@@ -16,6 +16,20 @@ void renamed_argument_copy() { Plain source(3, 5, 7); differently_named(source);
 void indirect_argument_copy() { Plain source(3, 5, 7); auto f = &accept_value; f(0, source); }
 void reference_argument_copy() { Plain source(3, 5, 7); accept_reference(Plain(source)); }
 void generic_argument_copy() { Plain source(3, 5, 7); accept_generic(source); }
+void placement_copy(void* storage) {
+  Plain source(3, 5, 7);
+  Plain* target = ::new (storage) Plain(source);
+  (void)target;
+}
+void static_target_copy() {
+  Plain source(3, 5, 7);
+  static Plain target(source);
+}
+void tls_target_copy() {
+  Plain source(3, 5, 7);
+  thread_local Plain target(source);
+}
+void self_initialization_copy() { Plain source(source); }
 #endif
 void alias_copy() { Plain source(3, 5, 7); Plain& alias = source; Plain target(alias); }
 void changed_before_copy() { Plain source(3, 5, 7); source.x = 99; Plain target(source); }
@@ -46,6 +60,25 @@ typedef struct Manual {
   Manual(const Manual& source) : x(source.x), y(source.y) {}
 } Manual;
 void manual_copy() { Manual source; Manual target(source); }
+typedef struct ExplicitDefaultDestructor {
+  unsigned x;
+  ExplicitDefaultDestructor() : x(3) {}
+  ExplicitDefaultDestructor(const ExplicitDefaultDestructor& source) : x(source.x) {}
+  ~ExplicitDefaultDestructor() = default;
+} ExplicitDefaultDestructor;
+void explicit_default_destructor_copy() {
+  ExplicitDefaultDestructor source;
+  ExplicitDefaultDestructor target(source);
+}
+typedef struct CleanupEffect {
+  unsigned x;
+  CleanupEffect() : x(3) {}
+  CleanupEffect(const CleanupEffect& source) : x(source.x) {}
+  ~CleanupEffect() { ++cleanup_effect_count; }
+  static unsigned cleanup_effect_count;
+} CleanupEffect;
+unsigned CleanupEffect::cleanup_effect_count = 0;
+void cleanup_effect_copy() { CleanupEffect source; CleanupEffect target(source); }
 typedef struct ParameterAttribute {
   unsigned x;
   ParameterAttribute() : x(3) {}

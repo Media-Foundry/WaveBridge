@@ -45,6 +45,18 @@ class RecordCopyClangTests(unittest.TestCase):
         expression_id, _ = self.inputs(name, root)
         return inspect_effects(root, expression_id, ABI, **kwargs)
 
+    def copy_expression(self, name, root=None):
+        root = self.root if root is None else root
+        function = next(node for node in _walk(root)
+                        if node.get("kind") == "FunctionDecl" and node.get("name") == name)
+        return next(node for node in _walk(function)
+                    if node.get("kind") == "CXXConstructExpr" and
+                    "const " in node.get("ctorType", {}).get("qualType", ""))
+
+    def effects_for_expression(self, name, root=None):
+        root = self.root if root is None else root
+        return inspect_effects(root, self.copy_expression(name, root)["id"], ABI)
+
     def test_independent_structure_effect_entry_accepts_exact_same_field_reads(self):
         for name, count in (("implicit_copy", 3), ("manual_copy", 2),
                             ("parameter_copy", 3)):
@@ -85,6 +97,103 @@ class RecordCopyClangTests(unittest.TestCase):
         self.assertIn("input_sha256", report)
         self.assertEqual(self.root, before)
 
+    def test_object_boundary_accepts_distinct_local_and_exact_by_value_targets(self):
+        reports = [self.run_effects("implicit_copy"), self.run_effects("manual_copy"),
+                   inspect_effects(self.root, self.argument_expression("argument_copy")["id"], ABI)]
+        for report in reports:
+            with self.subTest(expression=report["expression_id"]):
+                boundary = report["object_boundary"]
+                self.assertEqual(boundary["schema_version"], "copy-object-boundary/v1")
+                self.assertEqual(boundary["status"], "checked", report)
+                self.assertEqual(
+                    boundary["abstract_object_relation"],
+                    "distinct_complete_destination_from_evaluated_source_if_valid_copy_executes")
+                self.assertEqual(boundary["record_destruction"]["status"], "checked")
+                for key in ("source_lifetime", "source_value_preservation",
+                            "surrounding_full_expression_cleanups"):
+                    self.assertEqual(boundary[key], "not_established")
+                self.assertFalse(boundary["source_program_checked"])
+                self.assertFalse(boundary["deployable"])
+
+    def test_object_boundary_rejects_unsupported_targets_and_destructors(self):
+        for name in ("placement_copy", "reference_argument_copy", "static_target_copy",
+                     "tls_target_copy", "self_initialization_copy",
+                     "explicit_default_destructor_copy", "cleanup_effect_copy"):
+            with self.subTest(name=name):
+                report = self.effects_for_expression(name)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["local_copy_effects"]["status"], "checked", report)
+                self.assertEqual(report["object_boundary"]["status"], "unknown", report)
+
+    def test_object_boundary_requires_positive_consistent_destructor_metadata(self):
+        for mutation in ("missing", "nonbool", "conflicting_nontrivial", "conflicting_user"):
+            root = copy.deepcopy(self.root)
+            expression_id, _ = self.inputs(root=root)
+            original = inspect_effects(root, expression_id, ABI)
+            record = next(node for node in _walk(root)
+                          if node.get("id") == original["record_declaration_id"])
+            dtor = record["definitionData"]["dtor"]
+            if mutation == "missing":
+                del record["definitionData"]["dtor"]
+            elif mutation == "nonbool":
+                dtor["trivial"] = "true"
+            elif mutation == "conflicting_nontrivial":
+                dtor["trivial"] = True
+                dtor["nonTrivial"] = True
+            else:
+                dtor["trivial"] = True
+                dtor["userDeclared"] = True
+            with self.subTest(mutation=mutation):
+                report = inspect_effects(root, expression_id, ABI)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["object_boundary"]["status"], "unknown", report)
+
+    def test_object_boundary_rejects_target_shape_and_owner_conflicts(self):
+        for mutation in ("target_attribute", "duplicate_owner", "noncomplete"):
+            root = copy.deepcopy(self.root)
+            expression_id, _ = self.inputs(root=root)
+            expression = next(node for node in _walk(root) if node.get("id") == expression_id)
+            target = next(node for node in _walk(root)
+                          if node.get("kind") == "VarDecl" and node.get("name") == "target" and
+                          any(child.get("id") == expression_id for child in node.get("inner", [])))
+            if mutation == "target_attribute":
+                target["inner"].append({"kind": "UnmodeledTargetAttr"})
+            elif mutation == "duplicate_owner":
+                conflicting = copy.deepcopy(target)
+                conflicting["name"] = "conflicting_target_owner"
+                root["inner"].append(conflicting)
+            else:
+                expression["constructionKind"] = "non-virtual base"
+            with self.subTest(mutation=mutation):
+                report = inspect_effects(root, expression_id, ABI)
+                self.assertEqual(report["object_boundary"]["status"], "unknown", report)
+                if mutation != "noncomplete":
+                    self.assertEqual(report["status"], "checked", report)
+                    self.assertEqual(report["local_copy_effects"]["status"], "checked", report)
+
+    def test_object_boundary_rejects_conflicting_implicit_destructor_declaration(self):
+        for mutation in ("invalid", "body", "attribute"):
+            root = copy.deepcopy(self.root)
+            expression_id, _ = self.inputs(root=root)
+            original = inspect_effects(root, expression_id, ABI)
+            record = next(node for node in _walk(root)
+                          if node.get("id") == original["record_declaration_id"])
+            destructor = next(node for node in record["inner"]
+                              if node.get("kind") == "CXXDestructorDecl")
+            if mutation == "invalid":
+                destructor["isInvalid"] = True
+            elif mutation == "body":
+                destructor.setdefault("inner", []).append(
+                    {"kind": "CompoundStmt", "inner": [{"kind": "NullStmt"}]})
+            else:
+                destructor.setdefault("inner", []).append({"kind": "UnmodeledDestructorAttr"})
+            with self.subTest(mutation=mutation):
+                report = inspect_effects(root, expression_id, ABI)
+                self.assertEqual(report["status"], "checked", report)
+                self.assertEqual(report["object_boundary"]["status"], "unknown", report)
+                self.assertEqual(report["object_boundary"]["record_destruction"]["status"],
+                                 "unknown")
+
     def test_implicit_manual_and_parameter_copies_preserve_same_field_ids(self):
         for name, count in (("implicit_copy", 3), ("manual_copy", 2), ("parameter_copy", 3)):
             with self.subTest(name=name):
@@ -94,6 +203,9 @@ class RecordCopyClangTests(unittest.TestCase):
                 self.assertEqual(len(result["field_mappings"]), count)
                 for mapping in result["field_mappings"]:
                     self.assertEqual(mapping["target_field_id"], mapping["source_field_id"])
+                self.assertEqual(result["object_boundary"]["schema_version"],
+                                 "copy-object-boundary/v1")
+                self.assertEqual(result["object_boundary"]["status"], "checked", result)
                 self.assertFalse(result["source_program_checked"])
                 self.assertFalse(result["deployable"])
 

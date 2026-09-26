@@ -547,6 +547,26 @@ one-shot会分配完整字符串与UTF-8字节缓冲区，仅适用于已评估�
 
 ## 复制实参与按值形参的精确绑定
 
+`inspect_effects` 与条件值入口另返回 `object_boundary`（`copy-object-boundary/v1`）。
+它在fresh结构与局部效果成功后，要求complete/prvalue复制直接初始化普通自动
+VarDecl（单独DeclStmt、CompoundStmt内、无属性/storageClass/TLS），或匹配下述
+精确按值参数。源和目标声明ID须不同；placement-new、引用目标、子对象、static、
+TLS、未支持wrapper保持unknown。不把声明ID不同单独当作对象分离证明。
+
+同时要求同一完整record的Clang `definitionData.dtor.trivial` 为布尔true，
+无nonTrivial/userDeclared冲突；存在析构声明时还须唯一、implicit/defaulted、
+无未支持属性或非空body。缺少正面trivial证据不能用“没看到析构函数”替代。
+显式用户`=default`析构目前也保守unknown，不代表其语义一定有副作用。
+
+成功只给出“若该复制在有效C++程序中求值，目标与求值所得源实参是不同完整
+对象”及该record的trivial析构边界；不是原始捕获变量身份、物理ABI地址非重叠、
+生命周期或历史值保持证明。完整表达式的其他cleanup、其他实参和callee效果
+仍未建立，尚未接入native cleanup祖先链。父结构checked不蕴含此子报告checked。
+参考[C++对象模型](https://eel.is/c++draft/intro.object)、
+[析构规则](https://eel.is/c++draft/class.dtor)及
+[传参临时对象](https://eel.is/c++draft/class.temporary)；编译器可为传参引入额外临时对象，
+所以本报告不声称唯一物理存储或固定析构执行时序。
+
 同一 `record_copy_check.check` 还返回独立 `parameter_target` 子报告。先fresh
 完成复制结构和局部效果检查，再从完整AST查找copy表达式的直接父CallExpr；
 不需要调用者填写预期的callee或参数ID。相同ID的重复copy/call必须一致，所有

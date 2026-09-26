@@ -199,6 +199,118 @@ def _parameter_target(nodes, expressions, expression):
     return result
 
 
+def _record_destruction(nodes, record):
+    """Require positive trusted Clang evidence, not absence of a destructor."""
+    result = {
+        "status": "unknown", "reason": "record_destructor_not_proven_implicit_trivial",
+        "record_declaration_id": record["id"],
+        "scope": "destruction_of_this_integer_field_record_only",
+        "surrounding_full_expression_cleanups": "not_established",
+    }
+    data = record.get("definitionData")
+    dtor = data.get("dtor") if isinstance(data, dict) else None
+    if (not isinstance(dtor, dict) or dtor.get("trivial") is not True or
+            any(type(value) is not bool for value in dtor.values()) or
+            dtor.get("nonTrivial") is True or dtor.get("userDeclared") is True):
+        return result
+    declarations = [child for child in _children(record) if child.get("kind") == "CXXDestructorDecl"]
+    if len(declarations) > 1:
+        return result
+    for declaration in declarations:
+        identifier = declaration.get("id")
+        if (not isinstance(identifier, str) or not identifier or
+                declaration.get("isImplicit") is not True or
+                declaration.get("explicitlyDefaulted") != "default" or
+                declaration.get("previousDecl") is not None or
+                any(node.get("previousDecl") == identifier for node in nodes) or
+                sum(node.get("id") == identifier for node in nodes) != 1 or
+                any(declaration.get(flag) is True for flag in (
+                    "isDeleted", "explicitlyDeleted", "isInvalid", "isInvalidDecl", "virtual"))):
+            return result
+        children = _children(declaration)
+        if (sum(child.get("kind") == "CompoundStmt" for child in children) > 1 or
+                any(child.get("kind") not in {"CompoundStmt", "CUDAHostAttr", "CUDADeviceAttr"}
+                    or _children(child) for child in children)):
+            return result
+    result.update(status="checked", reason=None,
+                  evidence="positive_clang_trivial_destructor_flag_and_supported_declaration",
+                  destructor_declaration_ids=[declaration["id"] for declaration in declarations],
+                  interpretation="no_user_destructor_body_or_nontrivial_member_destruction_not_a_lifetime_proof")
+    return result
+
+
+def _object_boundary(nodes, expressions, expression, source_id, record, parameter_target):
+    """Bind a distinct complete destination; do not infer physical ABI storage."""
+    result = {
+        "schema_version": "copy-object-boundary/v1", "status": "unknown", "reason": None,
+        "scope": "selected_copy_complete_destination_and_its_record_destruction_only",
+        "source_declaration_id": source_id, "copy_expression_id": expression["id"],
+        "target_declaration_id": None, "abstract_object_relation": "not_established",
+        "record_destruction": _record_destruction(nodes, record),
+        "source_program_checked": False, "deployable": False,
+        "source_lifetime": "not_established", "source_value_preservation": "not_established",
+        "physical_abi_storage_nonoverlap": "not_established",
+        "surrounding_full_expression_cleanups": "not_established",
+        "callee_and_other_argument_effects": "not_established",
+        "assumptions": [
+            "the fresh structural inspection binds faithful complete AST and declared integer ABI",
+            "the abstract object relation is conditional on evaluation of this copy in a valid C++ program",
+            "the source is the evaluated argument, not necessarily the original lexical variable behind a capture",
+        ],
+    }
+    try:
+        if (expression.get("constructionKind") != "complete" or
+                expression.get("valueCategory") != "prvalue"):
+            raise _Unknown("copy_destination_not_complete_prvalue")
+        if parameter_target.get("status") == "checked":
+            target_id = parameter_target["parameter_declaration_id"]
+            target_kind = "exact_by_value_parameter"
+        else:
+            occurrence_ids = {id(item) for item in expressions}
+            owners = [node for node in nodes for child in _children(node, strict=False)
+                      if id(child) in occurrence_ids]
+            if len(owners) != len(expressions) or not owners:
+                raise _Unknown("copy_destination_parent_missing_or_ambiguous")
+            target = owners[0]
+            target_id = target.get("id")
+            if (target.get("kind") != "VarDecl" or not isinstance(target_id, str) or not target_id or
+                    any(owner.get("id") != target_id or not _same_ast(owner, target) for owner in owners) or
+                    any(not _same_ast(node, target) for node in nodes if node.get("id") == target_id) or
+                    _type(target) != _type(expression) or
+                    target.get("storageClass") is not None or target.get("tls") is not None or
+                    target.get("previousDecl") is not None or
+                    any(node.get("previousDecl") == target_id for node in nodes) or
+                    any(target.get(flag) is True for flag in (
+                        "isInvalid", "isInvalidDecl", "isParameterPack", "isPackExpansion")) or
+                    len(_children(target)) != 1 or _children(target)[0] != expression):
+                raise _Unknown("copy_destination_not_plain_automatic_record")
+            # A direct DeclStmt/CompoundStmt path excludes fields, static data,
+            # reference materializations, placement-new and initializer subobjects.
+            owner_ids = {id(owner) for owner in owners}
+            statements = [node for node in nodes for child in _children(node, strict=False)
+                          if id(child) in owner_ids]
+            if (len(statements) != len(owners) or
+                    any(statement.get("kind") != "DeclStmt" or len(_children(statement)) != 1
+                        for statement in statements)):
+                raise _Unknown("copy_destination_not_single_local_declaration")
+            statement_ids = {id(statement) for statement in statements}
+            scopes = [node for node in nodes for child in _children(node, strict=False)
+                      if id(child) in statement_ids]
+            if len(scopes) != len(statements) or any(scope.get("kind") != "CompoundStmt" for scope in scopes):
+                raise _Unknown("copy_destination_not_block_local")
+            target_kind = "plain_automatic_complete_record"
+        result.update(target_declaration_id=target_id, target_kind=target_kind)
+        if target_id == source_id:
+            raise _Unknown("copy_source_and_destination_declaration_identical")
+        if result["record_destruction"]["status"] != "checked":
+            raise _Unknown("copy_record_destruction_not_checked")
+        result.update(status="checked", abstract_object_relation=
+                      "distinct_complete_destination_from_evaluated_source_if_valid_copy_executes")
+    except _Unknown as error:
+        result["reason"] = error.reason
+    return result
+
+
 def _inspect_structure(root: object, expression_id: object, integer_types: object,
                        *, max_ast_nodes: int | None = None) -> dict[str, Any]:
     """Recover syntax and effects without assuming live/readable source fields."""
@@ -213,6 +325,7 @@ def _inspect_structure(root: object, expression_id: object, integer_types: objec
         "constructor_arguments": None, "field_mappings": [],
         "local_copy_effects": {"status": "unknown", "reason": "copy_structure_not_checked"},
         "parameter_target": {"status": "unknown", "reason": "copy_structure_and_effects_not_checked"},
+        "object_boundary": {"status": "unknown", "reason": "copy_structure_and_effects_not_checked"},
         "scope": "selected_copy_declarations_argument_binding_and_same_field_initializer_syntax",
         "source_program_checked": False, "deployable": False,
         "source_object_preservation": "not_established",
@@ -455,6 +568,8 @@ def _inspect_structure(root: object, expression_id: object, integer_types: objec
             record, declaration, parameter, fields, mappings)
         if result["local_copy_effects"]["status"] == "checked":
             result["parameter_target"] = _parameter_target(nodes, copy_expressions, expression)
+            result["object_boundary"] = _object_boundary(
+                nodes, copy_expressions, expression, source_id, record, result["parameter_target"])
     except _Rejected as error:
         result.update(status="rejected", reason=error.reason)
         if error.detail is not None:
