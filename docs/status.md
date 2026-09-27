@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 受限 using 引用展开身份已实现
+
+两个scalar检查入口新增显式opt-in，保留唯一普通节点并逐份匹配shadow引用，
+不全局去重。真实Clang23函数链及副作用负例通过；真实HIP四个重复声明身份
+查询checked，builtin_expf/logf结构仍unknown。模式与版本已纳入输入哈希。
+详见[实际重放](../experiments/hip-using-shadow-evidence-20260927.md)与
+[决策0004](decisions/0004-scoped-using-shadow-identities.md)。
+未新增效果假设、未运行GPU；不把引用身份解析当作完整调用效果或部署验收。
+最终1238项CPU测试通过（97.463秒，无跳过）：新引用展开专项使用SDK Clang23，
+既有native专项使用匹配AOCC17插件；不是全量Clang23验收。demo/diff通过。
+
 ## HIP 数学调用缺口已具体定位
 
 真实native输入的诊断清单现保留重复声明及其父路径：exp/log两次表示完全

@@ -103,6 +103,15 @@ class ScalarForwardingClangTests(unittest.TestCase):
         self.assertFalse(result["source_program_checked"])
         self.assertFalse(result["deployable"])
 
+    def test_identity_policy_is_bound_even_without_using_references(self):
+        strict = self.inspect("renamed_outer")
+        enabled = inspect_structure(self.root, self.declaration("renamed_outer", body=True)["id"],
+                                    self.declaration("selected_external_leaf", body=False)["id"],
+                                    allow_using_shadows=True)
+        self.assertEqual(enabled["status"], "checked", enabled)
+        self.assertNotEqual(strict["input_sha256"]["identity_policy"],
+                            enabled["input_sha256"]["identity_policy"])
+
     def test_wrong_parameter_local_global_and_expression_shapes_stay_unknown(self):
         for name in ("wrong_parameter", "forwards_local", "reads_global",
                      "modifies_parameter", "adds_value", "converts_value", "writes_extra"):

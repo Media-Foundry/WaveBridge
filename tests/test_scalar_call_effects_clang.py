@@ -132,6 +132,13 @@ class ScalarCallEffectsClangTests(unittest.TestCase):
                 self.assertFalse(result["source_program_checked"])
                 self.assertFalse(result["deployable"])
 
+    def test_identity_policy_is_bound_even_without_using_references(self):
+        strict = self.check("positive")
+        enabled = self.check("positive", allow_using_shadows=True)
+        self.assertEqual(enabled["status"], "checked", enabled)
+        self.assertNotEqual(strict["input_sha256"]["identity_policy"],
+                            enabled["input_sha256"]["identity_policy"])
+
     def test_bad_wrapper_body_or_signature_stays_unknown(self):
         for name in ("calls_writing_wrapper", "calls_wrong_parameter"):
             with self.subTest(name=name):

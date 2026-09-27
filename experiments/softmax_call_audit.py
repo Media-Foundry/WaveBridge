@@ -120,9 +120,13 @@ def run(ast_path, previous_path, output_dir):
     return report
 
 
-def run_native(native_path, output_dir):
+def run_native(native_path, output_dir, *, using_shadows=False):
     """Observe HIP call paths without deduplicating or modifying checker input."""
     from wavebridge.verification.builtin_calls import inspect_structure
+    from wavebridge.verification.using_shadow_identity import UsingShadowIndex, IdentityUnknown
+    from wavebridge.verification.getter_returns import _hash
+    if type(using_shadows) is not bool:
+        raise ValueError("invalid_using_shadows_option")
     native_path = Path(native_path).resolve()
     if sha(native_path) != HIP_NATIVE_SHA:
         raise ValueError("sealed_native_input_hash_mismatch")
@@ -159,12 +163,28 @@ def run_native(native_path, output_dir):
     checks = [{"native_observation": record,
                "structure_check": inspect_structure(payload, record["call_expression_id"])}
               for record in leaves]
+    identities, identity_checks = None, []
+    if using_shadows:
+        identities = UsingShadowIndex(root, 1_000_000)
+        for identifier in sorted(repeated_ids):
+            item = {"declaration_id": identifier, "status": "unknown", "reason": None,
+                    "scope": "ordinary_identity_and_using_reference_representation_only",
+                    "source_program_checked": False, "deployable": False}
+            try:
+                declaration = identities.unique(identifier)
+                item.update(status="checked", ordinary_declaration_sha256=_hash(declaration))
+            except IdentityUnknown as error:
+                item["reason"] = str(error)
+            identity_checks.append(item)
     report = {"schema_version": "softmax-native-call-audit/v1",
               "command": sys.argv, "native_sha256": HIP_NATIVE_SHA,
               "entry_id": entry["id"], "inventory": observed,
               "repeated_declaration_occurrences": occurrences,
               "math_leaf_selection_scope": "inventory_edges_or_individual_repeated_declaration_occurrences_not_proven_paths",
               "math_builtin_checks": checks, "implementation_before": before,
+              "using_shadows_enabled": using_shadows,
+              "using_shadow_identity_checks": identity_checks,
+              "using_shadow_observations": identities.observations if identities else [],
               "driver_dependencies_before": helpers,
               "frontend_reexecuted": False, "GPU_executed": False,
               "source_program_checked": False, "deployable": False,
@@ -186,15 +206,18 @@ def main():
     inputs.add_argument("--ast", type=Path)
     inputs.add_argument("--native", type=Path)
     parser.add_argument("--previous-report", type=Path)
+    parser.add_argument("--using-shadows", action="store_true")
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     if args.native:
         if args.previous_report:
             parser.error("--previous-report is not used with --native")
-        result = run_native(args.native, args.output_dir)
+        result = run_native(args.native, args.output_dir, using_shadows=args.using_shadows)
     else:
         if not args.previous_report:
             parser.error("--ast requires --previous-report")
+        if args.using_shadows:
+            parser.error("--using-shadows requires --native")
         result = run(args.ast, args.previous_report, args.output_dir)
     return 0 if result["inputs_unchanged"] else 2
 

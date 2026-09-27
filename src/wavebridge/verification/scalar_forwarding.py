@@ -1,6 +1,7 @@
 """Exact unary-float parameter forwarding, with no external-call semantics."""
 from wavebridge.verification.builtin_calls import _children, _typed, _Unknown
 from wavebridge.verification.getter_returns import _hash
+from wavebridge.verification.using_shadow_identity import UsingShadowIndex, IdentityUnknown, IDENTITY_POLICY
 
 MAX_AST_NODES = 1_000_000
 HARD_MAX_AST_NODES = 10_000_000
@@ -8,11 +9,13 @@ ATTRIBUTES = {"CUDAHostAttr", "CUDADeviceAttr", "AlwaysInlineAttr", "NoInlineAtt
               "NoThrowAttr", "ConstAttr", "PureAttr", "UsedAttr", "BuiltinAttr"}
 
 
-def inspect_structure(root, start_declaration_id, leaf_declaration_id, *, max_ast_nodes=None):
+def inspect_structure(root, start_declaration_id, leaf_declaration_id, *, max_ast_nodes=None,
+                      allow_using_shadows=False):
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result = {"schema_version": "scalar-forwarding-structure/v1", "status": "unknown", "reason": None,
               "scope": "exact_scalar_parameter_forwarding_chain",
               "wrapper_declaration_ids": [], "call_edges": [],
+              "using_shadow_references_enabled": allow_using_shadows, "using_shadow_references": [],
               "source_program_checked": False, "deployable": False,
               "value_semantics": "not_established", "effect_semantics": "not_established",
               "assumptions": ["AST faithfully describes one valid translation unit"],
@@ -20,12 +23,20 @@ def inspect_structure(root, start_declaration_id, leaf_declaration_id, *, max_as
                               "caller argument evaluation and prior initialization are excluded",
                               "not an FP value-equivalence or compiled-code guarantee"],
               "budget": {"max_ast_nodes": budget, "max_wrappers": 32}}
+    result["identity_policy"] = {"allow_using_shadows": allow_using_shadows,
+                                 "schema_version": IDENTITY_POLICY if allow_using_shadows else "strict-single-occurrence/v1"}
     try:
         if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
                 any(not isinstance(i, str) or not i for i in (start_declaration_id, leaf_declaration_id)) or
-                type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES):
+                type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES or
+                type(allow_using_shadows) is not bool):
             raise _Unknown("invalid_inputs_or_budget")
+        identities = UsingShadowIndex(root, budget) if allow_using_shadows else None
+        if identities is not None:
+            result["using_shadow_references"] = identities.observations
         nodes, pending, count = {}, [root], 0
+        if identities is not None:
+            pending = []
         while pending:
             node = pending.pop()
             count += 1
@@ -39,6 +50,8 @@ def inspect_structure(root, start_declaration_id, leaf_declaration_id, *, max_as
             pending.extend(node.get("inner", []))
 
         def unique(identifier):
+            if identities is not None:
+                return identities.unique(identifier)
             candidates = nodes.get(identifier, [])
             if len(candidates) != 1:
                 raise _Unknown("declaration_or_expression_identity_not_unique")
@@ -124,8 +137,9 @@ def inspect_structure(root, start_declaration_id, leaf_declaration_id, *, max_as
         result.update(status="checked", external_leaf_declaration_id=leaf_declaration_id,
                       external_leaf_parameter_id=leaf_parameter["id"],
                       input_sha256={"root": _hash(root), "start_declaration_id": _hash(start_declaration_id),
-                                    "leaf_declaration_id": _hash(leaf_declaration_id)})
-    except _Unknown as error:
+                                    "leaf_declaration_id": _hash(leaf_declaration_id),
+                                    "identity_policy": _hash(result["identity_policy"])})
+    except (_Unknown, IdentityUnknown) as error:
         result["reason"] = str(error)
     except (TypeError, ValueError, RecursionError):
         result["reason"] = "unsupported_input_representation"

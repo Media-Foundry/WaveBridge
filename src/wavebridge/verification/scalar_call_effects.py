@@ -3,9 +3,11 @@ from wavebridge.verification.builtin_calls import _children, _typed, _Unknown
 from wavebridge.verification.getter_returns import _hash
 from wavebridge.verification.scalar_forwarding import inspect_structure, MAX_AST_NODES, HARD_MAX_AST_NODES
 from wavebridge.verification.scalar_expression_effects import check_no_memory_write as check_argument
+from wavebridge.verification.using_shadow_identity import UsingShadowIndex, IdentityUnknown, IDENTITY_POLICY
 
 
-def check_no_memory_write(root, call_expression_id, effect_protocol, *, max_ast_nodes=None):
+def check_no_memory_write(root, call_expression_id, effect_protocol, *, max_ast_nodes=None,
+                          allow_using_shadows=False):
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result = {"schema_version": "scalar-call-no-memory-write/v1", "status": "unknown", "reason": None,
               "scope": "one_direct_unary_float_wrapper_call",
@@ -18,13 +20,21 @@ def check_no_memory_write(root, call_expression_id, effect_protocol, *, max_ast_
                               "not FP-environment preservation, purity or returned-value equivalence",
                               "enclosing expressions, statements, loops and machine code are excluded"],
               "forwarding_check": None, "argument_check": None}
+    result.update(using_shadow_references_enabled=allow_using_shadows, using_shadow_references=[])
+    result["identity_policy"] = {"allow_using_shadows": allow_using_shadows,
+                                 "schema_version": IDENTITY_POLICY if allow_using_shadows else "strict-single-occurrence/v1"}
     try:
         if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
                 not isinstance(call_expression_id, str) or not call_expression_id or
                 type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES or
-                not isinstance(effect_protocol, dict)):
+                not isinstance(effect_protocol, dict) or type(allow_using_shadows) is not bool):
             raise _Unknown("invalid_inputs_or_budget")
+        identities = UsingShadowIndex(root, budget) if allow_using_shadows else None
+        if identities is not None:
+            result["using_shadow_references"] = identities.observations
         index, pending, count = {}, [root], 0
+        if identities is not None:
+            pending = []
         while pending:
             node = pending.pop()
             count += 1
@@ -38,6 +48,8 @@ def check_no_memory_write(root, call_expression_id, effect_protocol, *, max_ast_
             pending.extend(node.get("inner", []))
 
         def unique(identifier):
+            if identities is not None:
+                return identities.unique(identifier)
             if not isinstance(identifier, str) or not identifier or len(index.get(identifier, [])) != 1:
                 raise _Unknown("identity_not_unique")
             return index[identifier][0]
@@ -79,7 +91,8 @@ def check_no_memory_write(root, call_expression_id, effect_protocol, *, max_ast_
         _typed(decay, "ImplicitCastExpr", "float (*)(float)" + suffix, "prvalue")
         if ref.get("type") != signature or ref.get("name") != target.get("name"):
             raise _Unknown("callee_declaration_mismatch")
-        forwarding = inspect_structure(root, ref["id"], leaf_id, max_ast_nodes=budget)
+        forwarding = inspect_structure(root, ref["id"], leaf_id, max_ast_nodes=budget,
+                                       allow_using_shadows=allow_using_shadows)
         result["forwarding_check"] = forwarding
         if forwarding["status"] != "checked":
             raise _Unknown("forwarding_not_checked")
@@ -91,14 +104,15 @@ def check_no_memory_write(root, call_expression_id, effect_protocol, *, max_ast_
         if checked_argument["status"] != "checked" or checked_argument.get("result_type") != "float":
             raise _Unknown("argument_not_checked_float")
         result.update(status="checked", effect_protocol=dict(protocol), evidence_status="unverified",
-                      input_sha256={"root": root_hash, "protocol": _hash(protocol)},
+                      input_sha256={"root": root_hash, "protocol": _hash(protocol),
+                                    "identity_policy": _hash(result["identity_policy"])},
                       conclusion={"status": "conditional", "property": "no_memory_write",
                                   "subject": "exact_call_expression", "call_expression_id": call_expression_id})
         result["assumptions"].extend(checked_argument["assumptions"])
         result["assumptions"].extend([
             "external leaf implementation does not write memory for every value reached by this call",
             "the call is valid and returns normally; external leaf premise excludes argument evaluation"])
-    except _Unknown as error:
+    except (_Unknown, IdentityUnknown) as error:
         result["reason"] = str(error)
     except (TypeError, ValueError, RecursionError):
         result["reason"] = "unsupported_input_representation"

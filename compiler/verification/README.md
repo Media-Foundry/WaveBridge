@@ -1,5 +1,26 @@
 # 编译器关系检查
 
+## using 引用展开的受限身份解析
+
+`scalar_forwarding.inspect_structure(..., allow_using_shadows=True)`和
+`scalar_call_effects.check_no_memory_write(..., allow_using_shadows=True)`可显式
+接受精确匹配的Clang UsingShadowDecl函数引用副本，默认False不变。只允许
+唯一普通声明加逐份匹配的引用展开，返回普通原对象；不支持全局同ID去重。
+根loc.file的单边省略有受限规则，其余元数据/类型/函数体/位置冲突仍unknown。
+模式与`using-shadow-function-reference/v1`策略绑定成功报告哈希，详细范围
+见[决策0004](../../docs/decisions/0004-scoped-using-shadow-identities.md)。
+
+调用效果仍需精确外部协议，外围实参仍独立检查；一元exp/log builtin结构、
+源程序有效性、数值保证与部署没有因此建立。回归命令：
+
+```bash
+WB_USING_SHADOW_COMPILER=/path/to/clang++ PYTHONPATH=src:. \
+  python3 -m unittest tests.test_using_shadow_identity tests.test_using_shadow_identity_clang -v
+```
+
+真实展开回归需要会输出该表示的编译器（本机SDK Clang23已实测）。不输出
+展开的旧版本会明确skip这些用例；现有Clang18 CI不被宣称已覆盖该新版表示。
+
 ## 显式非负路由的条件舍入误差界
 
 `verification.block_roundoff.compare(source_model, target_model,

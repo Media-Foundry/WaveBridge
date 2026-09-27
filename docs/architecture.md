@@ -108,6 +108,11 @@ native标志绑定逻辑。源初始化和copy祖先的排除项有显式记录�
 
 ## 依赖规则
 
+函数using引用展开的身份解析是局部opt-in：`UsingShadowIndex`检查完整原AST
+中的普通节点与UsingShadowDecl副本，再返回原节点，不生成全局去重AST。
+当前仅scalar_forwarding/scalar_call_effects使用，策略及版本单独绑定输入
+哈希；它不代替调用语义或放宽其它checker，见[决策0004](decisions/0004-scoped-using-shadow-identities.md)。
+
 - `ir` 只使用标准库，不能依赖候选生成、硬件或 CLI。
 - `frontend` 同时包含严格模型解析与真实编译器采集；源码路径不要求先转成人工qdot IR。
 - `analysis` 分别处理参考模型与真实AST；源码恢复与人工契约输入必须带不同的来源标签。
