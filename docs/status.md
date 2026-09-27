@@ -2,6 +2,16 @@
 
 更新日期：2026-09-27。
 
+## HIP 输出循环的条件存储保持性
+
+在新same-context native HIP工件上重放：外层与内层输出循环在无leaf假设时
+均为unknown；加入精确绑定的未验证builtin效果假设后，受保护依赖存储保持性
+均为条件checked。通用循环恢复仍为4 recovered / 4 unknown，整体验收未通过。
+完整迭代域、外部调用效果、浮点输出等价和部署均未建立，见
+[对照实录](../experiments/hip-conditional-work-evidence-20260927.md)。
+未修改生产checker、未运行GPU。1219项CPU测试通过（93.242秒，匹配AOCC
+原生插件启用、无跳过），demo/diff通过；不称全套已在Clang23运行。
+
 ## 实际 HIP 工具链的原生采集已接通
 
 从SDK清单固定提交生成匹配Clang23开发头，现有插件无需C++改动即可构建和装载。
@@ -18,7 +28,8 @@ lvalue观察归纳成版本规则，不放宽checker。调用效果、整核等�
 与输入哈希记录完整。NaN/inf leaf在IR中返回常量，外部调用及写入对照仍保留
 相应效果，见[实录](../experiments/hip-builtin-value-evidence-20260927.md)。
 这是独立合成TU的编译观察，不是生产调用绑定或源码等价证明。未修改生产
-checker，未运行GPU；原生HIP观测缺口及输出循环unknown仍保留。
+checker，未运行GPU；当时的原生HIP观测缺口已由后续采集补齐，输出循环的
+无条件保证仍未建立（最新条件对照见上节）。
 完整1215项CPU测试通过（92.164秒，native启用、无跳过），demo/diff通过。
 
 ## HIP 关系重放与精确调用缺口

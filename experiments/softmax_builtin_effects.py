@@ -12,13 +12,18 @@ from experiments.pytorch_softmax_intake import implementation_hashes, select_ent
 from wavebridge.analysis.column_loops import recover, recover_with_builtin_effects
 from wavebridge.analysis.reduction_discovery import _callee
 from wavebridge.verification.getter_returns import _hash
+from wavebridge.verification.loop_exit_guards import check_work_preservation
 
 NATIVE_SHA = "317b1a438bc13845cf76b5aa7461db4db2081b402c457a85c4160fdd7257c027"
+HIP_NATIVE_SHA = "46ac52b1c672fadd0e5a66bb3ab380373e0cd69929713d96e7010f375a0cd63e"
 
 
-def run(native_path, output):
+def run(native_path, output, *, profile="cuda-sm80", guarded_work=False):
+    if profile not in {"cuda-sm80", "hip-gfx1100"} or type(guarded_work) is not bool:
+        raise ValueError("invalid_profile_or_guarded_work_option")
+    expected = NATIVE_SHA if profile == "cuda-sm80" else HIP_NATIVE_SHA
     native_path, output = Path(native_path), Path(output)
-    if sha(native_path) != NATIVE_SHA:
+    if sha(native_path) != expected:
         raise ValueError("native_input_mismatch")
     if output.exists():
         raise ValueError("output_already_exists")
@@ -70,19 +75,40 @@ def run(native_path, output):
                 break
             current = values[0]
     default = recover(root, entry["id"], 32)
+    print(json.dumps({"phase": "default_recovery", "profile": profile}), flush=True)
     conditional = recover_with_builtin_effects(payload, entry["id"], 32, protocols)
+    print(json.dumps({"phase": "conditional_recovery", "status": conditional["status"]}), flush=True)
+    guarded = []
+    if guarded_work:
+        # Select original loops containing break syntax, not a successful old
+        # report or a per-kernel relation template. Each checker resolves exit
+        # ownership, header and effects again from the original full AST.
+        for loop in (node for node in walk(entry) if node.get("kind") == "ForStmt"):
+            descendants = list(walk(loop))
+            if not any(node.get("kind") == "BreakStmt" for node in descendants):
+                continue
+            call_ids = {node.get("id") for node in descendants if node.get("kind") == "CallExpr"}
+            selected = {key: value for key, value in protocols.items() if key in call_ids}
+            item = {"loop_id": loop["id"], "range": loop.get("range"), "call_protocols": selected}
+            for label, premises in (("without_leaf_assumptions", {}), ("with_leaf_assumptions", selected)):
+                item[label] = check_work_preservation(payload, loop["id"], 32, premises,
+                    use_static_branches=True, use_nested_loops=True)
+                print(json.dumps({"phase": "guarded_work", "loop": loop["id"], "mode": label,
+                                  "status": item[label]["status"], "reason": item[label]["reason"]}), flush=True)
+            guarded.append(item)
     after = implementation_hashes()
     report = {"schema_version": "softmax-builtin-effects-development/v1",
-              "native_sha256": NATIVE_SHA, "entry_id": entry["id"],
+              "native_sha256": expected, "entry_id": entry["id"], "profile": profile,
               "int_bits": 32, "integer_abi_source": "explicit_external_assumption",
               "source_program_checked": False, "deployable": False, "GPU_executed": False,
               "role": "development_sensitivity_under_unverified_effect_assumptions_not_holdout",
               "driver_sha256": driver, "implementation_before": before, "implementation_after": after,
               "selected_paths": selected_paths, "call_protocols": protocols,
               "default": default, "conditional": conditional,
+              "guarded_work_enabled": guarded_work, "guarded_work_checks": guarded,
               "default_loop_counts": dict(Counter(x["status"] for x in default["loops"])),
               "conditional_loop_counts": dict(Counter(x["status"] for x in conditional["recovery"]["loops"])),
-              "inputs_unchanged": before == after and sha(native_path) == NATIVE_SHA and sha(__file__) == driver}
+              "inputs_unchanged": before == after and sha(native_path) == expected and sha(__file__) == driver}
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"output": str(output), "sha256": sha(output),
                       "default": report["default_loop_counts"], "conditional": report["conditional_loop_counts"],
@@ -93,5 +119,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--profile", choices=("cuda-sm80", "hip-gfx1100"), default="cuda-sm80")
+    parser.add_argument("--guarded-work", action="store_true")
     args = parser.parse_args()
-    run(args.native, args.output)
+    run(args.native, args.output, profile=args.profile, guarded_work=args.guarded_work)
