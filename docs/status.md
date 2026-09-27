@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## HIP 数学调用缺口已具体定位
+
+真实native输入的诊断清单现保留重复声明及其父路径：exp/log两次表示完全
+相同，expf/logf仅loc.file显式出现与否不同，后者仍阻止图遍历。逐次声明
+内部可观察到builtin_expf/logf，原builtin checker均返回结构不支持。
+见[取证与下一门槛](../experiments/hip-math-call-evidence-20260927.md)。
+未修改checker、未提供新效果假设、未运行GPU；不将诊断清单视为动态可达性
+或完整调用链证明。下一步先验证重复声明表示与一元float实参支持边界。
+最终1223项CPU测试通过（96.221秒，匹配AOCC native插件启用、无跳过），
+make demo与diff检查通过；不称全量Clang23验收。
+
 ## HIP 输出循环的条件存储保持性
 
 在新same-context native HIP工件上重放：外层与内层输出循环在无leaf假设时
