@@ -6,6 +6,7 @@ from typing import Any
 
 from wavebridge.verification.constructor_argument_effects import (
     check as check_constructor_argument_effects,
+    _check_concrete_caller,
 )
 from wavebridge.verification.integer_selection import _hash
 from wavebridge.verification.kernel_arguments import _Unknown
@@ -53,7 +54,8 @@ def _template_marker(node: dict[str, Any]) -> bool:
 
 
 def check(payload: object, variable_id: object, integer_types: object,
-          selection_domains: object, *, max_ast_nodes: int | None = None) -> dict[str, Any]:
+          selection_domains: object, *, max_ast_nodes: int | None = None,
+          instantiated_function_id: str | None = None) -> dict[str, Any]:
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result: dict[str, Any] = {
         "schema_version": "object-initialization-check/v1",
@@ -166,7 +168,7 @@ def check(payload: object, variable_id: object, integer_types: object,
                     (isinstance(kind, str) and kind.endswith("TemplateDecl"))):
                 raise _Unknown("target_not_direct_local_of_ordinary_nontemplate_function")
             if isinstance(kind, str) and kind.endswith("FunctionDecl"):
-                if kind != "FunctionDecl" or _template_marker(ancestor):
+                if kind != "FunctionDecl" or (instantiated_function_id is None and _template_marker(ancestor)):
                     raise _Unknown("target_not_direct_local_of_ordinary_nontemplate_function")
                 function = ancestor
                 break
@@ -177,6 +179,8 @@ def check(payload: object, variable_id: object, integer_types: object,
         if (not isinstance(function_id, str) or not function_id or
                 len(index.get(function_id, [])) != 1 or index[function_id][0] is not function):
             raise _Unknown("target_function_not_unique")
+        if instantiated_function_id is not None:
+            result["concrete_caller"] = _check_concrete_caller(function, index, instantiated_function_id)
 
         cleanup_observation: dict[str, Any]
         if wrapper is not None:
@@ -245,7 +249,7 @@ def check(payload: object, variable_id: object, integer_types: object,
 
         argument_effects = check_constructor_argument_effects(
             root, constructor_id, integer_types, selection_domains,
-            max_ast_nodes=budget)
+            max_ast_nodes=budget, instantiated_function_id=instantiated_function_id)
         result["constructor_argument_effects"] = argument_effects
         source = argument_effects.get("constructor_source")
         constructor_effects = source.get("constructor_effects") if isinstance(source, dict) else None
@@ -281,6 +285,7 @@ def check(payload: object, variable_id: object, integer_types: object,
                 "root": root_hash, "variable_id": _hash(variable_id),
                 "integer_types": _hash(integer_types),
                 "selection_domains": _hash(selection_domains),
+                "instantiated_function_id": _hash(instantiated_function_id),
                 "cleanup_metadata": _hash(metadata_for_hash),
             }
         except (TypeError, ValueError, RecursionError):

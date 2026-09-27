@@ -62,8 +62,59 @@ def _declrefs_have_no_children(node: dict[str, Any]) -> None:
         pending.extend(children)
 
 
+def _check_concrete_caller(function, index, selected_id):
+    """Bind a narrow concrete function instance; never erase template context.
+
+    The caller supplies identity, not a successful scope report. All expression
+    uniqueness and downstream effects checks still apply to the original TU.
+    """
+    if (not isinstance(selected_id, str) or not selected_id or
+            not isinstance(function, dict) or function.get("kind") != "FunctionDecl" or
+            function.get("id") != selected_id or
+            len(index.get(selected_id, [])) != 1 or index[selected_id][0] is not function):
+        raise _Unknown("concrete_caller_identity_not_unique")
+    children = _children(function, strict=True)
+    bodies = [n for n in children if n.get("kind") == "CompoundStmt"]
+    arguments = [n for n in children if n.get("kind") == "TemplateArgument"]
+    if (len(bodies) != 1 or not arguments or
+            not isinstance(function.get("mangledName"), str) or not function["mangledName"] or
+            not isinstance(bodies[0].get("id"), str) or
+            len(index.get(bodies[0]["id"], [])) != 1):
+        raise _Unknown("concrete_caller_body_or_arguments_missing")
+    scalar_types = {"bool", "char", "signed char", "unsigned char", "short", "unsigned short",
+                    "int", "unsigned int", "long", "unsigned long", "long long",
+                    "unsigned long long", "float", "double"}
+    for argument in arguments:
+        if "value" in argument:
+            if (type(argument["value"]) not in {int, bool} or _children(argument) or
+                    set(argument) - {"kind", "value", "type"} or
+                    ("type" in argument and
+                     (not isinstance(argument["type"], dict) or
+                      argument["type"].get("qualType") not in scalar_types - {"float", "double"}))):
+                raise _Unknown("concrete_caller_template_argument_unsupported")
+        elif (set(argument) - {"kind", "type", "inner"} or
+              not isinstance(argument.get("type"), dict) or
+              argument["type"].get("qualType") not in scalar_types or
+              any(n.get("kind") != "BuiltinType" for n in _children(argument))):
+            raise _Unknown("concrete_caller_template_argument_unsupported")
+    pending = [function]
+    while pending:
+        node = pending.pop()
+        if (any(node.get(flag) is True for flag in
+                ("isDependent", "isInstantiationDependent", "isValueDependent", "isTypeDependent")) or
+                node.get("kind") in {"TemplateTypeParmDecl", "NonTypeTemplateParmDecl",
+                    "TemplateTemplateParmDecl", "TemplateTypeParmType", "SubstNonTypeTemplateParmExpr",
+                    "DependentScopeDeclRefExpr", "CXXDependentScopeMemberExpr", "UnresolvedLookupExpr",
+                    "LambdaExpr", "CoroutineBodyStmt", "CXXTryStmt"}):
+            raise _Unknown("concrete_caller_contains_unsupported_dependent_or_nested_scope")
+        pending.extend(_children(node))
+    return {"function_id": selected_id, "body_id": bodies[0].get("id"),
+            "template_arguments": arguments, "function_sha256": _hash(function)}
+
+
 def check(root: object, constructor_expression_id: object, integer_types: object,
-          selection_domains: object, *, max_ast_nodes: int | None = None) -> dict[str, Any]:
+          selection_domains: object, *, max_ast_nodes: int | None = None,
+          instantiated_function_id: str | None = None) -> dict[str, Any]:
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result: dict[str, Any] = {
         "schema_version": "constructor-argument-effects-check/v1",
@@ -112,6 +163,7 @@ def check(root: object, constructor_expression_id: object, integer_types: object
             "constructor_expression_id": _hash(constructor_expression_id),
             "integer_types": _hash(integer_types),
             "selection_domains": _hash(selection_domains),
+            "instantiated_function_id": _hash(instantiated_function_id),
         }
     except (TypeError, ValueError, RecursionError):
         result["reason"] = "input_hash_unsupported"
@@ -199,8 +251,11 @@ def check(root: object, constructor_expression_id: object, integer_types: object
         target_location = target_locations[0]
         caller = target_location["function"]
         if (not isinstance(caller, dict) or caller.get("kind") != "FunctionDecl" or
-                target_location["lambda_depth"] != 0 or
-                target_location["template_depth"] != 0 or _template_marker(caller)):
+                target_location["lambda_depth"] != 0):
+            raise _Unknown("constructor_call_not_in_ordinary_nontemplate_function")
+        if instantiated_function_id is not None:
+            result["concrete_caller"] = _check_concrete_caller(caller, index, instantiated_function_id)
+        elif target_location["template_depth"] != 0 or _template_marker(caller):
             raise _Unknown("constructor_call_not_in_ordinary_nontemplate_function")
         if not target_location["compounds"]:
             raise _Unknown("constructor_call_not_in_function_compound_body")
@@ -221,7 +276,7 @@ def check(root: object, constructor_expression_id: object, integer_types: object
             if (kind not in {"VarDecl", "ParmVarDecl"} or
                     "volatile" in raw.split() or "&" in raw or "*" in raw or
                     identifier in destination_ids or location["lambda_depth"] != 0 or
-                    location["template_depth"] != 0 or
+                    location["template_depth"] != target_location["template_depth"] or
                     not isinstance(location["function"], dict) or
                     location["function"].get("id") != caller_id or
                     declaration.get("isInitCapture") is True or

@@ -564,7 +564,8 @@ def _template_marker(node: dict[str, Any]) -> bool:
             } for child in children)))
 
 
-def _semantic_inventory(root, variable_id, captures, budget, *, partial_result=None):
+def _semantic_inventory(root, variable_id, captures, budget, *, partial_result=None,
+                        instantiated_function_id=None):
     """Recover the one shared static explicit-reference inventory."""
     nodes: list[dict[str, Any]] = []
     index: dict[str, list[dict[str, Any]]] = {}
@@ -600,7 +601,7 @@ def _semantic_inventory(root, variable_id, captures, budget, *, partial_result=N
         if kind == "LambdaExpr" or (isinstance(kind, str) and kind.endswith("TemplateDecl")):
             raise _Unknown("source_variable_scope_unsupported")
         if isinstance(kind, str) and kind.endswith("FunctionDecl"):
-            if kind != "FunctionDecl" or _template_marker(owner):
+            if kind != "FunctionDecl" or (instantiated_function_id is None and _template_marker(owner)):
                 raise _Unknown("source_function_not_ordinary_nontemplate_function")
             function = owner
             break
@@ -612,6 +613,9 @@ def _semantic_inventory(root, variable_id, captures, budget, *, partial_result=N
     if (not isinstance(function_id, str) or not function_id or
             len(index.get(function_id, [])) != 1 or index[function_id][0] is not function):
         raise _Unknown("source_function_not_unique")
+    if instantiated_function_id is not None:
+        from wavebridge.verification.constructor_argument_effects import _check_concrete_caller
+        _check_concrete_caller(function, index, instantiated_function_id)
 
     # Traverse the function's semantic bodies.  Lambda closure records
     # contain a JSON copy of operator(), so skip those record subtrees and
@@ -960,7 +964,8 @@ def check(payload: object, variable_id: object, integer_types: object,
 
 def inspect_structure(payload: object, variable_id: object, integer_types: object,
                       initialization_selection_domains: object,
-                      *, max_ast_nodes: int | None = None) -> dict[str, Any]:
+                      *, max_ast_nodes: int | None = None,
+                      instantiated_function_id: str | None = None) -> dict[str, Any]:
     """Close supported explicit-use syntax without assuming a live object."""
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result: dict[str, Any] = {
@@ -1026,7 +1031,7 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
     root = payload["ast"]
     initialization = check_object_initialization(
         payload, variable_id, integer_types, initialization_selection_domains,
-        max_ast_nodes=budget)
+        max_ast_nodes=budget, instantiated_function_id=instantiated_function_id)
     result["conditional_initialization"] = initialization
     root_hash = (initialization.get("input_sha256") or {}).get("root")
     try:
@@ -1035,6 +1040,7 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
             "variable_id": _hash(variable_id),
             "integer_types": _hash(integer_types),
             "initialization_selection_domains": _hash(initialization_selection_domains),
+            "instantiated_function_id": _hash(instantiated_function_id),
             "capture_metadata": _hash({
                 "schema_version": payload.get("schema_version"),
                 "capture_coverage": payload.get("capture_coverage"),
@@ -1051,7 +1057,8 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
         return result
 
     try:
-        inventory = _semantic_inventory(root, variable_id, payload["captures"], budget)
+        inventory = _semantic_inventory(root, variable_id, payload["captures"], budget,
+                                        instantiated_function_id=instantiated_function_id)
         variable = inventory["variable"]
         function_id = inventory["function_id"]
         result["function_id"] = function_id

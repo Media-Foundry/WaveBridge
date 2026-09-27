@@ -644,7 +644,7 @@ volatile、bitfield、base、union、虚函数、调用及不支持的 AST 效�
 `verification.constructor_argument_effects.check(root, constructor_expression_id,
 integer_types, selection_domains, *, max_ast_nodes=None)` 从完整 TU fresh 运行构造
 字段域检查，并额外检查参数求值的声明来源与效果边界，不接受调用者提供的成功报告。
-只支持普通非模板函数中的直接构造，参数为既有受支持字面量/default 或 minimum
+默认只支持普通非模板函数中的直接构造，参数为既有受支持字面量/default 或 minimum
 表达式；minimum 的变量操作数必须来自同一普通函数的自动局部变量或形参。
 global、static、extern、TLS、捕获/引用来源及未知属性保守返回 unknown。
 
@@ -663,7 +663,7 @@ callee 属性只允许明确列出的形状。`enable_if` 在 Clang 中属于非
 
 `verification.object_initialization.check(payload, variable_id, integer_types,
 selection_domains, *, max_ast_nodes=None)` 接收同次原生 envelope（不是外层采集报告），
-按唯一 VarDecl ID 关联普通非模板函数中的自动对象、直接构造式及可选的一层
+默认按唯一 VarDecl ID 关联普通非模板函数中的自动对象、直接构造式及可选的一层
 ExprWithCleanups。允许普通嵌套块，不支持 static/TLS、引用、volatile、属性、
 lambda 内对象或不支持的初始化形状。类型与表达式身份必须精确对应。
 
@@ -705,7 +705,7 @@ lambda 内对象或不支持的初始化形状。类型与表达式身份必须�
 ### 不依赖alive协议的结构组合
 
 `verification.object_use_closure.inspect_structure(payload, variable_id, integer_types,
-initialization_selection_domains, *, max_ast_nodes=None)` 不接收capture协议，直接复制
+initialization_selection_domains, *, max_ast_nodes=None, instantiated_function_id=None)` 不接收capture协议，直接复制
 调用`record_copy_check.inspect_effects`，捕获内复制调用`capture_source_check.inspect_structure`。
 与旧条件入口共享语义遍历和引用分类，不维护另一套可漂移的引用清单。它不能
 通过伪造alive协议后调用旧接口来建立结构结论。
@@ -722,6 +722,16 @@ receiver结论、对象边界子报告的执行前提同样不能被提升为本
 source lifetime与历史保持仍未建立。即使不可达分支的结构可检查，也不声明执行。
 旧`check`保留原协议和较宽的条件值范围；真实诊断属性可使旧接口checked而新
 结构接口unknown，不从属性名称猜副作用，也不因此收窄旧接口。
+
+上述结构入口、`object_initialization.check` 和 `constructor_argument_effects.check`
+另接受 opt-in `instantiated_function_id`。三个 fresh 层均绑定同一精确具体实例，
+输入摘要包含该 ID；不接受外部“实例已通过”报告。要求唯一 FunctionDecl、非空
+mangledName、唯一 CompoundStmt body、受限 builtin scalar type/integral 模板实参。
+依赖节点、未支持的替换表达式、lambda/协程/try、错实例和歧义身份保留 unknown。
+声明、构造式和 body 的原有全 TU 唯一性不放宽，无法区分共享 ID 的输入仍拒绝。
+默认 None 保留普通非模板边界，旧条件 `object_use_closure.check` 不扩展。
+这只解除具体实例的作用域门槛；动态直接读取仍不在构造值子集中，不推断
+初始化以前的历史、复制时字段值、host 可达性或线程参与性。
 
 `verification.object_use_closure.check(payload, variable_id, integer_types,
 initialization_selection_domains, capture_protocols, *, max_ast_nodes=None)`

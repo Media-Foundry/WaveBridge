@@ -14,7 +14,7 @@ NATIVE_SHA = "a59c12247f796fe2034ba03ecc43782f77ac3942496b18a140ceacbb24c7ff45"
 KERNEL_ID = "0x30d762e0"
 
 
-def run(native, output):
+def run(native, output, *, threads_object=False):
     if sha(native) != NATIVE_SHA or output.exists():
         raise ValueError("native_mismatch_or_output_exists")
     before = implementation_hashes()
@@ -40,9 +40,32 @@ def run(native, output):
                      "configuration_declaration_id": site["configuration_declaration_id"],
                      "configuration_expression_ids": [arg["id"] for arg in site["configuration_arguments"]]}
         checked = check(root, selection)
+    object_report = None
+    if threads_object and checked.get("status") == "checked":
+        from wavebridge.verification.object_use_closure import inspect_structure
+
+        # Exact development-input selection, not a constructor-value oracle.
+        selected_variable = "0x30d69b78"
+        owners = []
+        pending = [(root, None)]
+        while pending:
+            node, owner = pending.pop()
+            if node.get("kind") == "FunctionDecl":
+                owner = node
+            if node.get("id") == selected_variable:
+                owners.append(owner)
+            pending.extend((child, owner) for child in node.get("inner", []))
+        if len(owners) != 1 or owners[0] is None:
+            raise ValueError("threads_owner_not_unique")
+        abi = {"int": {"bits": 32, "signed": True},
+               "unsigned int": {"bits": 32, "signed": False}}
+        object_report = inspect_structure(capture["payload"], selected_variable, abi, {},
+                                         instantiated_function_id=owners[0]["id"],
+                                         max_ast_nodes=10_000_000)
     after = implementation_hashes()
     report = {"schema_version": "softmax-native-launch-observation/v1", "check": checked,
               "selection": selection, "launch_discovery": facts, "native_sha256": NATIVE_SHA,
+              "threads_object_check": object_report,
               "implementation_before": before, "implementation_after": after,
               "driver_dependencies": dependencies,
               "inputs_unchanged": before == after and sha(native) == NATIVE_SHA and
@@ -58,5 +81,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--threads-object", action="store_true")
     args = parser.parse_args()
-    run(args.native, args.output)
+    run(args.native, args.output, threads_object=args.threads_object)

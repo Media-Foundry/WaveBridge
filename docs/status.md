@@ -2,12 +2,24 @@
 
 更新日期：2026-09-27。
 
+## 启动对象的具体模板实例作用域
+
+三个对象检查层新增精确实例 opt-in，保留默认非模板路径及全 TU 唯一性检查。
+6 项真实 native Clang 回归通过，涵盖三层合法组合和实例/类型/共享 ID 负例。
+全量已运行 1153 项通过（92.558 秒，无跳过），新增最后一项后专项 6 项
+复跑通过（0.287 秒）；demo/diff 通过，不称最终 1154 项全部重跑。
+真实 softmax 重放已越过原模板作用域门槛，绑定 dispatch 实例 `0x30a41828`；
+但对象结论仍 unknown，构造来源停在 `selection_domain_missing`。
+输入、实现与 driver 哈希核对一致；没有将缺失的动态字段域补成手工常量。
+见 [实录](../experiments/softmax-object-template-evidence-20260927.md)。
+下一步是构造点的 host 标量值与历史，之后才是复制和完整线程参与性。
+
 ## 真实 softmax 的精确启动点绑定
 
 复用已有 launch_binding 在新 native AST 上 checked：唯一匹配选定 kernel
 的 launch，4 个配置槽位与 8 个形参位置精确绑定，输入/实现哈希一致。
 block 槽位来自 threads 对象复制；其字段值和复制前保持性尚未证明。
-现成对象结构检查的实际诊断为 unknown：初始化入口不支持该模板实例作用域，
+初次现成对象结构检查的诊断为 unknown：初始化入口不支持该模板实例作用域，
 原因 `target_not_direct_local_of_ordinary_nontemplate_function`，尚未恢复字段。
 完整 TU 另有 22 个未解析启动位置，保持原样，不记为全部解析成功。
 见 [实录](../experiments/softmax-launch-binding-evidence-20260927.md)。
