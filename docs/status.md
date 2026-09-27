@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## host API 的来源与运行时证据边界
+
+已核实固定PyTorch源码：`warp_size()`经当前设备属性读取`warpSize`，路径含
+call_once缓存初始化及cudaGetDeviceProperties，不是字面量32实现，也不能
+从函数名推定无内存写入。新的可重放诊断将固定源码/许可证哈希与现有native
+AST的精确call、声明及局部初始化绑定；同符号定义在此TU中未观察到。
+报告为observed、返回域为null，运行库链接/设备绑定均未建立。
+独立W7900 HIP探针不能填补这条CUDA sm80输入的API值缺口，见
+[取证与下一门槛](../experiments/softmax-host-api-evidence-20260927.md)。
+完整1197项通过（92.465秒，native启用、无跳过），demo/diff通过；未执行GPU。
+
 ## 真实 threads 构造实参到字段的符号连接
 
 `check_scalar_field_forwarding` fresh连接显式实参效果、精确构造身份与构造体
