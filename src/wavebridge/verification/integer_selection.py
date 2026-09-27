@@ -275,9 +275,15 @@ def check_minimum_to_statement(root, assignment_id, statement_id, integer_types,
     This is a normal-execution, first-entry statement boundary, not a check of
     argument evaluations or constructors inside the target statement.
     """
+    update = check_local_minimum_update(root, assignment_id, integer_types, max_ast_nodes=max_ast_nodes)
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    return _preserve_to_statement(root, update, assignment_id, statement_id, budget)
+
+
+def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *, initialized_local=False):
+    """Internal composition only: callers must freshly establish the start value."""
     from wavebridge.analysis.column_loops import _check_body, _Unknown as BodyUnknown
 
-    update = check_local_minimum_update(root, assignment_id, integer_types, max_ast_nodes=max_ast_nodes)
     result = {"schema_version": "minimum-to-statement-history/v1", "status": "unknown", "reason": None,
               "update_check": update, "assignment_id": assignment_id, "statement_id": statement_id,
               "scope": "updated_local_value_at_first_entry_to_later_same_block_statement",
@@ -291,7 +297,9 @@ def check_minimum_to_statement(root, assignment_id, statement_id, integer_types,
     if update["status"] != "checked":
         result["reason"] = "fresh_minimum_update_not_checked"
         return result
-    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    if initialized_local:
+        result["schema_version"] = "initialized-local-to-statement-history/v1"
+        result["scope"] = "initialized_local_value_at_first_entry_to_later_same_block_statement"
     try:
         if not isinstance(statement_id, str) or not statement_id:
             raise _Unknown("invalid_target_statement_id")
@@ -329,7 +337,12 @@ def check_minimum_to_statement(root, assignment_id, statement_id, integer_types,
             raise _Unknown("target_not_after_update")
         protected = update["target_declaration_id"]
         function = unique(update["function_id"])
-        update_nodes, pending = set(), [assignment]
+        if initialized_local:
+            if (assignment.get("kind") != "DeclStmt" or
+                    _children(assignment) != [unique(protected)] or
+                    unique(protected).get("kind") != "VarDecl"):
+                raise _Unknown("history_start_not_checked_single_local_initialization")
+        update_nodes, pending = set(), [] if initialized_local else [assignment]
         while pending:
             node = pending.pop()
             update_nodes.add(id(node))
@@ -354,7 +367,7 @@ def check_minimum_to_statement(root, assignment_id, statement_id, integer_types,
                             _raw_type(parent) not in {"int", "const int"}):
                         raise _Unknown("history_reference_wrapper_unsupported")
                     current, parent = parent, parents[id(parent)]
-                if parent is assignment and assignment["inner"][0] is current:
+                if not initialized_local and parent is assignment and assignment["inner"][0] is current:
                     classification = "selected_update_lhs"
                 elif id(node) in update_nodes:
                     # Fresh transfer checking already validated every branch,
@@ -502,6 +515,7 @@ def check_minimum_quotient(root, assignment_id, quotient_declaration_id, integer
         relation = {"operation": "truncate_toward_zero_division", "numerator": constant["value"],
                     "denominator": history["state_relation"], "evaluation_point": expression["id"]}
         result.update(status="checked", quotient_relation=relation,
+                      quotient_statement_id=statement["id"],
                       numerator_declaration_id=numerator["id"], denominator_declaration_id=denominator["id"],
                       unresolved_obligations=[{"property": "denominator_nonzero_at_division",
                                                "declaration_id": denominator["id"], "established": False}],
@@ -513,6 +527,43 @@ def check_minimum_quotient(root, assignment_id, quotient_declaration_id, integer
         result["reason"] = str(error)
     except (TypeError, ValueError, KeyError, RecursionError):
         result["reason"] = "unsupported_input_representation"
+    return result
+
+
+def check_quotient_to_statement(root, assignment_id, quotient_declaration_id, statement_id,
+                                integer_types, *, max_ast_nodes=None):
+    """Preserve a freshly checked conditional quotient to another statement entry."""
+    quotient = check_minimum_quotient(root, assignment_id, quotient_declaration_id, integer_types,
+                                     max_ast_nodes=max_ast_nodes)
+    result = {"schema_version": "quotient-to-statement-history/v1", "status": "unknown", "reason": None,
+              "scope": "conditional_quotient_value_at_first_entry_to_later_same_block_statement",
+              "quotient_check": quotient, "preservation_check": None,
+              "statement_id": statement_id, "quotient_declaration_id": quotient_declaration_id,
+              "quotient_history_preserved_to_use": False, "target_statement_checked": False,
+              "division_safety_established": False, "source_program_checked": False, "deployable": False,
+              "unresolved_obligations": quotient["unresolved_obligations"],
+              "assumptions": quotient["assumptions"],
+              "limitations": ["not target argument evaluation, constructor fields or conversions",
+                              "nonzero divisor, operand domains and launch validity remain unestablished"]}
+    if quotient["status"] != "checked":
+        result["reason"] = "fresh_quotient_initializer_not_checked"
+        return result
+    # This seed is built ONLY from the fresh call above, never supplied by a
+    # candidate generator. The helper does not permit writes inside a DeclStmt.
+    seed = {"status": "checked", "assumptions": quotient["assumptions"],
+            "function_id": quotient["history_check"]["update_check"]["function_id"],
+            "target_declaration_id": quotient_declaration_id,
+            "state_relation": quotient["quotient_relation"], "input_sha256": quotient["input_sha256"]}
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    preserved = _preserve_to_statement(root, seed, quotient["quotient_statement_id"], statement_id,
+                                      budget, initialized_local=True)
+    result["preservation_check"] = preserved
+    result["assumptions"] = preserved["assumptions"]
+    if preserved["status"] != "checked" or preserved["history_preserved_to_use"] is not True:
+        result["reason"] = "quotient_history_not_checked"
+        return result
+    result.update(status="checked", quotient_history_preserved_to_use=True,
+                  quotient_relation=quotient["quotient_relation"], input_sha256=preserved["input_sha256"])
     return result
 
 

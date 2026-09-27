@@ -544,6 +544,15 @@ checked仅指`truncate_toward_zero(K/min(before_operands))`的条件值关系。
 义务；没有得到具体区间或证明正数/合法启动维度。初始化后的quotient保持、
 构造转换和GPU语义仍未建立。分子非负排除INT_MIN/-1溢出，不排除除零。
 
+`check_quotient_to_statement(root, assignment_id, quotient_declaration_id, statement_id,
+integer_types, *, max_ast_nodes=None)` fresh建立上述quotient初始化关系，再保护
+quotient本身直到同一block内较晚语句的首次入口。它与minimum保持共用内部
+存储用途和中间语句检查，不接收候选生成器提供的成功子报告。初始化模式不
+允许将DeclStmt子树当作任意写入豁免；initializer必须先被精确检查。
+通过仅置`quotient_history_preserved_to_use=true`，仍保留非零义务、
+`division_safety_established=false`和`target_statement_checked=false`。
+字段构造、转换、复制和启动域不在该结论范围内。
+
 `verification.integer_selection.check(root, expression_id, declaration_intervals,
 integer_types, *, max_ast_nodes=None)` 独立核对完整 TU 中一个原始值表达式。
 输入域条目为 `{declaration_id, type, lower, upper}`，必须精确匹配使用的声明；
