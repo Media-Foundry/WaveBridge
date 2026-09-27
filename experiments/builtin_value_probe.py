@@ -1,4 +1,4 @@
-"""Pinned CUDA compile-only probe. Observed IR is never a semantic acceptance."""
+"""Pinned CUDA/HIP compile-only probe. Observed IR is never a semantic acceptance."""
 from __future__ import annotations
 
 import argparse
@@ -10,15 +10,21 @@ from wavebridge.frontend import clang_ast, dependencies
 
 CONFIG_SHA = "fb6fb7374ba536f61c6a83553cd7b27f3f8281093eae1cdd158ac0d42f9bb1b5"
 COMPILER_SHA = "0aafa5b0712f974db5bbdd93a849b0b1e094bbb6314b8163278a22a90ce766b8"
+HIP_CONFIG_SHA = "5ed8bfbe57074a985e2ebfbf958a65b39f588a74e1bfd0c81ad46c9459b4e423"
+HIP_COMPILER_SHA = "f80bad7383249331b12bd9bfdfdfe821a9d362393d08e9489d5976681e9e4616"
 
 
-def run(config_path, output_dir):
+def run(config_path, output_dir, *, profile="cuda-sm80"):
+    if profile not in {"cuda-sm80", "hip-gfx1100"}:
+        raise ValueError("unsupported_probe_profile")
+    config_sha, compiler_sha = ((CONFIG_SHA, COMPILER_SHA) if profile == "cuda-sm80"
+                                else (HIP_CONFIG_SHA, HIP_COMPILER_SHA))
     config_path = Path(config_path).resolve(strict=True)
-    if sha(config_path) != CONFIG_SHA:
+    if sha(config_path) != config_sha:
         raise ValueError("frozen_config_mismatch")
     config = json.loads(config_path.read_text())
     compiler = Path(config["compiler"]).resolve(strict=True)
-    if sha(compiler) != COMPILER_SHA:
+    if sha(compiler) != compiler_sha:
         raise ValueError("historical_compiler_mismatch")
     source = Path(__file__).parent / "probes" / "builtin_values.cu"
     source = source.resolve(strict=True)
@@ -28,7 +34,7 @@ def run(config_path, output_dir):
              Path(clang_ast.__file__).resolve(), Path(dependencies.__file__).resolve(),
              Path(__file__).with_name("pytorch_softmax_intake.py").resolve()]
     before = {str(path): sha(path) for path in files}
-    report = {"schema_version": "builtin-value-probe/v1", "status": "started",
+    report = {"schema_version": "builtin-value-probe/v1", "status": "started", "profile": profile,
               "inputs_before": before, "jobs": [], "GPU_executed": False,
               "source_program_checked": False, "deployable": False,
               "full_compilation_closure_established": False,
@@ -68,8 +74,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--profile", choices=("cuda-sm80", "hip-gfx1100"), default="cuda-sm80")
     args = parser.parse_args()
-    return 0 if run(args.config, args.output_dir)["status"] == "observed" else 2
+    return 0 if run(args.config, args.output_dir, profile=args.profile)["status"] == "observed" else 2
 
 
 if __name__ == "__main__":

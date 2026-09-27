@@ -1,0 +1,10 @@
+{
+  "compiler": "/home/husrcf/anaconda3/lib/python3.12/site-packages/_rocm_sdk_core/lib/llvm/bin/clang++",
+  "compiler_args": [
+    "-x", "hip", "-std=c++17", "--offload-device-only", "--offload-arch=gfx1100",
+    "--rocm-path=/home/husrcf/anaconda3/lib/python3.12/site-packages/_rocm_sdk_core",
+    "--hip-path=/home/husrcf/Code/ProtBind/wavebridge/artifacts/toolchains/sdk-view-sx4rmd37",
+    "--rocm-device-lib-path=/home/husrcf/anaconda3/lib/python3.12/site-packages/_rocm_sdk_core/lib/llvm/amdgcn/bitcode",
+    "-include", "hip/hip_runtime.h", "-include", "__clang_hip_runtime_wrapper.h"
+  ]
+}

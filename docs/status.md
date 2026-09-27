@@ -2,6 +2,15 @@
 
 更新日期：2026-09-27。
 
+## 当前 HIP builtin lowering 观察
+
+复用既有合成探针，在固定Clang23/gfx1100下编译O0和O2，两者均成功，依赖
+与输入哈希记录完整。NaN/inf leaf在IR中返回常量，外部调用及写入对照仍保留
+相应效果，见[实录](../experiments/hip-builtin-value-evidence-20260927.md)。
+这是独立合成TU的编译观察，不是生产调用绑定或源码等价证明。未修改生产
+checker，未运行GPU；原生HIP观测缺口及输出循环unknown仍保留。
+完整1215项CPU测试通过（92.164秒，native启用、无跳过），demo/diff通过。
+
 ## HIP 关系重放与精确调用缺口
 
 在实际HIP输入上复用既有检查器：8个循环头observed，两个输出循环的退出

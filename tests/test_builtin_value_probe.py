@@ -9,7 +9,7 @@ from experiments import builtin_value_probe as probe
 
 
 class BuiltinValueProbeTests(unittest.TestCase):
-    def exercise(self, compilation="completed", dependencies="observed", version="completed"):
+    def exercise(self, compilation="completed", dependencies="observed", version="completed", profile="cuda-sm80"):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             compiler = root / "compiler"
@@ -24,11 +24,34 @@ class BuiltinValueProbeTests(unittest.TestCase):
                     Path(command[command.index("-o") + 1]).write_text("fixture IR")
                 return {"status": compilation, "returncode": 0 if compilation == "completed" else None}
 
-            with patch.object(probe, "CONFIG_SHA", probe.sha(config)), \
-                 patch.object(probe, "COMPILER_SHA", probe.sha(compiler)), \
+            prefix = "HIP_" if profile == "hip-gfx1100" else ""
+            with patch.object(probe, prefix + "CONFIG_SHA", probe.sha(config)), \
+                 patch.object(probe, prefix + "COMPILER_SHA", probe.sha(compiler)), \
                  patch.object(probe.clang_ast, "invoke", side_effect=invoke), \
                  patch.object(probe.dependencies, "observe", return_value={"status": dependencies}):
-                return probe.run(config, root / "output")
+                return probe.run(config, root / "output", profile=profile)
+
+    def test_hip_profile_keeps_observation_only_boundary(self):
+        report = self.exercise(profile="hip-gfx1100")
+        self.assertEqual(report["profile"], "hip-gfx1100")
+        self.assertEqual(report["status"], "observed")
+        self.assertFalse(report["GPU_executed"])
+        self.assertFalse(report["source_program_checked"])
+        self.assertFalse(report["deployable"])
+
+    def test_unknown_profile_rejected_before_input_access(self):
+        with self.assertRaisesRegex(ValueError, "unsupported_probe_profile"):
+            probe.run(Path("not-present.json"), Path("not-created"), profile="unknown")
+
+    def test_profiles_do_not_share_config_pin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.json"
+            config.write_text("{}")
+            with patch.object(probe, "CONFIG_SHA", probe.sha(config)), \
+                 patch.object(probe.clang_ast, "invoke") as invoke:
+                with self.assertRaisesRegex(ValueError, "frozen_config_mismatch"):
+                    probe.run(config, Path(tmp) / "output", profile="hip-gfx1100")
+                invoke.assert_not_called()
 
     def test_observation_never_grants_acceptance(self):
         report = self.exercise()
