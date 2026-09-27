@@ -15,7 +15,8 @@ KERNEL_ID = "0x30d762e0"
 
 
 def run(native, output, *, threads_object=False, host_minimum_update=False, host_minimum_history=False,
-        host_minimum_quotient=False, host_quotient_history=False, constructor_argument_effects=False):
+        host_minimum_quotient=False, host_quotient_history=False, constructor_argument_effects=False,
+        constructor_field_forwarding=False):
     if sha(native) != NATIVE_SHA or output.exists():
         raise ValueError("native_mismatch_or_output_exists")
     before = implementation_hashes()
@@ -119,6 +120,14 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
 
         constructor_effects_report = check_scalar_evaluations(
             root, "0x30d69d08", max_ast_nodes=10_000_000)
+    forwarding_report = None
+    if constructor_field_forwarding and checked.get("status") == "checked":
+        from wavebridge.verification.constructor_argument_effects import check_scalar_field_forwarding
+
+        forwarding_report = check_scalar_field_forwarding(
+            root, "0x30d69d08", {"int": {"bits": 32, "signed": True},
+                                  "unsigned int": {"bits": 32, "signed": False}},
+            max_ast_nodes=10_000_000)
     after = implementation_hashes()
     report = {"schema_version": "softmax-native-launch-observation/v1", "check": checked,
               "selection": selection, "launch_discovery": facts, "native_sha256": NATIVE_SHA,
@@ -128,6 +137,7 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
               "host_minimum_quotient_check": quotient_report,
               "host_quotient_history_check": quotient_history_report,
               "constructor_argument_effects_check": constructor_effects_report,
+              "constructor_field_forwarding_check": forwarding_report,
               "implementation_before": before, "implementation_after": after,
               "driver_dependencies": dependencies,
               "inputs_unchanged": before == after and sha(native) == NATIVE_SHA and
@@ -149,8 +159,10 @@ if __name__ == "__main__":
     parser.add_argument("--host-minimum-quotient", action="store_true")
     parser.add_argument("--host-quotient-history", action="store_true")
     parser.add_argument("--constructor-argument-effects", action="store_true")
+    parser.add_argument("--constructor-field-forwarding", action="store_true")
     args = parser.parse_args()
     run(args.native, args.output, threads_object=args.threads_object,
         host_minimum_update=args.host_minimum_update, host_minimum_history=args.host_minimum_history,
         host_minimum_quotient=args.host_minimum_quotient, host_quotient_history=args.host_quotient_history,
-        constructor_argument_effects=args.constructor_argument_effects)
+        constructor_argument_effects=args.constructor_argument_effects,
+        constructor_field_forwarding=args.constructor_field_forwarding)

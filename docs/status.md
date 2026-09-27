@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## 真实 threads 构造实参到字段的符号连接
+
+`check_scalar_field_forwarding` fresh连接显式实参效果、精确构造身份与构造体
+检查，不需手工字段域。真实softmax三个直接字段分别等于对应转换后实参，
+输入/实现/driver哈希一致，见
+[实录](../experiments/softmax-constructor-forwarding-evidence-20260927.md)。
+字段数值域、原int到unsigned值保持、对象后续历史及launch合法性仍未建立。
+真实Clang回归覆盖字段交换的正确映射、额外写入/调用、窄化和默认实参；
+没有新增GPU结果，不将这一局部连接升级为完整适配。
+最终完整1192项通过（91.997秒，native启用、无跳过），demo/diff通过。
+
 ## 真实 threads 构造的实参求值效果
 
 新增独立 `check_scalar_evaluations`，不借助字段域或构造值检查器，逐项

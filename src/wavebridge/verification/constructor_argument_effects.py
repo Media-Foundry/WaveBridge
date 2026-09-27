@@ -174,6 +174,104 @@ def check_scalar_evaluations(root, constructor_expression_id, *, max_ast_nodes=N
     return result
 
 
+def check_scalar_field_forwarding(root, constructor_expression_id, integer_types, *, max_ast_nodes=None):
+    """Bind converted scalar arguments to identical-type fields, without domains.
+
+    The relation starts AFTER argument conversion. It does not equate an int
+    operand with its unsigned conversion, or infer numeric launch dimensions.
+    """
+    from wavebridge.analysis.constructor_arguments import inspect as inspect_constructor
+    from wavebridge.verification.constructor_effects import check as check_effects
+    from wavebridge.verification.kernel_arguments import _abi_type
+
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    result = {"schema_version": "constructor-scalar-field-forwarding/v1", "status": "unknown", "reason": None,
+              "constructor_expression_id": constructor_expression_id,
+              "argument_effects": None, "constructor_arguments": None, "constructor_effects": None,
+              "field_relations": [], "scope": "converted_argument_to_direct_field_at_normal_construction_return",
+              "field_numeric_domains_established": False,
+              "argument_conversion_value_preservation_established": False,
+              "post_construction_history_established": False,
+              "source_program_checked": False, "deployable": False,
+              "assumptions": [], "limitations": [
+                  "no operand history, numeric domains, launch legality or deployment",
+                  "allocation, enclosing cleanup and later object uses are excluded"]}
+    try:
+        if not isinstance(integer_types, dict):
+            raise _Unknown("invalid_integer_abi")
+        int_bits = _abi_type({"qualType": "int"}, integer_types)[1]
+        arguments = check_scalar_evaluations(root, constructor_expression_id, max_ast_nodes=budget)
+        result["argument_effects"] = arguments
+        if arguments.get("status") != "checked":
+            raise _Unknown("scalar_arguments_not_checked")
+        # The fresh effects check already bounded and validated this exact TU.
+        nodes, pending = [], [root]
+        while pending:
+            node = pending.pop()
+            nodes.append(node)
+            if len(nodes) > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            pending.extend(_children(node))
+        matches = [n for n in nodes if n.get("id") == constructor_expression_id]
+        if len(matches) != 1:
+            raise _Unknown("constructor_expression_not_unique")
+        expression = matches[0]
+        inspection = inspect_constructor(root, expression, int_bits, max_ast_nodes=budget)
+        result["constructor_arguments"] = inspection
+        if (inspection.get("status") != "inspected" and not
+                (inspection.get("status") == "unknown" and
+                 inspection.get("reason") == "one_or_more_arguments_unknown")):
+            raise _Unknown("constructor_identity_not_established")
+        identity = inspection.get("constructor_identity", {})
+        if identity.get("mode") != "exact_alias_record_and_unique_selected_constructor_type":
+            raise _Unknown("constructor_not_exact_direct_identity")
+        constructor_id = inspection.get("constructor_declaration_id")
+        effects = check_effects(root, constructor_id, integer_types, max_ast_nodes=budget)
+        result["constructor_effects"] = effects
+        if (effects.get("status") != "checked" or
+                effects.get("record_declaration_id") != identity.get("record_declaration_id") or
+                effects.get("input_sha256", {}).get("root") != arguments["input_sha256"]["root"]):
+            raise _Unknown("constructor_effects_or_root_not_checked")
+        declarations = [n for n in nodes if n.get("id") == constructor_id]
+        if len(declarations) != 1 or declarations[0].get("kind") != "CXXConstructorDecl":
+            raise _Unknown("constructor_declaration_not_unique")
+        parameters = [n for n in _children(declarations[0], strict=True) if n.get("kind") == "ParmVarDecl"]
+        actuals = _children(expression, strict=True)
+        initializers = effects["field_initializers"]
+        if not (len(actuals) == len(parameters) == len(initializers)):
+            raise _Unknown("argument_parameter_field_count_mismatch")
+        positions = {p.get("id"): i for i, p in enumerate(parameters)}
+        if None in positions or len(positions) != len(parameters):
+            raise _Unknown("parameter_identity_invalid")
+        for actual, parameter in zip(actuals, parameters):
+            if _abi_type(actual.get("type"), integer_types) != _abi_type(parameter.get("type"), integer_types):
+                raise _Unknown("converted_argument_parameter_type_mismatch")
+        relations, used = [], set()
+        for initializer in initializers:
+            parameter_id = initializer.get("source_parameter_id")
+            if (initializer.get("source_kind") != "parameter" or parameter_id not in positions or
+                    parameter_id in used or any(c.get("cast_kind") not in {"LValueToRValue", "NoOp"}
+                        for c in initializer.get("casts_outer_to_inner", []))):
+                raise _Unknown("field_not_bijective_nonconverting_parameter_forward")
+            position = positions[parameter_id]
+            used.add(parameter_id)
+            relations.append({"field_id": initializer["field_id"], "parameter_id": parameter_id,
+                              "parameter_position": position, "argument_expression_id": actuals[position]["id"],
+                              "relation": "field_equals_converted_argument_at_construction"})
+        result.update(status="checked", field_relations=relations,
+                      constructor_declaration_id=constructor_id,
+                      record_declaration_id=effects["record_declaration_id"],
+                      input_sha256={"root": arguments["input_sha256"]["root"],
+                                    "constructor_expression_id": _hash(constructor_expression_id),
+                                    "integer_types": _hash(integer_types)},
+                      assumptions=arguments["assumptions"] + effects["assumptions"])
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (KeyError, TypeError, ValueError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
 def check(root: object, constructor_expression_id: object, integer_types: object,
           selection_domains: object, *, max_ast_nodes: int | None = None,
           instantiated_function_id: str | None = None) -> dict[str, Any]:
