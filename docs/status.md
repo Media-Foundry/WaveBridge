@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## minimum 到真实 warps_per_block 除法
+
+新增fresh组合：保持minimum分母到quotient初始化入口，精确绑定typed除法
+及源码常量。真实softmax已得到条件关系
+`trunc_toward_zero(128/min(before_operands))`，输入/实现/driver哈希一致。
+128来自源码const声明；非零除数没有证明，显式义务保留，division_safety
+和quotient后续history均false。见
+[实录](../experiments/softmax-host-quotient-evidence-20260927.md)。
+6项新增真实Clang回归与只读复核通过；未执行GPU，不签发配置字段或启动保证。
+完整1174项通过（92.325秒，native启用、无跳过），demo/diff通过。
+
 ## minimum 更新到真实 threads 声明入口
 
 新增fresh组合检查，同一嵌套CompoundStmt内连接minimum更新和后续声明入口。

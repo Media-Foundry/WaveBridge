@@ -534,6 +534,16 @@ false；这不是构造字段、launch 尺寸或完整参与关系的检查通�
 `target_statement_checked=false`：没有检查目标语句内的实参求值、构造或调用，
 也没有建立操作数域、初始化来源、launch域或后续迭代保证。
 
+`check_minimum_quotient(root, assignment_id, quotient_declaration_id, integer_types,
+*, max_ast_nodes=None)` fresh连接上述历史到唯一automatic int声明，再匹配其
+initializer为`const int源码常量 / 已保持minimum的精确int读取`。分子复用
+integer_constants.evaluate，逐一核对常量依赖声明唯一且为const int，要求非负
+且可表示。拒绝其他运算、颠倒/替换分母、引用、隐式整型变换和多变量声明。
+checked仅指`truncate_toward_zero(K/min(before_operands))`的条件值关系。
+`division_safety_established=false`，报告显式保留`denominator_nonzero_at_division`
+义务；没有得到具体区间或证明正数/合法启动维度。初始化后的quotient保持、
+构造转换和GPU语义仍未建立。分子非负排除INT_MIN/-1溢出，不排除除零。
+
 `verification.integer_selection.check(root, expression_id, declaration_intervals,
 integer_types, *, max_ast_nodes=None)` 独立核对完整 TU 中一个原始值表达式。
 输入域条目为 `{declaration_id, type, lower, upper}`，必须精确匹配使用的声明；

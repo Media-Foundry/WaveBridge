@@ -388,6 +388,134 @@ def check_minimum_to_statement(root, assignment_id, statement_id, integer_types,
     return result
 
 
+def check_minimum_quotient(root, assignment_id, quotient_declaration_id, integer_types, *, max_ast_nodes=None):
+    """Connect a nonnegative int constant divided by a freshly preserved minimum.
+
+    The result is conditional on a nonzero denominator. It does not discharge
+    that obligation or infer any launch dimension or numeric operand domain.
+    """
+    from wavebridge.analysis.integer_constants import evaluate as constant_value
+
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    result = {"schema_version": "minimum-quotient-initializer/v1", "status": "unknown", "reason": None,
+              "scope": "conditional_quotient_value_at_selected_initialization",
+              "quotient_declaration_id": quotient_declaration_id, "history_check": None,
+              "division_safety_established": False, "quotient_history_preserved_to_use": False,
+              "operand_domains_established": False, "source_program_checked": False, "deployable": False,
+              "assumptions": [], "unresolved_obligations": [],
+              "limitations": ["no nonzero or positive denominator proof and no numeric field domains",
+                              "not later quotient history, constructor conversion, launch or participation evidence"]}
+    try:
+        if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
+                not isinstance(quotient_declaration_id, str) or not quotient_declaration_id or
+                not isinstance(integer_types, dict) or type(budget) is not int or
+                not 1 <= budget <= HARD_MAX_AST_NODES):
+            raise _Unknown("invalid_inputs_or_budget")
+        abi = _abi_type({"qualType": "int"}, integer_types)
+        if abi[0] != "int" or abi[2] is not True:
+            raise _Unknown("signed_int_abi_required")
+        index, parents, pending, count = {}, {}, [(root, None)], 0
+        while pending:
+            node, parent = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            if not isinstance(node, dict):
+                raise _Unknown("ast_node_not_object")
+            parents[id(node)] = parent
+            if isinstance(node.get("id"), str):
+                index.setdefault(node["id"], []).append(node)
+            children = node.get("inner", [])
+            if not isinstance(children, list) or any(not isinstance(c, dict) for c in children):
+                raise _Unknown("malformed_ast_children")
+            pending.extend((child, node) for child in children if child)
+
+        def unique(identifier):
+            nodes = index.get(identifier, [])
+            if len(nodes) != 1:
+                raise _Unknown("quotient_identity_not_unique")
+            return nodes[0]
+
+        declaration = unique(quotient_declaration_id)
+        statement = parents[id(declaration)]
+        children = _children(declaration)
+        if (declaration.get("kind") != "VarDecl" or _raw_type(declaration) != "int" or
+                declaration.get("storageClass") not in (None, "auto", "register") or
+                any(declaration.get(k) is not None for k in ("tls", "tlsKind", "thread_local", "threadLocal")) or
+                len(children) != 1 or declaration.get("init") is None or
+                not isinstance(statement, dict) or statement.get("kind") != "DeclStmt" or
+                _children(statement) != [declaration]):
+            raise _Unknown("quotient_not_single_automatic_int_initializer")
+        history = check_minimum_to_statement(root, assignment_id, statement.get("id"), integer_types,
+                                            max_ast_nodes=budget)
+        result["history_check"] = history
+        if history["status"] != "checked" or history.get("history_preserved_to_use") is not True:
+            raise _Unknown("fresh_denominator_history_not_checked")
+
+        def parens(node, depth=0):
+            if depth > MAX_EXPRESSION_DEPTH or unique(node.get("id")) is not node:
+                raise _Unknown("quotient_expression_identity_or_depth")
+            if node.get("kind") == "ParenExpr":
+                nested = _children(node)
+                if (len(nested) != 1 or _raw_type(node) != _raw_type(nested[0]) or
+                        node.get("valueCategory") != nested[0].get("valueCategory")):
+                    raise _Unknown("quotient_parenthesis_mismatch")
+                return parens(nested[0], depth + 1)
+            return node
+
+        def read(node, spelling):
+            node = parens(node)
+            nested = _children(node)
+            if (node.get("kind") != "ImplicitCastExpr" or node.get("castKind") != "LValueToRValue" or
+                    _raw_type(node) != "int" or node.get("valueCategory") != "prvalue" or len(nested) != 1):
+                raise _Unknown("quotient_operand_not_plain_int_read")
+            leaf = parens(nested[0])
+            ref = leaf.get("referencedDecl")
+            if (leaf.get("kind") != "DeclRefExpr" or _children(leaf) or leaf.get("valueCategory") != "lvalue" or
+                    _raw_type(leaf) != spelling or not isinstance(ref, dict)):
+                raise _Unknown("quotient_operand_not_plain_declaration")
+            bound = unique(ref.get("id"))
+            if (ref.get("kind") != bound.get("kind") or _raw_type(ref) != spelling or
+                    _raw_type(bound) != spelling):
+                raise _Unknown("quotient_operand_declaration_type_mismatch")
+            return bound
+
+        expression = parens(children[0])
+        operands = _children(expression)
+        if (expression.get("kind") != "BinaryOperator" or expression.get("opcode") != "/" or
+                expression.get("valueCategory") != "prvalue" or _raw_type(expression) != "int" or len(operands) != 2):
+            raise _Unknown("quotient_initializer_not_builtin_int_division")
+        denominator = read(operands[1], "int")
+        if denominator.get("id") != history["target_declaration_id"]:
+            raise _Unknown("quotient_denominator_not_preserved_minimum")
+        numerator = read(operands[0], "const int")
+        if numerator.get("kind") != "VarDecl":
+            raise _Unknown("quotient_numerator_not_source_constant")
+        constant = constant_value(root, numerator["id"], abi[1])
+        result["numerator_check"] = constant
+        if constant["status"] != "evaluated" or type(constant.get("value")) is not int or constant["value"] < 0:
+            raise _Unknown("quotient_numerator_not_nonnegative_int_constant")
+        for source in constant["sources"]:
+            bound = unique(source["declaration_id"])
+            if bound.get("kind") != "VarDecl" or _raw_type(bound) != "const int":
+                raise _Unknown("quotient_constant_dependency_not_unique_const_int")
+        relation = {"operation": "truncate_toward_zero_division", "numerator": constant["value"],
+                    "denominator": history["state_relation"], "evaluation_point": expression["id"]}
+        result.update(status="checked", quotient_relation=relation,
+                      numerator_declaration_id=numerator["id"], denominator_declaration_id=denominator["id"],
+                      unresolved_obligations=[{"property": "denominator_nonzero_at_division",
+                                               "declaration_id": denominator["id"], "established": False}],
+                      assumptions=history["assumptions"] + ["the denominator is nonzero when the selected initializer executes",
+                                                            "source constant declarations are initialized live immutable objects"],
+                      input_sha256={"history": history["input_sha256"],
+                                    "quotient_declaration_id": _hash(quotient_declaration_id)})
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, KeyError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
 def check(root: object, expression_id: object, declaration_intervals: object,
           integer_types: object, *, max_ast_nodes: int | None = None) -> dict[str, Any]:
     node_budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
