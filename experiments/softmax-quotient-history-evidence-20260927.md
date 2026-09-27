@@ -42,3 +42,13 @@ threads声明`0x30d69d50`位于child9。保护声明为warps_per_block `0x30d696
 两条中间语句通过、两个值读取用途闭合。到threads声明入口仍具有
 `trunc_toward_zero(128/min(before_operands))`这一条件关系。
 非零除数义务未解除，构造语句内部未检查，不是合法dim3或launch的验收通过。
+
+## 下一入口的只读诊断
+
+GPT-5.6 Sol仅运行一次现有scalar_expression_effects检查，选constructor
+`0x30d69d08`的三个直接实参`0x30d69c88`、`0x30d69cc8`、`0x30d69ce8`。
+三者均unknown/unsupported_scalar_expression；共同首缺口是int→unsigned int
+IntegralCast，前两个内部为int读取，第三个为int字面量。没有修改支持范围。
+报告 `artifacts/wb-softmax-constructor-args-diagnostic/report.json` SHA256为
+`9cc6f5661cee32d871473238f2cf97719faaa2d79c5959402660aafcb77ff2de`。
+这只是效果入口诊断，不能据此判定转换值保持或字段值成立。

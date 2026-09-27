@@ -15,8 +15,11 @@
   值读取用途；保护warps_per_block0x30d696c0到threads声明0x30d69d50入口。
 - 范围：quotient_history_preserved_to_use=true；target_statement_checked、
   division_safety_established、source/deployable=false。非零义务原样继承。
-- 子代理正进行唯一一次构造实参效果诊断，session24056，由getter_review负责
-  轮询；脚本artifacts/wb-softmax-constructor-args-diagnostic/run.py，输出同目录
-  report.json。未完成前不写成功，不重复启动；主src/driver继续不修改。
+- 子代理唯一构造实参效果诊断session24056已正常结束，未重启或修改源码。
+  脚本artifacts/wb-softmax-constructor-args-diagnostic/run.py，报告同目录
+  report.json SHA256 9cc6f5661cee32d871473238f2cf97719faaa2d79c5959402660aafcb77ff2de。
+  三个实参0x30d69c88/0x30d69cc8/0x30d69ce8均unknown/unsupported_scalar_expression，
+  共同首缺口为现有scalar effect checker不支持int→unsigned int IntegralCast。
+  前两个operand是int LValueToRValue，第三个是int literal。未建立字段值。
 - 下一步：依据该诊断连接构造参数的读取/效果/转换；仍须独立解除API、log2/
   shift域和非零义务。没有GPU、完整配置域或适配部署结论。

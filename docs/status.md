@@ -11,6 +11,8 @@ minimum与quotient历史现在共用私有存储用途检查，公共入口仍�
 5项新增真实Clang回归与只读复核通过；非零义务、构造内部和启动维度合法性
 仍未建立，不把quotient保持误写成字段或部署通过。
 完整1179项通过（93.128秒，native启用、无跳过），demo/diff通过。
+后续只读诊断确认：三个真实构造实参均先停在int→unsigned int IntegralCast
+的效果支持边界（unknown）；未将其当成字段值或转换值保持已建立。
 
 ## minimum 到真实 warps_per_block 除法
 
