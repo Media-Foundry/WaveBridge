@@ -269,6 +269,125 @@ def check_local_minimum_update(root, assignment_id, integer_types, *, max_ast_no
     return result
 
 
+def check_minimum_to_statement(root, assignment_id, statement_id, integer_types, *, max_ast_nodes=None):
+    """Carry the fresh minimum result to a later statement in the same block.
+
+    This is a normal-execution, first-entry statement boundary, not a check of
+    argument evaluations or constructors inside the target statement.
+    """
+    from wavebridge.analysis.column_loops import _check_body, _Unknown as BodyUnknown
+
+    update = check_local_minimum_update(root, assignment_id, integer_types, max_ast_nodes=max_ast_nodes)
+    result = {"schema_version": "minimum-to-statement-history/v1", "status": "unknown", "reason": None,
+              "update_check": update, "assignment_id": assignment_id, "statement_id": statement_id,
+              "scope": "updated_local_value_at_first_entry_to_later_same_block_statement",
+              "history_preserved_to_use": False, "target_statement_checked": False,
+              "source_program_checked": False, "deployable": False, "statement_checks": [],
+              "assumptions": update["assumptions"] + [
+                  "normal execution proceeds from the selected assignment to the target statement",
+                  "no nonlocal transfer, stack introspection or asynchronous interference occurs"],
+              "limitations": ["not reachability, operand domains, initializer origin or target argument evaluation",
+                              "no constructor field, launch or complete participation guarantee"]}
+    if update["status"] != "checked":
+        result["reason"] = "fresh_minimum_update_not_checked"
+        return result
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    try:
+        if not isinstance(statement_id, str) or not statement_id:
+            raise _Unknown("invalid_target_statement_id")
+        index, parents, pending, count = {}, {}, [(root, None)], 0
+        while pending:
+            node, parent = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("semantic_ast_node_budget_exceeded")
+            if not isinstance(node, dict):
+                raise _Unknown("semantic_ast_node_not_object")
+            parents[id(node)] = parent
+            if isinstance(node.get("id"), str):
+                index.setdefault(node["id"], []).append(node)
+            for key in ("inner", "array_filler"):
+                children = node.get(key, [])
+                if not isinstance(children, list) or any(not isinstance(c, dict) for c in children):
+                    raise _Unknown("malformed_semantic_ast_children")
+                pending.extend((child, node) for child in children if child)
+
+        def unique(identifier):
+            found = index.get(identifier, [])
+            if len(found) != 1:
+                raise _Unknown("history_identity_not_unique")
+            return found[0]
+
+        assignment, target = unique(assignment_id), unique(statement_id)
+        block = parents[id(assignment)]
+        if (not isinstance(block, dict) or block.get("kind") != "CompoundStmt" or
+                parents[id(target)] is not block):
+            raise _Unknown("history_endpoints_not_same_direct_block")
+        statements = _children(block)
+        begin, end = statements.index(assignment), statements.index(target)
+        if end <= begin:
+            raise _Unknown("target_not_after_update")
+        protected = update["target_declaration_id"]
+        function = unique(update["function_id"])
+        update_nodes, pending = set(), [assignment]
+        while pending:
+            node = pending.pop()
+            update_nodes.add(id(node))
+            pending.extend(_children(node))
+        references, pending = [], [function]
+        forbidden = {"LambdaExpr", "BlockExpr", "GotoStmt", "IndirectGotoStmt", "LabelStmt", "AddrLabelExpr",
+                     "GCCAsmStmt", "MSAsmStmt", "CoroutineBodyStmt", "CXXTryStmt", "CXXThrowExpr"}
+        while pending:
+            node = pending.pop()
+            if node.get("kind") in forbidden:
+                raise _Unknown("history_function_control_or_capture_unsupported")
+            if node.get("kind") == "DeclRefExpr" and node.get("referencedDecl", {}).get("id") == protected:
+                if unique(node.get("id")) is not node or _children(node):
+                    raise _Unknown("history_reference_not_unique_plain_leaf")
+                current, depth = node, 0
+                parent = parents[id(current)]
+                while parent is not None and (parent.get("kind") == "ParenExpr" or
+                        (parent.get("kind") == "ImplicitCastExpr" and parent.get("castKind") == "NoOp")):
+                    depth += 1
+                    if (depth > MAX_EXPRESSION_DEPTH or _children(parent) != [current] or
+                            parent.get("valueCategory") != "lvalue" or
+                            _raw_type(parent) not in {"int", "const int"}):
+                        raise _Unknown("history_reference_wrapper_unsupported")
+                    current, parent = parent, parents[id(parent)]
+                if parent is assignment and assignment["inner"][0] is current:
+                    classification = "selected_update_lhs"
+                elif id(node) in update_nodes:
+                    # Fresh transfer checking already validated every branch,
+                    # comparison and immediate read in this exact expression.
+                    classification = "fresh_checked_update_operand_read"
+                elif (parent is not None and parent.get("kind") == "ImplicitCastExpr" and
+                      parent.get("castKind") == "LValueToRValue" and _children(parent) == [current] and
+                      _raw_type(parent) == "int" and parent.get("valueCategory") == "prvalue"):
+                    classification = "value_read_no_storage_escape"
+                else:
+                    raise _Unknown("updated_local_storage_escape_or_other_write")
+                references.append({"expression_id": node["id"], "classification": classification})
+            pending.extend(child for key in ("inner", "array_filler") for child in node.get(key, []) if child)
+        for position in range(begin + 1, end):
+            statement = statements[position]
+            item = {"statement_id": statement.get("id"), "block_child_index": position, "status": "unknown"}
+            result["statement_checks"].append(item)
+            _check_body(statement, {protected})
+            item["status"] = "checked"
+        result.update(status="checked", history_preserved_to_use=True,
+                      target_declaration_id=protected, state_relation=update["state_relation"],
+                      block_id=block.get("id"), assignment_child_index=begin, target_child_index=end,
+                      reference_classifications=references,
+                      input_sha256={"update": update["input_sha256"], "statement_id": _hash(statement_id)})
+    except BodyUnknown as error:
+        result["reason"], result["unknown_range"] = error.reason, error.range
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, KeyError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
 def check(root: object, expression_id: object, declaration_intervals: object,
           integer_types: object, *, max_ast_nodes: int | None = None) -> dict[str, Any]:
     node_budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes

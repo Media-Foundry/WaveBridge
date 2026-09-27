@@ -2,6 +2,17 @@
 
 更新日期：2026-09-27。
 
+## minimum 更新到真实 threads 声明入口
+
+新增fresh组合检查，同一嵌套CompoundStmt内连接minimum更新和后续声明入口。
+全函数用途扫描包括array_filler，中间语句复用副作用检查，拒绝别名/其他写入/
+不透明调用和不支持控制流。真实softmax中5条中间语句通过，更新后的warp_size
+关系保持到threads声明首次入口；输入/实现/driver哈希一致。见
+[实录](../experiments/softmax-host-history-evidence-20260927.md)。
+完整1168项通过（91.701秒，native启用、无跳过），7项专项复跑及demo/diff通过。
+目标语句内部仍未检查，构造字段域、API值、路径可达性、复制前保持和完整
+线程参与仍未建立。没有将入口保持升级为整个构造通过。
+
 ## host mutable minimum 的单步关系
 
 `integer_selection.check_local_minimum_update` 已从真实softmax赋值恢复并检查

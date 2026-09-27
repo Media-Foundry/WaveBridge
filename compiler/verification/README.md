@@ -524,6 +524,16 @@ integer_types, *, max_ast_nodes=None)` 检查一个实际 builtin int 赋值的�
 `history_preserved_to_use`、`operand_domains_established`、source/deployable 均为
 false；这不是构造字段、launch 尺寸或完整参与关系的检查通过。
 
+`check_minimum_to_statement(root, assignment_id, statement_id, integer_types,
+*, max_ast_nodes=None)` fresh调用上述单步检查，连接同一个CompoundStmt内较晚
+直接语句的首次入口。允许该block位于非零输入等外层分支内，但不证明其可达。
+所有中间语句复用现有副作用检查；全函数的目标变量用途另行闭合扫描，包括
+`array_filler`，只接受已检查更新内的引用和其他位置的值读取。其他写入、引用/
+地址逃逸、opaque中间调用、goto/lambda等保守unknown。操作数是更新前快照，
+不是后来仍不变的操作数声明值。通过仅置`history_preserved_to_use=true`，
+`target_statement_checked=false`：没有检查目标语句内的实参求值、构造或调用，
+也没有建立操作数域、初始化来源、launch域或后续迭代保证。
+
 `verification.integer_selection.check(root, expression_id, declaration_intervals,
 integer_types, *, max_ast_nodes=None)` 独立核对完整 TU 中一个原始值表达式。
 输入域条目为 `{declaration_id, type, lower, upper}`，必须精确匹配使用的声明；

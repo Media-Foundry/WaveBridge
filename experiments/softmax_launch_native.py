@@ -14,7 +14,7 @@ NATIVE_SHA = "a59c12247f796fe2034ba03ecc43782f77ac3942496b18a140ceacbb24c7ff45"
 KERNEL_ID = "0x30d762e0"
 
 
-def run(native, output, *, threads_object=False, host_minimum_update=False):
+def run(native, output, *, threads_object=False, host_minimum_update=False, host_minimum_history=False):
     if sha(native) != NATIVE_SHA or output.exists():
         raise ValueError("native_mismatch_or_output_exists")
     before = implementation_hashes()
@@ -69,11 +69,27 @@ def run(native, output, *, threads_object=False, host_minimum_update=False):
         minimum_report = check_local_minimum_update(
             root, "0x30d69470", {"int": {"bits": 32, "signed": True}},
             max_ast_nodes=10_000_000)
+    history_report = None
+    if host_minimum_history and checked.get("status") == "checked":
+        from wavebridge.verification.integer_selection import check_minimum_to_statement
+
+        statements, pending = [], [(root, None)]
+        while pending:
+            node, parent = pending.pop()
+            if node.get("id") == "0x30d69b78":
+                statements.append(parent)
+            pending.extend((child, node) for child in node.get("inner", []))
+        if len(statements) != 1 or statements[0].get("kind") != "DeclStmt":
+            raise ValueError("threads_statement_not_unique")
+        history_report = check_minimum_to_statement(
+            root, "0x30d69470", statements[0]["id"], {"int": {"bits": 32, "signed": True}},
+            max_ast_nodes=10_000_000)
     after = implementation_hashes()
     report = {"schema_version": "softmax-native-launch-observation/v1", "check": checked,
               "selection": selection, "launch_discovery": facts, "native_sha256": NATIVE_SHA,
               "threads_object_check": object_report,
               "host_minimum_update_check": minimum_report,
+              "host_minimum_history_check": history_report,
               "implementation_before": before, "implementation_after": after,
               "driver_dependencies": dependencies,
               "inputs_unchanged": before == after and sha(native) == NATIVE_SHA and
@@ -91,6 +107,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--threads-object", action="store_true")
     parser.add_argument("--host-minimum-update", action="store_true")
+    parser.add_argument("--host-minimum-history", action="store_true")
     args = parser.parse_args()
     run(args.native, args.output, threads_object=args.threads_object,
-        host_minimum_update=args.host_minimum_update)
+        host_minimum_update=args.host_minimum_update, host_minimum_history=args.host_minimum_history)
