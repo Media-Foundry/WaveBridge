@@ -2,6 +2,16 @@
 
 更新日期：2026-09-27。
 
+## HIP 关系重放与精确调用缺口
+
+在实际HIP输入上复用既有检查器：8个循环头observed，两个输出循环的退出
+分区与header connection checked；静态模板分支可识别，但循环体保持性
+均停在同一quiet_NaN调用的效果缺口。未提供旧CUDA协议来填补这一前提。
+语法调用清单记录30个节点/39条边，不是动态可达性或整核保证，详见
+[实录](../experiments/softmax-hip-relations-evidence-20260927.md)。
+输入/实现哈希稳定；1212项CPU测试通过（93.883秒，无跳过），demo/diff通过。
+未运行GPU、未修改生产checker，下一步建立精确HIP调用身份与效果证据。
+
 ## 实际 HIP 工件的 fresh AST 接入
 
 对最终W7900 pilot的同一cpp/生成头/compat头重新采集完整HIP gfx1100

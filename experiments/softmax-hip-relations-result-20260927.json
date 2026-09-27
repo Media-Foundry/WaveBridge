@@ -1,0 +1,23 @@
+{
+  "schema_version": "softmax-hip-relations-index/v1",
+  "baseline_commit": "baa047d",
+  "raw_report": "artifacts/wb-softmax-hip-relations-20260927-01/report.json",
+  "raw_report_sha256": "ad1364304676a635f489b0275d1cd7204dac706cbd7af553d59199f167d8cf93",
+  "status": "observed",
+  "inputs_unchanged": true,
+  "headers_observed": 8,
+  "exit_partitions_checked": 2,
+  "header_connections_checked": 2,
+  "guarded_work_checked": 0,
+  "guarded_work_unknown_reason": "call_effect_not_checked",
+  "shared_unknown_call_id": "0x7b36f84c9aa8",
+  "shared_unknown_declaration_id": "0x2ce0d9b0",
+  "syntactic_inventory_nodes": 30,
+  "syntactic_inventory_edges": 39,
+  "inventory_budget_exhausted": false,
+  "native_observations_supplied": false,
+  "external_call_protocols": {},
+  "source_program_checked": false,
+  "deployable": false,
+  "GPU_executed": false
+}
