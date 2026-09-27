@@ -2,6 +2,18 @@
 
 更新日期：2026-09-27。
 
+## 实际 HIP 工件的 fresh AST 接入
+
+对最终W7900 pilot的同一cpp/生成头/compat头重新采集完整HIP gfx1100
+device-only AST，334个依赖文件已记录，三份执行源码逐hash绑定。新实例
+符号与实际编译metadata一致，不复用CUDA sm80的ID或保证。输入、二进制、
+compiler wrapper及SDK观测文件在采集前后复核一致，详见
+[实录](../experiments/softmax-hip-intake-evidence-20260927.md)。
+默认列循环恢复为1/8成功，6处call_in_body、1处控制流unknown；归约发现
+仍有21处未解析调用、无已恢复XOR候选。选定实例发现1处launch，另保留22处
+未解析位置。analyzed不代表checked；原binary完整依赖闭包与整核保证未建立。
+完整1208项CPU测试通过（92.433秒，native启用、无跳过），demo/diff通过；本轮未运行GPU。
+
 ## softmax 手工 HIP 基线首次执行闭环
 
 独立手工HIP输入在本机W7900上完成18个冻结数值案例，全部通过。API实际查询、

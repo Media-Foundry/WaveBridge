@@ -1,0 +1,56 @@
+{
+  "GPU_executed_this_run": false,
+  "ast_report": "/home/husrcf/Code/ProtBind/wavebridge/artifacts/wb-softmax-hip-intake-20260927-01/ast.json",
+  "ast_report_sha256": "ae7cb74e0b35a40ab14a42a9f5c763be7279f95ef7586e30513e92508b80ad11",
+  "baseline_commit": "58695d0",
+  "binary_build_dependency_closure_established": false,
+  "column_loop_results": [
+    {
+      "count": 6,
+      "reason": "call_in_body",
+      "status": "unknown"
+    },
+    {
+      "count": 1,
+      "reason": null,
+      "status": "recovered"
+    },
+    {
+      "count": 1,
+      "reason": "unsupported_control_flow_in_body",
+      "status": "unknown"
+    }
+  ],
+  "dependency_count": 334,
+  "deployable": false,
+  "executed_source_files_bound": true,
+  "inputs_unchanged": true,
+  "pilot_report_sha256": "f53b5800c54e8ef5ec459b7734e3c4edf0a6064e8e519357881926e28b78cab2",
+  "raw_report": "artifacts/wb-softmax-hip-intake-20260927-01/report.json",
+  "raw_report_sha256": "e0f3691cd2a4952193770cf251e7414d2be9ea4af11b4776967f7e0da9e091b9",
+  "schema_version": "executed-hip-intake-index/v1",
+  "selected_entry": {
+    "id": "0x7b36f84eb490",
+    "loc": {
+      "col": 17,
+      "includedFrom": {
+        "file": "/home/husrcf/Code/ProtBind/wavebridge/artifacts/wb-softmax-hip-pilot-20260927-10/pytorch-softmax-hip.hip.cpp"
+      },
+      "offset": 3049,
+      "tokLen": 20
+    },
+    "mangledName": "_ZN12_GLOBAL__N_120softmax_warp_forwardIfffLi7ELb0ELb0EEEvPT0_PKT_iiiPKbib",
+    "name": "softmax_warp_forward"
+  },
+  "selected_launch_count": 1,
+  "source_program_checked": false,
+  "status": "analyzed",
+  "symbol_matches_pilot_metadata": true,
+  "unresolved_launch_count": 22,
+  "unresolved_reduction_calls": {
+    "callee_unique_definition_not_found": 18,
+    "member_callee_declaration_missing": 1,
+    "unsupported_call_kind": 2
+  },
+  "xor_candidate_count": 0
+}
