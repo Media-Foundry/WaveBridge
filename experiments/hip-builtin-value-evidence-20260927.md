@@ -47,6 +47,10 @@ BuiltinAttr编号1042；原HIP JSON AST只含隐式BuiltinAttr，没有数字bui
 原HIP builtin DeclRefExpr的valueCategory为lvalue，现有受限native checker
 要求prvalue；这是待用匹配原生证据回归的版本形态差异，本轮没有放宽规则。
 
+后续更正：匹配插件生成的真实HIP原生工件中，该builtin引用为prvalue，现有
+结构检查器可直接支持。此前JSON中的lvalue观察不能归纳成Clang23版本规则；
+两份工件差异成因尚未验证，见[原生构建与采集记录](clang23-native-build-20260927.md)。
+
 ## 结论与下一步
 
 本轮为当前HIP编译配置下的NaN/inf leaf假设提供编译观察，而不是自动消除

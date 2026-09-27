@@ -2,6 +2,16 @@
 
 更新日期：2026-09-27。
 
+## 实际 HIP 工具链的原生采集已接通
+
+从SDK清单固定提交生成匹配Clang23开发头，现有插件无需C++改动即可构建和装载。
+24项原生采集回归通过（0.432秒），随后实际HIP softmax采集collected，334项
+依赖observed，pilot三份派生源码hash一致；详见
+[构建与采集实录](../experiments/clang23-native-build-20260927.md)。
+本次same-context builtin引用是prvalue，现有结构checker可支持；不把此前JSON
+lvalue观察归纳成版本规则，不放宽checker。调用效果、整核等价和部署仍未建立。
+本轮未运行GPU，也不声称全套测试已在Clang23上通过。
+
 ## 当前 HIP builtin lowering 观察
 
 复用既有合成探针，在固定Clang23/gfx1100下编译O0和O2，两者均成功，依赖
