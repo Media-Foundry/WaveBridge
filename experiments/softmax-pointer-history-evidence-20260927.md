@@ -37,5 +37,19 @@ PYTHONPATH=src:. python3 -m experiments.softmax_history_native \
   --output artifacts/wb-softmax-pointer-history-0KgDSq/replay.json
 ```
 
-该真实重放已启动，尚未取得终态，不记为通过。日志在同目录 `run.log`。
-即使本层最终通过，也不证明完整输出覆盖、lane-family 或整核/部署安全。
+该真实重放已完成：`checked`，`inputs_unchanged=true`，结束后逐文件核对
+implementation_after 和 driver_dependencies 均与当前文件一致。实现为 `6f667af`；
+随后 `a572542` 仅增加独立 launch driver 和文档，未改本次输入依赖。
+报告 SHA256：`21b6e54b65d6be04863d4b8fe8282c6c4c7ff07648a69d2340816a520088cf93`。
+日志在同目录 `run.log`；原执行会话 67233 正常退出，未重启。
+
+实际恢复的入口相对元素偏移为：
+
+```text
+row_at_snapshot*stride_at_snapshot + source + outer*count + inner*32
+```
+
+offset initializer 为 `0x30ddc248`，唯一指针更新为 `0x30ddc3a0`；
+条件 offset 区间 `[0,524191]`，单位为 float elements。
+`output_pointer_history_checked=true`；完整输出覆盖、lane-family、整核和
+部署标记仍为 false。这不是分配容量、实际指针有效性或浮点值正确性的证明。

@@ -7,6 +7,8 @@
 复用已有 launch_binding 在新 native AST 上 checked：唯一匹配选定 kernel
 的 launch，4 个配置槽位与 8 个形参位置精确绑定，输入/实现哈希一致。
 block 槽位来自 threads 对象复制；其字段值和复制前保持性尚未证明。
+现成对象结构检查的实际诊断为 unknown：初始化入口不支持该模板实例作用域，
+原因 `target_not_direct_local_of_ordinary_nontemplate_function`，尚未恢复字段。
 完整 TU 另有 22 个未解析启动位置，保持原样，不记为全部解析成功。
 见 [实录](../experiments/softmax-launch-binding-evidence-20260927.md)。
 8 项既有真实 Clang 回归通过（0.137 秒）；未改 checker 或运行 GPU。
@@ -23,7 +25,10 @@ block 槽位来自 threads 对象复制；其字段值和复制前保持性尚�
 GPT-5.6 Sol 补充真实 Clang 回归并只读复核，隔离工作树完整 1148 项通过
 （92.048 秒，native 启用）。代码与测试逐字节移回后，主树完整 1148 项
 再次通过（91.888 秒，native 启用、无跳过），demo/diff 通过。
-真实 pointer-history 重放已启动，尚未取得终态；见
+真实 pointer-history 重放已完成 checked，inputs_unchanged=true，结束后实现
+与 driver 依赖哈希逐文件核对一致。入口相对偏移为
+`row_at_snapshot*stride_at_snapshot + source + outer*count + inner*32`；
+指针历史标记为 true，完整覆盖/lane-family/source/deployable 仍为 false。见
 [记录](../experiments/softmax-pointer-history-evidence-20260927.md)。新 row/stride
 快照域明确为外部开发窗口，不是源码恢复或实际 launch 证据。
 

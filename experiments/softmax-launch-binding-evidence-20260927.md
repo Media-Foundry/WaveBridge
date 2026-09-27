@@ -41,3 +41,26 @@ getter 的区间 `[0,31]` 直接构造已证明的线程多重集。完整参与
 提交 `6f667af7312a792ff8bb1584c0665b8d5f2afb7b` 的
 [CI 36280680885](https://github.com/Media-Foundry/WaveBridge/actions/runs/36280680885)
 已只读核验 completed/success，不作为 GPU 证据。
+
+## threads 对象的首次实测诊断
+
+GPT-5.6 Sol 在同一 native 输入上仅执行一次现成入口：
+`object_use_closure.inspect_structure(payload, "0x30d69b78", ABI, {}, max_ast_nodes=10_000_000)`。
+报告为 `artifacts/wb-softmax-threads-object-diagnostic/report.json`，SHA256
+`b1e5d6fbc9ed9e1a4009b8685a020e7aaf9f0a07a5e4a91b26332eeb557902a1`。
+父检查 unknown，原因 `fresh_conditional_object_initialization_not_checked`；
+fresh 初始化在 constructor `0x30d69d08` 处返回
+`target_not_direct_local_of_ordinary_nontemplate_function`。fields 为空，
+post_initialization_value_preservation 未建立。此诊断未修改源码，也未运行 GPU。
+
+因此，首个未解除义务是模板实例作用域支持，不是已经证明的复制后字段变异。
+不能直接把构造实参 `warp_size, warps_per_block, 1` 当作 launch 复制时的值。
+后续即使扩展实例支持，也必须保留精确声明绑定、初始化效果和历史保持检查。
+
+后续只读代码复核（不是运行结果）定位到三处一致性门槛：
+`object_initialization`、`constructor_argument_effects`、`object_use_closure`。
+不能只删除一处 template guard；应先绑定唯一、完整、非 dependent 的函数
+实例和函数体，再以实例内 child path 区分共享语句 ID。模板本体、歧义身份、
+跨实例路径和无法绑定的共享节点继续拒绝。即使该门槛解除，动态读取
+`warp_size`、`warps_per_block` 仍不属于当前构造值 literal/min-selection
+子集，不能跳过它们到构造点及复制点的历史。这些是下一步实现约束，非已通过项。

@@ -15,11 +15,14 @@
 - 尚未建立：配置字段值、source-object历史、host可达性、launch/API语义、
   完整lane多重集与store参与性。getter `[0,31]`不是完整坐标族。真实warp_size
   API只有声明，不能由函数名/目标名称直接给32；物理warp映射另需证据。
-- 正在运行：pointer-history exec session **67233**，日志与报告
-  `artifacts/wb-softmax-pointer-history-0KgDSq/{run.log,replay.json}`。本交接时
-  仍live，仅protocols_bound，未取得终态。主src与其driver冻结，禁止因
-  observation timeout或ps不可见重启。必须从原handle核验。
-- 子代理：getter_review 正在只读查看可用于threads对象的最小现成检查入口；
-  不应扩展成另一套host框架。其后续消息/诊断结果需与本报告分开登记。
-- 下一步：取得pointer重放终态/哈希；从实际threads复制源与host API出发，
+- pointer-history 原 session **67233** 已正常结束，checked，inputs_unchanged=true；
+  `artifacts/wb-softmax-pointer-history-0KgDSq/replay.json` SHA256 为
+  `21b6e54b65d6be04863d4b8fe8282c6c4c7ff07648a69d2340816a520088cf93`。
+  已核对当前实现及 driver 依赖哈希一致；未重启。指针历史已条件建立，
+  完整覆盖/lane/source/deployable 仍为 false；详见对应实验实录。
+- 子代理唯一对象诊断已结束：threads 初始化因模板作用域不支持而 unknown，
+  尚未恢复 fields，未建立复制前历史。报告见 launch 实录，不当作失败运行或
+  GPU 结果。下一项只读复核是已有实例绑定机制和最小支持边界，不运行大 AST。
+- 提交 a572542 已成功推送 origin/wb03-source-ast；本次仅更新真实结果文档。
+- 下一步：从实际threads复制源与host API出发，
   逐项解除字段值/历史/参与义务，不能输入手写starts后宣称自动完整覆盖。
