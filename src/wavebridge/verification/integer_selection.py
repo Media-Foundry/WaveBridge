@@ -113,6 +113,162 @@ def _declref(node: dict[str, Any], parameter_id: str, expected_reference_type: s
         raise _Unknown("selection_parameter_reference_type_mismatch")
 
 
+def check_local_minimum_update(root, assignment_id, integer_types, *, max_ast_nodes=None):
+    """Check one builtin int assignment's state transition, not reaching values.
+
+    No declaration intervals are accepted: operands are their values immediately
+    before this expression. A later history checker must establish their origin
+    and preservation to subsequent uses independently.
+    """
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    result = {"schema_version": "local-minimum-update/v1", "status": "unknown", "reason": None,
+              "scope": "selected_assignment_state_transition", "operation": "minimum",
+              "assignment_id": assignment_id, "source_program_checked": False, "deployable": False,
+              "history_preserved_to_use": False, "operand_domains_established": False,
+              "assumptions": ["AST faithfully represents a valid C++ translation unit under the supplied integer ABI",
+                              "the selected assignment is reached with initialized live operand objects",
+                              "no concurrent, asynchronous or volatile changes occur during this expression"],
+              "limitations": ["not initializer, earlier or later history, reachability or launch evidence",
+                              "no numeric operand domains or complete thread family are inferred"]}
+    try:
+        if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
+                not isinstance(assignment_id, str) or not assignment_id or
+                not isinstance(integer_types, dict) or type(budget) is not int or
+                not 1 <= budget <= HARD_MAX_AST_NODES):
+            raise _Unknown("invalid_inputs_or_budget")
+        abi = _abi_type({"qualType": "int"}, integer_types)
+        if abi[0] != "int" or abi[2] is not True:
+            raise _Unknown("signed_int_abi_required")
+        index, owners, parents = {}, {}, {}
+        pending, count = [(root, None, None)], 0
+        while pending:
+            node, owner, parent = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            if not isinstance(node, dict):
+                raise _Unknown("ast_node_not_object")
+            if node.get("kind") in {"FunctionDecl", "CXXMethodDecl", "CXXConstructorDecl",
+                                    "CXXDestructorDecl", "LambdaExpr"}:
+                owner = node
+            owners[id(node)], parents[id(node)] = owner, parent
+            if isinstance(node.get("id"), str):
+                index.setdefault(node["id"], []).append(node)
+            children = node.get("inner", [])
+            if not isinstance(children, list) or any(not isinstance(c, dict) for c in children):
+                raise _Unknown("malformed_ast_children")
+            pending.extend((child, owner, node) for child in children if child)
+
+        def unique(identifier):
+            nodes = index.get(identifier, [])
+            if len(nodes) != 1:
+                raise _Unknown("selected_identity_not_unique")
+            return nodes[0]
+
+        assignment = unique(assignment_id)
+        function = owners[id(assignment)]
+        parent = parents[id(assignment)]
+        if (not isinstance(function, dict) or function.get("kind") != "FunctionDecl" or
+                unique(function.get("id")) is not function or not isinstance(parent, dict) or
+                parent.get("kind") != "CompoundStmt"):
+            raise _Unknown("assignment_not_direct_statement_in_function")
+
+        def shape(node, depth=0):
+            if depth > MAX_EXPRESSION_DEPTH or unique(node.get("id")) is not node:
+                raise _Unknown("expression_identity_or_depth")
+            return _children(node)
+
+        def parens(node, depth=0):
+            children = shape(node, depth)
+            if node.get("kind") == "ParenExpr":
+                if (len(children) != 1 or _raw_type(node) != _raw_type(children[0]) or
+                        node.get("valueCategory") != children[0].get("valueCategory")):
+                    raise _Unknown("parenthesis_type_or_category_mismatch")
+                return parens(children[0], depth + 1)
+            return node
+
+        def reference(node, depth=0):
+            children = shape(node, depth)
+            raw = _raw_type(node)
+            if raw not in {"int", "const int"} or node.get("valueCategory") != "lvalue":
+                raise _Unknown("reference_not_plain_int_lvalue")
+            if node.get("kind") == "ParenExpr":
+                return reference(parens(node, depth), depth + 1)
+            if node.get("kind") == "ImplicitCastExpr" and node.get("castKind") == "NoOp":
+                if len(children) != 1 or raw != "const int":
+                    raise _Unknown("reference_qualification_cast_unsupported")
+                return reference(children[0], depth + 1)
+            ref = node.get("referencedDecl")
+            if node.get("kind") != "DeclRefExpr" or children or not isinstance(ref, dict):
+                raise _Unknown("reference_not_direct_declaration")
+            declaration = unique(ref.get("id"))
+            if (declaration.get("kind") not in {"VarDecl", "ParmVarDecl"} or
+                    ref.get("kind") != declaration.get("kind") or
+                    _raw_type(declaration) != raw or _raw_type(ref) != raw or
+                    owners[id(declaration)] is not function or
+                    declaration.get("storageClass") not in (None, "auto", "register") or
+                    any(declaration.get(k) is not None for k in
+                        ("tls", "tlsKind", "thread_local", "threadLocal"))):
+                raise _Unknown("operand_not_same_function_automatic_int")
+            return declaration["id"]
+
+        def read(node, depth=0):
+            node = parens(node, depth)
+            children = shape(node, depth)
+            if node.get("kind") == "UnaryOperator" and node.get("opcode") == "+":
+                if (len(children) != 1 or _raw_type(node) != "int" or
+                        node.get("valueCategory") != "prvalue"):
+                    raise _Unknown("identity_unary_plus_shape_mismatch")
+                return read(children[0], depth + 1)
+            if (node.get("kind") != "ImplicitCastExpr" or node.get("castKind") != "LValueToRValue" or
+                    node.get("valueCategory") != "prvalue" or _raw_type(node) != "int" or len(children) != 1):
+                raise _Unknown("operand_not_plain_int_read")
+            return reference(children[0], depth + 1)
+
+        children = shape(assignment)
+        if (assignment.get("kind") != "BinaryOperator" or assignment.get("opcode") != "=" or
+                _raw_type(assignment) != "int" or assignment.get("valueCategory") != "lvalue" or len(children) != 2):
+            raise _Unknown("not_builtin_int_assignment")
+        target = reference(children[0])
+        if _raw_type(children[0]) != "int":
+            raise _Unknown("assignment_target_not_mutable_int")
+        rhs = parens(children[1])
+        if rhs.get("kind") == "ImplicitCastExpr" and rhs.get("castKind") == "LValueToRValue":
+            rchildren = shape(rhs)
+            if len(rchildren) != 1 or _raw_type(rhs) != "int" or rhs.get("valueCategory") != "prvalue":
+                raise _Unknown("conditional_read_shape_mismatch")
+            conditional = parens(rchildren[0])
+            category = "lvalue"
+        else:
+            conditional, category = rhs, "prvalue"
+        parts = shape(conditional)
+        if (conditional.get("kind") != "ConditionalOperator" or len(parts) != 3 or
+                conditional.get("valueCategory") != category or
+                _raw_type(conditional) not in ({"int", "const int"} if category == "lvalue" else {"int"})):
+            raise _Unknown("minimum_conditional_shape_mismatch")
+        condition = parens(parts[0])
+        compared = shape(condition)
+        if (condition.get("kind") != "BinaryOperator" or condition.get("opcode") != "<" or
+                condition.get("valueCategory") != "prvalue" or _raw_type(condition) != "bool" or len(compared) != 2):
+            raise _Unknown("minimum_condition_not_strict_int_less")
+        operands = [read(n) for n in compared]
+        if any(_raw_type(n) != _raw_type(conditional) for n in parts[1:]):
+            raise _Unknown("minimum_branch_type_mismatch")
+        selected = [(reference if category == "lvalue" else read)(n) for n in parts[1:]]
+        if len(set(operands)) != 2 or selected != operands or target not in operands:
+            raise _Unknown("minimum_branch_or_target_binding_mismatch")
+        result.update(status="checked", target_declaration_id=target,
+                      operand_declaration_ids=operands, function_id=function["id"],
+                      state_relation={"after_target": "minimum", "before_operands": operands},
+                      input_sha256={"root": _hash(root), "assignment_id": _hash(assignment_id),
+                                    "integer_types": _hash(integer_types)})
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (TypeError, ValueError, KeyError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
 def check(root: object, expression_id: object, declaration_intervals: object,
           integer_types: object, *, max_ast_nodes: int | None = None) -> dict[str, Any]:
     node_budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes

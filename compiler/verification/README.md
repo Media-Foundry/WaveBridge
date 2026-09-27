@@ -513,6 +513,17 @@ checked 仅表示在这些前提下，选定 body 保持受保护变量；合法
 
 ## 动态构造实参中的整数选择
 
+`verification.integer_selection.check_local_minimum_update(root, assignment_id,
+integer_types, *, max_ast_nodes=None)` 检查一个实际 builtin int 赋值的单次状态
+转移。它匹配严格 `<` 比较、对应的两个分支和精确自动变量/参数身份，接受
+受限 cv/lvalue read、括号与 int 一元加号，不通过函数名或变量名识别。
+报告关系为 `after_target=min(before_operand0,before_operand1)`；不接收外部
+数值域，不把调用返回值、初始化、先前更新或以后保持性自动连接进来。
+引用/volatile/间接目标、调用、换分支、整数转换和身份冲突保留 unknown。
+仅在到达该表达式且对象有效、已初始化且无异步修改的前提下成立。
+`history_preserved_to_use`、`operand_domains_established`、source/deployable 均为
+false；这不是构造字段、launch 尺寸或完整参与关系的检查通过。
+
 `verification.integer_selection.check(root, expression_id, declaration_intervals,
 integer_types, *, max_ast_nodes=None)` 独立核对完整 TU 中一个原始值表达式。
 输入域条目为 `{declaration_id, type, lower, upper}`，必须精确匹配使用的声明；

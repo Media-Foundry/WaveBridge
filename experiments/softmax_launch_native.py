@@ -14,7 +14,7 @@ NATIVE_SHA = "a59c12247f796fe2034ba03ecc43782f77ac3942496b18a140ceacbb24c7ff45"
 KERNEL_ID = "0x30d762e0"
 
 
-def run(native, output, *, threads_object=False):
+def run(native, output, *, threads_object=False, host_minimum_update=False):
     if sha(native) != NATIVE_SHA or output.exists():
         raise ValueError("native_mismatch_or_output_exists")
     before = implementation_hashes()
@@ -62,10 +62,18 @@ def run(native, output, *, threads_object=False):
         object_report = inspect_structure(capture["payload"], selected_variable, abi, {},
                                          instantiated_function_id=owners[0]["id"],
                                          max_ast_nodes=10_000_000)
+    minimum_report = None
+    if host_minimum_update and checked.get("status") == "checked":
+        from wavebridge.verification.integer_selection import check_local_minimum_update
+
+        minimum_report = check_local_minimum_update(
+            root, "0x30d69470", {"int": {"bits": 32, "signed": True}},
+            max_ast_nodes=10_000_000)
     after = implementation_hashes()
     report = {"schema_version": "softmax-native-launch-observation/v1", "check": checked,
               "selection": selection, "launch_discovery": facts, "native_sha256": NATIVE_SHA,
               "threads_object_check": object_report,
+              "host_minimum_update_check": minimum_report,
               "implementation_before": before, "implementation_after": after,
               "driver_dependencies": dependencies,
               "inputs_unchanged": before == after and sha(native) == NATIVE_SHA and
@@ -82,5 +90,7 @@ if __name__ == "__main__":
     parser.add_argument("--native", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--threads-object", action="store_true")
+    parser.add_argument("--host-minimum-update", action="store_true")
     args = parser.parse_args()
-    run(args.native, args.output, threads_object=args.threads_object)
+    run(args.native, args.output, threads_object=args.threads_object,
+        host_minimum_update=args.host_minimum_update)

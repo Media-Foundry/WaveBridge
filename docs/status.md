@@ -2,6 +2,16 @@
 
 更新日期：2026-09-27。
 
+## host mutable minimum 的单步关系
+
+`integer_selection.check_local_minimum_update` 已从真实softmax赋值恢复并检查
+`warp_size_after=min(next_power_of_two_before,warp_size_before)`，不输入手工32域。
+真实重放checked，输入/实现/driver哈希一致；7项新增真实Clang回归及只读复核
+已完成。见 [实录](../experiments/softmax-host-minimum-evidence-20260927.md)。
+完整1161项CPU回归通过（91.558秒，native启用、无跳过），demo/diff通过。
+这不是操作数来源或到构造点的完整历史，字段域仍未建立；真实代码位于非零
+输入分支，下一步必须保留路径、API和整数运算条件。
+
 ## 启动对象的具体模板实例作用域
 
 三个对象检查层新增精确实例 opt-in，保留默认非模板路径及全 TU 唯一性检查。
