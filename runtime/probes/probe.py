@@ -122,7 +122,7 @@ def reconcile_widths(metadata: dict[str, Any], semantics: dict[str, Any]) -> dic
             "physical_wave_width": semantics["physical_wave_width"]}
 
 
-def kernel_metadata_widths(text: str) -> set[int]:
+def kernel_metadata_widths(text: str, kernel_names: set[str] | None = None) -> set[int]:
     """Read root fields of the named kernel entry under ``amdhsa.kernels``."""
     lines = text.splitlines()
     section_start = next((index for index, line in enumerate(lines)
@@ -159,7 +159,8 @@ def kernel_metadata_widths(text: str) -> set[int]:
             if match:
                 fields[match.group(1)] = match.group(2)
         name = fields.get(".name", "").strip("'\"")
-        is_probe = name == "wavebridge_probe" or name.startswith("_Z16wavebridge_probe")
+        is_probe = (name in kernel_names if kernel_names is not None else
+                    name == "wavebridge_probe" or name.startswith("_Z16wavebridge_probe"))
         if not is_probe:
             continue
         width = fields.get(".wavefront_size")

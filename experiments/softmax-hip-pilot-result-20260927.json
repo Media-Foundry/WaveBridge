@@ -1,0 +1,237 @@
+{
+  "automatic_adaptation": false,
+  "baseline_commit": "14510bf",
+  "binary_sha256": "e701e27e45191a6db5d0ea8aa4412f3300db1f99b00c6da5d29d541276750978",
+  "cases": [
+    {
+      "columns": 65,
+      "numerical": {
+        "max_abs_error": 1.5384613721858287e-11,
+        "max_row_sum_error": 9.99999860695766e-10,
+        "status": "passed"
+      },
+      "pattern": "zero",
+      "rows": 1
+    },
+    {
+      "columns": 65,
+      "numerical": {
+        "max_abs_error": 7.785457806219753e-09,
+        "max_row_sum_error": 7.50787998438085e-09,
+        "status": "passed"
+      },
+      "pattern": "sawtooth",
+      "rows": 1
+    },
+    {
+      "columns": 65,
+      "numerical": {
+        "max_abs_error": 5.037880598801614e-10,
+        "max_row_sum_error": 1.6625004040093927e-08,
+        "status": "passed"
+      },
+      "pattern": "alternating",
+      "rows": 1
+    },
+    {
+      "columns": 65,
+      "numerical": {
+        "max_abs_error": 1.5384613721858287e-11,
+        "max_row_sum_error": 9.99999860695766e-10,
+        "status": "passed"
+      },
+      "pattern": "zero",
+      "rows": 3
+    },
+    {
+      "columns": 65,
+      "numerical": {
+        "max_abs_error": 1.354212783577502e-08,
+        "max_row_sum_error": 4.7508384004579796e-08,
+        "status": "passed"
+      },
+      "pattern": "sawtooth",
+      "rows": 3
+    },
+    {
+      "columns": 65,
+      "numerical": {
+        "max_abs_error": 5.037880598801614e-10,
+        "max_row_sum_error": 1.6625004040093927e-08,
+        "status": "passed"
+      },
+      "pattern": "alternating",
+      "rows": 3
+    },
+    {
+      "columns": 65,
+      "numerical": {
+        "max_abs_error": 1.5384613721858287e-11,
+        "max_row_sum_error": 9.99999860695766e-10,
+        "status": "passed"
+      },
+      "pattern": "zero",
+      "rows": 17
+    },
+    {
+      "columns": 65,
+      "numerical": {
+        "max_abs_error": 1.6796065205326727e-08,
+        "max_row_sum_error": 6.96223489971004e-08,
+        "status": "passed"
+      },
+      "pattern": "sawtooth",
+      "rows": 17
+    },
+    {
+      "columns": 65,
+      "numerical": {
+        "max_abs_error": 5.037880598801614e-10,
+        "max_row_sum_error": 1.6625004040093927e-08,
+        "status": "passed"
+      },
+      "pattern": "alternating",
+      "rows": 17
+    },
+    {
+      "columns": 128,
+      "numerical": {
+        "max_abs_error": 0.0,
+        "max_row_sum_error": 0.0,
+        "status": "passed"
+      },
+      "pattern": "zero",
+      "rows": 1
+    },
+    {
+      "columns": 128,
+      "numerical": {
+        "max_abs_error": 6.331634258560648e-09,
+        "max_row_sum_error": 2.3399916893040995e-08,
+        "status": "passed"
+      },
+      "pattern": "sawtooth",
+      "rows": 1
+    },
+    {
+      "columns": 128,
+      "numerical": {
+        "max_abs_error": 1.416380918800586e-10,
+        "max_row_sum_error": 9.06483832441296e-09,
+        "status": "passed"
+      },
+      "pattern": "alternating",
+      "rows": 1
+    },
+    {
+      "columns": 128,
+      "numerical": {
+        "max_abs_error": 0.0,
+        "max_row_sum_error": 0.0,
+        "status": "passed"
+      },
+      "pattern": "zero",
+      "rows": 3
+    },
+    {
+      "columns": 128,
+      "numerical": {
+        "max_abs_error": 6.331634258560648e-09,
+        "max_row_sum_error": 3.5533531006493035e-08,
+        "status": "passed"
+      },
+      "pattern": "sawtooth",
+      "rows": 3
+    },
+    {
+      "columns": 128,
+      "numerical": {
+        "max_abs_error": 1.416380918800586e-10,
+        "max_row_sum_error": 9.06483832441296e-09,
+        "status": "passed"
+      },
+      "pattern": "alternating",
+      "rows": 3
+    },
+    {
+      "columns": 128,
+      "numerical": {
+        "max_abs_error": 0.0,
+        "max_row_sum_error": 0.0,
+        "status": "passed"
+      },
+      "pattern": "zero",
+      "rows": 17
+    },
+    {
+      "columns": 128,
+      "numerical": {
+        "max_abs_error": 9.205060602646142e-09,
+        "max_row_sum_error": 7.594798701049399e-08,
+        "status": "passed"
+      },
+      "pattern": "sawtooth",
+      "rows": 17
+    },
+    {
+      "columns": 128,
+      "numerical": {
+        "max_abs_error": 1.416380918800586e-10,
+        "max_row_sum_error": 9.06483832441296e-09,
+        "status": "passed"
+      },
+      "pattern": "alternating",
+      "rows": 17
+    }
+  ],
+  "compiler_emitted_metadata": [
+    {
+      "kernels": {
+        "_ZN12_GLOBAL__N_120softmax_warp_forwardIfffLi7ELb0ELb0EEEvPT0_PKT_iiiPKbib": [
+          32
+        ]
+      },
+      "path": "/home/husrcf/Code/ProtBind/wavebridge/artifacts/wb-softmax-hip-pilot-20260927-10/pytorch-softmax-hip.hip-hip-amdgcn-amd-amdhsa-gfx1100.s",
+      "sha256": "e737e9ae765aa6464cbf2229be2e1f2ca5bd92bb086d775b465cb972da2dba7f"
+    }
+  ],
+  "deployable": false,
+  "device": {
+    "api_width": 32,
+    "architecture": "gfx1100",
+    "device_name": "AMD Radeon Pro W7900",
+    "device_width": 32,
+    "hip_driver_version": 71526333,
+    "hip_runtime_version": 71526333,
+    "pci_bus": 83,
+    "pci_device": 0,
+    "pci_domain": 0
+  },
+  "hip_api_library": {
+    "path": "/home/husrcf/anaconda3/lib/python3.12/site-packages/_rocm_sdk_core/lib/libamdhip64.so.7",
+    "sha256": "1a8bcd00d05cce36bebcf4acf30289f36f6562ec532e9c618c42e9bd2d90ed05"
+  },
+  "input_and_binary_stability": {
+    "adapted_inputs_unchanged": true,
+    "binary_unchanged": true,
+    "inputs_unchanged": true
+  },
+  "input_hashes": {
+    "/home/husrcf/Code/ProtBind/wavebridge/artifacts/wb03-vllm-holdout-GqLQJo/torch251/torch/include/ATen/native/cuda/PersistentSoftmax.cuh": "12436933cae8c1e4096af342313070ce873eefad3d6a1637675ef780d1fdea1e",
+    "/home/husrcf/Code/ProtBind/wavebridge/benchmarks/intake/pytorch-softmax-hip-protocol.json": "56d0b18a87bef962754ef603f3c8e17ca36ebed701b50fbeb709ca05b1799279",
+    "/home/husrcf/Code/ProtBind/wavebridge/benchmarks/intake/pytorch-softmax-hip.hip.cpp": "fcfa6606452f25ce85508267bffff7ba743148ffef0b600e05b9b54f8bac3cc0",
+    "/home/husrcf/Code/ProtBind/wavebridge/benchmarks/intake/wavebridge_softmax_compat.h": "532ef5da3fc38256117702443df6fc354f7b7db07ae9465bd3cb94f98e282489",
+    "/home/husrcf/Code/ProtBind/wavebridge/experiments/softmax_hip_pilot.py": "38da4ccfe9325b4392310eff5a6e6af06b908f1730ae25d676c9121e4100bbac",
+    "/home/husrcf/Code/ProtBind/wavebridge/experiments/softmax_hip_reference.py": "58aa9b8cb7a2172e163cbd823ca457e10e7be9b1d43338e7bf11ff7bf23959cc",
+    "/home/husrcf/Code/ProtBind/wavebridge/runtime/probes/probe.py": "935379f47e02a78f0acc7ecfb3112d451b53af056f7e0a0ccd3cffa966969379"
+  },
+  "manual_compatibility_baseline": true,
+  "maximum_absolute_error": 1.6796065205326727e-08,
+  "maximum_row_sum_error": 7.594798701049399e-08,
+  "pytorch_runtime_linked": false,
+  "raw_report": "artifacts/wb-softmax-hip-pilot-20260927-10/report.json",
+  "raw_report_sha256": "f53b5800c54e8ef5ec459b7734e3c4edf0a6064e8e519357881926e28b78cab2",
+  "schema_version": "softmax-hip-pilot-result-index/v1",
+  "source_program_checked": false,
+  "status": "finite_numeric_cases_passed"
+}

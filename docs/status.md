@@ -2,6 +2,23 @@
 
 更新日期：2026-09-27。
 
+## softmax 手工 HIP 基线首次执行闭环
+
+独立手工HIP输入在本机W7900上完成18个冻结数值案例，全部通过。API实际查询、
+设备侧probe与目标实例编译元数据均为32，softmax dispatch记录block=(32,4,1)、
+grid=ceil(rows/8)；加载的HIP API库路径/哈希、编译器、二进制与输入均记录。
+最大元素绝对误差1.6796065e-8，最大行和误差7.5947987e-8；不是性能数据。
+最终输入/适配文件/二进制哈希一致，见
+[实录](../experiments/softmax-hip-pilot-evidence-20260927.md)与
+[结果索引](../experiments/softmax-hip-pilot-result-20260927.json)。
+
+这是手工框架兼容层：显式编译width32、HIP shuffle、实际设备查询、default
+stream与launch trace；不是PyTorch runtime linkage，也不是自动生成候选。
+未把旧CUDA sm80 AST结论移到该HIP输入，source/deploy仍false。编译失败与
+设备初始化失败完整保留。数值面板/容限在首次运行前冻结；后续padding工程
+修订与sentinel表述修正单独披露，不包装成全部启动前完成。
+完整1205项通过（93.310秒），最终8项专项通过，native启用、无跳过，demo/diff通过。
+
 ## host API 的来源与运行时证据边界
 
 已核实固定PyTorch源码：`warp_size()`经当前设备属性读取`warpSize`，路径含

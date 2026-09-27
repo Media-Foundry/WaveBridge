@@ -23,6 +23,10 @@ WB-01 的设备探测入口为 `python3 runtime/probes/probe.py --hipcc /path/to
 
 WB-02 的 [llama.cpp RMSNorm 案例](benchmarks/cases/llama-rmsnorm/README.md) 提供固定来源、手工提取的 logical32 基线及独立 reference；W7900 上 9 个确定性输入通过冻结数值协议。它不是自动适配，也没有跨波宽或性能结论。
 
+另有 [PyTorch softmax 手工 HIP pilot](experiments/softmax-hip-pilot-evidence-20260927.md)：
+本机W7900上18个固定案例通过数值验收，并记录同一可执行工件的API、配置与
+运行库身份。它采用显式width32兼容配置，不是自动适配，不继承CUDA分析工件的保证。
+
 WB-03 新入口 `PYTHONPATH=src python3 -m wavebridge.source --help` 直接从源码采集 AST，
 提取受限列循环的起点、边界和常量步长，不读人工关系模型；见 [源码分析入口](compiler/analysis/README.md)。
 
