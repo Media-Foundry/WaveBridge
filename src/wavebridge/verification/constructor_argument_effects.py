@@ -112,6 +112,68 @@ def _check_concrete_caller(function, index, selected_id):
             "template_arguments": arguments, "function_sha256": _hash(function)}
 
 
+def check_scalar_evaluations(root, constructor_expression_id, *, max_ast_nodes=None):
+    """Independently check each explicit scalar argument, without field domains.
+
+    No constructor body or declaration-value checker is invoked. The complete
+    argument list comes from one unique construction expression in the AST.
+    """
+    from wavebridge.verification.scalar_expression_effects import check_no_memory_write
+
+    budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
+    result = {"schema_version": "constructor-scalar-argument-effects/v1", "status": "unknown", "reason": None,
+              "constructor_expression_id": constructor_expression_id, "argument_effects": [],
+              "scope": "explicit_scalar_argument_evaluations_of_one_direct_construction",
+              "all_arguments_no_memory_write": False, "constructor_body_checked": False,
+              "constructor_declaration_binding_checked": False, "field_values_established": False,
+              "conversion_value_preservation_established": False, "source_program_checked": False,
+              "deployable": False, "assumptions": [],
+              "limitations": ["not constructor body, surrounding cleanup or allocation effects",
+                              "not operand history, conversion value preservation, fields or launch validity"]}
+    try:
+        if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
+                not isinstance(constructor_expression_id, str) or not constructor_expression_id or
+                type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES):
+            raise _Unknown("invalid_inputs_or_budget")
+        matches, pending, count = [], [root], 0
+        while pending:
+            node = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("ast_node_budget_exceeded")
+            if not isinstance(node, dict):
+                raise _Unknown("ast_node_not_object")
+            if node.get("id") == constructor_expression_id:
+                matches.append(node)
+            pending.extend(_children(node))
+        if len(matches) != 1 or matches[0].get("kind") != "CXXConstructExpr":
+            raise _Unknown("constructor_expression_not_unique_direct_construct")
+        arguments = _children(matches[0], strict=True)
+        if not 1 <= len(arguments) <= 16:
+            raise _Unknown("explicit_scalar_argument_count_unsupported")
+        root_hash = None
+        for position, argument in enumerate(arguments):
+            report = check_no_memory_write(root, argument.get("id"), max_ast_nodes=budget,
+                                            allow_int_to_unsigned=True)
+            result["argument_effects"].append({"position": position, "expression_id": argument.get("id"),
+                                               "report": report})
+            if report["status"] != "checked":
+                raise _Unknown("scalar_argument_effect_not_checked")
+            observed_hash = report["input_sha256"]["root"]
+            if root_hash is not None and root_hash != observed_hash:
+                raise _Unknown("root_changed_between_argument_checks")
+            root_hash = observed_hash
+            result["assumptions"].extend(report["assumptions"])
+        result.update(status="checked", all_arguments_no_memory_write=True,
+                      input_sha256={"root": root_hash, "constructor_expression_id": _hash(constructor_expression_id),
+                                    "argument_ids": _hash([a["id"] for a in arguments])})
+    except _Unknown as error:
+        result["reason"] = str(error)
+    except (KeyError, TypeError, ValueError, RecursionError):
+        result["reason"] = "unsupported_input_representation"
+    return result
+
+
 def check(root: object, constructor_expression_id: object, integer_types: object,
           selection_domains: object, *, max_ast_nodes: int | None = None,
           instantiated_function_id: str | None = None) -> dict[str, Any]:

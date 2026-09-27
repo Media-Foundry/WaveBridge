@@ -2,6 +2,16 @@
 
 更新日期：2026-09-27。
 
+## 真实 threads 构造的实参求值效果
+
+新增独立 `check_scalar_evaluations`，不借助字段域或构造值检查器，逐项
+fresh检查显式实参。受限显式选项支持内建隐式int→unsigned int的无写入
+检查，不证明转换值保持。真实softmax构造 `0x30d69d08` 的三个实参均
+checked，输入/实现/driver哈希一致；构造体、字段值、历史组合与启动合法性
+仍未建立。见 [实录](../experiments/softmax-constructor-effects-evidence-20260927.md)。
+9项新增真实Clang回归通过；完整1188项通过（92.975秒，native启用、无跳过），
+demo/diff通过。未运行GPU，不扩大WB-03或部署验收范围。
+
 ## quotient 到真实 threads 声明入口
 
 minimum与quotient历史现在共用私有存储用途检查，公共入口仍各自fresh建立

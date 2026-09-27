@@ -30,13 +30,14 @@ def _object_type(spelling):
 
 def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
                           allow_constant_globals=False, allow_integer_bitwise=False,
-                          allow_integer_to_float=False):
+                          allow_integer_to_float=False, allow_int_to_unsigned=False):
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result = {"schema_version": "scalar-expression-no-memory-write/v1", "status": "unknown", "reason": None,
               "scope": "explicit_source_memory_writes_in_one_restricted_scalar_expression",
               "source_program_checked": False, "deployable": False, "value_semantics": "not_established",
               "numeric_contract_checked": False, "read_declaration_ids": [],
               "integer_to_float_enabled": allow_integer_to_float,
+              "int_to_unsigned_enabled": allow_int_to_unsigned,
               "shared_literal_occurrences": [],
               "assumptions": ["AST faithfully describes one valid translation unit",
                               "referenced objects are initialized, alive and visible before this evaluation",
@@ -51,7 +52,7 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
                 not isinstance(expression_id, str) or not expression_id or
                 type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES or
                 type(allow_constant_globals) is not bool or type(allow_integer_bitwise) is not bool or
-                type(allow_integer_to_float) is not bool):
+                type(allow_integer_to_float) is not bool or type(allow_int_to_unsigned) is not bool):
             raise _Unknown("invalid_inputs_or_budget")
         index, automatic, pending, count = {}, set(), [(root, False)], 0
         while pending:
@@ -96,7 +97,8 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
             if literal_reuse and len(occurrences) > 1:
                 result["shared_literal_occurrences"].append({
                     "expression_id": identifier, "occurrences": len(occurrences),
-                    "contents_equal": True, "scope": "direct_integer_to_float_literal_operand"})
+                    "contents_equal": True, "scope": shared_integer_literal if isinstance(shared_integer_literal, str)
+                    else "direct_integer_to_float_literal_operand"})
             if node.get("valueCategory") != category:
                 raise _Unknown("expression_category_mismatch")
             return _type(node), _children(node)
@@ -172,6 +174,13 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
                 # conflicting contents, references and selected roots remain unique.
                 if spelling != "float" or value(children[0], depth + 1, True) not in {"int", "unsigned int"}:
                     raise _Unknown("integer_to_float_operand_type_mismatch")
+            elif (allow_int_to_unsigned and kind == "ImplicitCastExpr" and
+                  node.get("castKind") == "IntegralCast" and len(children) == 1):
+                # Only effects are checked. Negative int values may convert to
+                # large unsigned values; no value-preservation claim follows.
+                if spelling != "unsigned int" or value(
+                        children[0], depth + 1, "direct_int_to_unsigned_literal_operand") != "int":
+                    raise _Unknown("int_to_unsigned_operand_type_mismatch")
             elif kind == "ConditionalOperator" and len(children) == 3:
                 if (value(children[0], depth + 1) != "bool" or
                         any(value(child, depth + 1) != spelling for child in children[1:])):
@@ -207,7 +216,11 @@ def check_no_memory_write(root, expression_id, *, max_ast_nodes=None,
 
         returned_type = value(unique(expression_id), 0)
         result.update(status="checked", result_type=returned_type, read_declaration_ids=sorted(reads),
-                      input_sha256={"root": _hash(root), "expression_id": _hash(expression_id)},
+                      input_sha256={"root": _hash(root), "expression_id": _hash(expression_id),
+                                    "effect_options": _hash({"allow_constant_globals": allow_constant_globals,
+                                        "allow_integer_bitwise": allow_integer_bitwise,
+                                        "allow_integer_to_float": allow_integer_to_float,
+                                        "allow_int_to_unsigned": allow_int_to_unsigned})},
                       conclusion={"status": "conditional", "property": "no_memory_write",
                                   "subject": "exact_scalar_expression", "expression_id": expression_id})
     except _Unknown as error:

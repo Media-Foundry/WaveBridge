@@ -1285,3 +1285,13 @@ offset 必须为精确 typed `row*stride+source`，逐乘/加检查溢出；row/
 `row_snapshot*stride_snapshot+source+outer*count+inner*step`，不合并 stride/count。
 标准抽象机、无非局部控制转移、有效同一数组对象等仍是显式条件；分配容量、
 动态别名、完整 lane 集合、浮点及部署均未建立。旧 `check` 不升级该保证。
+
+`constructor_argument_effects.check_scalar_evaluations` 独立检查唯一
+`CXXConstructExpr` 的 1–16 个显式标量实参，不调用构造字段值检查器，不接收
+人工字段域。每个实参从同一完整 AST fresh 检查，报告保留逐项效果及根哈希。
+默认实参、未知表达式、写入、引用、volatile 和调用保持 unknown。
+它显式启用标量 checker 的 `allow_int_to_unsigned`：仅支持内建隐式
+`int → unsigned int`，递归检查操作数；仅直接纯整数字面量可以复用内容完全
+一致的模板 AST ID，声明、引用和根表达式身份要求不放宽。选项绑定到哈希。
+转换可能改变数值，因此此处只证明条件性无内存写入；不证明转换值保持、
+构造体或清理效果、字段值、参数历史、启动合法性与 GPU 部署。
