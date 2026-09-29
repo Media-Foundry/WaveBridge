@@ -134,10 +134,10 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                             callee.get("referencedDecl", {}).get("id"), identifier)
                     except ValueError as error:
                         item["call_observation_reason"] = str(error)
-                if power_input_domain is not None and len(initializers) == 1:
+                if len(initializers) == 1:
                     expression = initializers[0]
                     if expression.get("kind") == "BinaryOperator" and expression.get("opcode") == "<<":
-                        from wavebridge.verification.power_ceiling import check as check_power, check_initialized_shift
+                        from wavebridge.verification.power_ceiling import check as check_power, check_initialized_shift, check_guarded_shift
                         shift_parts = expression.get("inner", [])
                         if len(shift_parts) != 2:
                             raise ValueError("shift_origin_shape_unsupported")
@@ -195,22 +195,25 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                                                 caller_domains.append({"caller_id": caller["id"], "call_id": candidate["id"],
                                                     "guard_id": guard["id"], "argument_position": position,
                                                     "check": check_guarded_argument(root, caller["id"], local_id,
-                                                        guard["id"], candidate["id"], exponent_owner["id"], position)})
+                                                        guard["id"], candidate["id"], exponent_owner["id"], position),
+                                                    "guard_to_shift_check": check_guarded_shift(root, caller["id"], local_id,
+                                                        guard["id"], candidate["id"], exponent_owner["id"], position,
+                                                        exponent_id, identifier)})
                         result["power_loop_checks"].append({"call_ast": call,
                             "caller_guard_checks": caller_domains,
                             "exponent_declaration_id": exponent_id,
-                            "domain_policy": "explicit diagnostic assumption; not established at this call",
+                            "domain_policy": "guard_to_shift derives its own discrete domain; optional legacy interval checks remain diagnostic assumptions",
                             "call_domain_established": False,
                             "entry_domain_policy": "same interval separately assumed at host function entry; not runtime verified",
                             "parameter_entry_check": check_parameter_entry(
                                 root, exponent_owner["id"], argument_id, exponent_statement["id"],
-                                *power_input_domain),
+                                *power_input_domain) if power_input_domain is not None else None,
                             "initialized_shift_check": check_initialized_shift(
-                                root, exponent_id, identifier, argument_id, *power_input_domain),
+                                root, exponent_id, identifier, argument_id, *power_input_domain) if power_input_domain is not None else None,
                             "entry_to_shift_check": check_initialized_shift(
                                 root, exponent_id, identifier, argument_id, *power_input_domain,
-                                entry_function_id=exponent_owner["id"]),
-                            "check": check_power(root, ref.get("id"), *power_input_domain)})
+                                entry_function_id=exponent_owner["id"]) if power_input_domain is not None else None,
+                            "check": check_power(root, ref.get("id"), *power_input_domain) if power_input_domain is not None else None})
         result["status"] = "observed"
     except (ValueError, KeyError, TypeError) as error:
         result["reason"] = str(error)

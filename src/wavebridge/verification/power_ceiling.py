@@ -2,6 +2,66 @@
 from wavebridge.verification.getter_returns import _hash
 
 
+def check_guarded_shift(root, caller_id, local_id, guard_id, call_id, callee_id,
+                        argument_position, exponent_id, power_id, *, int_bits=32,
+                        max_ast_nodes=1_000_000):
+    """Derive discrete entry values from source, then freshly check each path.
+
+    No numeric input domain or precomputed successful report is accepted.
+    The result concerns only the invocation at the selected guarded call site.
+    """
+    from wavebridge.verification.parameter_entry import check_guarded_argument
+
+    result = {"schema_version": "guarded-call-to-power-initialization/v1", "status": "unknown", "reason": None,
+              "scope": "first_power_initialization_for_selected_normally_reached_guarded_call",
+              "guard_check": None, "per_entry_value_checks": [], "entry_values": None,
+              "result_values": None, "numeric_input_domain_supplied": False,
+              "guarded_call_domain_derived": False, "runtime_input_binding_verified": False,
+              "call_reachability_proved": False, "other_call_sites_checked": False,
+              "source_program_checked": False, "deployable": False,
+              "assumptions": ["faithful valid C++ AST and matching integer ABI",
+                  "ordinary sequential execution without nonlocal jumps or asynchronous interference",
+                  "selected local object lifetime is valid and not replaced",
+                  "the selected source declarations denote the actual invoked implementations"],
+              "limitations": ["not safety or effects of other arguments and intervening API calls",
+                  "not later value history, launch values, machine code or GPU behavior"]}
+    guard = check_guarded_argument(root, caller_id, local_id, guard_id, call_id, callee_id,
+                                   argument_position, int_bits=int_bits, max_ast_nodes=max_ast_nodes)
+    result["guard_check"] = guard
+    if guard["status"] != "checked":
+        result["reason"] = "fresh_guarded_argument_not_checked"
+        return result
+    values = guard["argument_values"]
+    if len(values) > 64:
+        result["reason"] = "discrete_domain_budget_exceeded"
+        return result
+    outputs = set()
+    for value in values:
+        checked = check_initialized_shift(root, exponent_id, power_id, guard["parameter_id"],
+                                          value, value, entry_function_id=callee_id,
+                                          int_bits=int_bits, max_ast_nodes=max_ast_nodes)
+        result["per_entry_value_checks"].append({"entry_value": value, "check": checked})
+        if checked["status"] != "checked" or checked.get("argument_domain_derived_from_entry") is not True:
+            result["reason"] = "fresh_entry_to_shift_not_checked"
+            return result
+        if checked["input_sha256"]["root"] != guard["input_sha256"]["root"]:
+            result["reason"] = "root_binding_mismatch"
+            return result
+        domain = checked["result_interval"]
+        if domain["lower"] != domain["upper"]:
+            result["reason"] = "singleton_entry_did_not_yield_exact_power"
+            return result
+        outputs.add(domain["lower"])
+    result.update(status="checked", guarded_call_domain_derived=True,
+                  entry_values=values, result_values=sorted(outputs),
+                  discharged_obligations=["callee entry parameter belongs to source-derived guarded set",
+                      "each singleton subcheck entry premise is supplied by the guarded set case split"],
+                  input_sha256={"root": guard["input_sha256"]["root"], "selection": _hash(
+                      [caller_id, local_id, guard_id, call_id, callee_id, argument_position,
+                       exponent_id, power_id, int_bits])})
+    return result
+
+
 def check_initialized_shift(root, exponent_id, power_id, argument_id, lower, upper,
                             *, int_bits=32, max_ast_nodes=1_000_000, entry_function_id=None):
     """Bind adjacent local initializers under an argument-at-read domain premise."""

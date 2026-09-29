@@ -48,3 +48,25 @@ int wrong_argument(int input) {
     dispatch(input, value);
     return 0;
 }
+int power_helper(int input) {
+    int exponent = 0;
+    while ((1 << exponent) < input) ++exponent;
+    return exponent;
+}
+int power_dispatch(int input) {
+    int exponent = power_helper(input);
+    const int power = 1 << exponent;
+    return power;
+}
+int guarded_power(int input) {
+    const int value = input;
+    if (value != 65 && value != 128) return 3;
+    power_dispatch(value);
+    return 0;
+}
+int unsafe_guarded_power(int input) {
+    const int value = input;
+    if (value != 0 && value != 128) return 3;
+    power_dispatch(value);
+    return 0;
+}

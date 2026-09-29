@@ -2,6 +2,18 @@
 
 更新日期：2026-09-30。
 
+## 源码守卫域可直接驱动幂次初始化组合
+
+power_ceiling新增check_guarded_shift，不接受手填数值域或旧报告。fresh恢复
+精确调用的离散域及形参，再逐值连接callee入口、helper与紧邻移位，核对同根
+绑定后合并结果。只覆盖该调用的条件invocation，其它调用者与runtime仍未建立。
+driver的host-dimensions路径不再要求power-input-domain才能执行此组合；
+未提供时legacy区间检查保持null。1307项CPU测试98.593秒通过，无跳过，
+定向5项真实Clang和6项driver回归通过，demo/diff通过，Sol复核无阻断。
+无GPU，见[实录](../experiments/hip-source-domain-power-evidence-20260930.md)。
+真实HIP在无数值域参数的命令下恢复{65,128}→{128}，4个legacy子报告均null；
+其它5个guard组合unknown保留。设备API宽度与后续minimum历史尚未连接。
+
 ## 早返回守卫的离散实参域检查
 
 parameter_entry新增独立guarded-argument入口：同函数体const自动局部量、
