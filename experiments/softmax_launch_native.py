@@ -132,6 +132,9 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                     try:
                         item["call_observation"] = observe_call(root, call["id"],
                             callee.get("referencedDecl", {}).get("id"), identifier)
+                        from wavebridge.verification.field_snapshot import check as check_field_snapshot
+                        item["field_snapshot_check"] = check_field_snapshot(
+                            root, callee.get("referencedDecl", {}).get("id"))
                     except ValueError as error:
                         item["call_observation_reason"] = str(error)
                 if len(initializers) == 1:

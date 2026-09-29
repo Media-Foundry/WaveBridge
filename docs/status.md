@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 设备属性 helper 的字段快照返回检查
+
+新增field_snapshot受限后缀检查，精确绑定字段读取→全局快照→不同计数器
+递增→同一快照返回。不按helper名字猜width，不检查前缀API成功或字段初始化，
+field_numeric_domain仍null。driver在已有精确零参调用观察后fresh调用此检查。
+1312项CPU测试99.757秒通过、无跳过，定向3项真实Clang+6项driver、demo/diff
+通过，Sol复核无阻断。本轮无GPU，见[实录](../experiments/hip-api-snapshot-evidence-20260930.md)。
+真实HIP helper后缀checked，绑定object/field/read/snapshot/counter身份；
+3条查询前缀仍未检查，不能据此赋予warp_size数值域或minimum结果。
+
 ## 源码派生 power 的 const 历史组合
 
 既有私有history检查新增显式const-local/no-escape模式；默认minimum/quotient
