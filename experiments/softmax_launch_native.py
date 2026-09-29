@@ -138,7 +138,7 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                         snapshot = item["field_snapshot_check"]
                         item["prefix_normal_return_guards"] = []
                         if snapshot["status"] == "checked":
-                            from wavebridge.verification.normal_return_guard import check as check_return_guard
+                            from wavebridge.verification.normal_return_guard import check_call as check_guard_call
                             from wavebridge.verification.launch_binding import _direct_callee
                             for prefix_id in snapshot["unchecked_prefix_statement_ids"]:
                                 prefix, _, _ = unique(prefix_id)
@@ -152,10 +152,12 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                                 wrapper, _, _ = unique(wrapper_id)
                                 if not _direct_callee(arguments[0], wrapper):
                                     continue
+                                call_check = check_guard_call(root, prefix_id)
                                 item["prefix_normal_return_guards"].append({
                                     "call_id": prefix_id, "argument_id": arguments[1].get("id"),
                                     "argument_ast": arguments[1],
-                                    "wrapper_check": check_return_guard(root, wrapper_id),
+                                    "wrapper_check": call_check["wrapper_check"],
+                                    "query_result_check": call_check,
                                     "query_API_semantics_verified": False,
                                     "call_normal_return_proved": False})
                     except ValueError as error:

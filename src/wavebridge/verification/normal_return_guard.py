@@ -116,8 +116,90 @@ def check(root, function_id, *, max_ast_nodes=1_000_000):
                       constant_id=constant["id"], terminal_call_id=terminal["id"],
                       noreturn_declaration_id=declaration["id"],
                       unchecked_prefix_call_ids=[n["id"] for n in statements[:-1]],
-                      input_sha256={"root": _hash(root)}, identity_policy=IDENTITY_POLICY,
+                      input_sha256={"root": _hash(root), "selection": _hash(function_id),
+                                    "identity_policy": _hash(IDENTITY_POLICY)}, identity_policy=IDENTITY_POLICY,
                       identity_observations=index.observations)
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
+def check_call(root, call_id, *, max_ast_nodes=1_000_000):
+    """Freshly compose a direct nested query result with its guard definition.
+
+    No saved guard report or API-success assertion is accepted as input. The
+    conclusion concerns the value returned by this query invocation, not a
+    later re-evaluation of the query and not its effects on output pointers.
+    """
+    result = {"schema_version": "normal-return-query-call/v1", "status": "unknown", "reason": None,
+              "scope": "normal_wrapper_call_return_implies_converted_nested_query_result_matches_guard_constant",
+              "query_result_preserved_to_parameter": False, "wrapper_check": None,
+              "API_success_verified": False, "enum_equality_established": False,
+              "call_normal_return_proved": False, "query_output_effects_verified": False,
+              "runtime_linkage_verified": False, "source_program_checked": False, "deployable": False,
+              "assumptions": ["faithful valid C++ AST and ordinary sequential execution",
+                              "selected wrapper call executes the selected definition",
+                              "noreturn declaration contract is respected by the linked implementation",
+                              "no nonlocal jumps or asynchronous interference"],
+              "limitations": ["does not establish reachability, normal return, API success or output writes",
+                              "no inverse interpretation of enum-to-int conversion",
+                              "query arguments are recorded, not proven valid or effect-free"]}
+    try:
+        if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
+                not isinstance(call_id, str) or not call_id or type(max_ast_nodes) is not int or
+                not 1 <= max_ast_nodes <= 10_000_000):
+            raise ValueError("invalid_input_or_budget")
+        index = UsingShadowIndex(root, max_ast_nodes)
+
+        def direct_call(node):
+            if (node.get("kind") != "CallExpr" or index.unique(node.get("id")) is not node or
+                    node.get("valueCategory") != "prvalue" or not node.get("inner")):
+                raise ValueError("direct_prvalue_call_required")
+            designator = node["inner"][0]
+            leaf = designator
+            while leaf.get("kind") in {"ParenExpr", "ImplicitCastExpr"}:
+                if index.unique(leaf.get("id")) is not leaf or len(leaf.get("inner", [])) != 1:
+                    raise ValueError("callee_chain_identity_or_arity")
+                leaf = leaf["inner"][0]
+            if index.unique(leaf.get("id")) is not leaf:
+                raise ValueError("callee_reference_identity")
+            declaration = index.unique(leaf.get("referencedDecl", {}).get("id"))
+            if declaration.get("kind") != "FunctionDecl" or not _direct_callee(designator, declaration):
+                raise ValueError("callee_not_exact_direct_function")
+            parameters = [n for n in declaration.get("inner", []) if n.get("kind") == "ParmVarDecl"]
+            if len(parameters) != len(node["inner"]) - 1:
+                raise ValueError("call_parameter_count_mismatch")
+            if any(index.unique(p.get("id")) is not p for p in parameters):
+                raise ValueError("parameter_identity_not_unique")
+            return declaration, parameters
+
+        call = index.unique(call_id)
+        wrapper, parameters = direct_call(call)
+        if len(parameters) != 1 or call.get("type") != {"qualType": "void"}:
+            raise ValueError("one_argument_void_wrapper_required")
+        query = call["inner"][1]
+        declaration, query_parameters = direct_call(query)
+        parameter = parameters[0]
+        if query.get("type") != parameter.get("type"):
+            raise ValueError("query_result_parameter_type_mismatch")
+        # A direct scalar prvalue argument with exactly the parameter type has
+        # no intervening conversion, comma, conditional, constructor or load.
+        guard = check(root, wrapper["id"], max_ast_nodes=max_ast_nodes)
+        result["wrapper_check"] = guard
+        if guard["status"] != "checked" or guard["parameter_id"] != parameter["id"]:
+            raise ValueError("wrapper_normal_return_condition_not_established")
+        selection = {"call_id": call_id, "wrapper_id": wrapper["id"],
+                     "query_call_id": query["id"], "query_declaration_id": declaration["id"]}
+        result.update(status="checked", **selection, parameter_id=parameter["id"],
+                      query_result_preserved_to_parameter=True,
+                      converted_query_result_matches_constant_on_normal_return=True,
+                      constant_id=guard["constant_id"], converted_operand_ids=guard["converted_operand_ids"],
+                      query_arguments=[{"position": position, "parameter_id": formal["id"],
+                                        "expression_id": arg.get("id"), "expression_ast": arg}
+                                       for position, (formal, arg) in enumerate(zip(query_parameters, query["inner"][1:]))],
+                      input_sha256={"root": guard["input_sha256"]["root"], "selection": _hash(selection),
+                                    "identity_policy": _hash(IDENTITY_POLICY)},
+                      identity_policy=IDENTITY_POLICY, identity_observations=index.observations)
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
         result["reason"] = str(error)
     return result

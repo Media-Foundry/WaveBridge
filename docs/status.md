@@ -2,6 +2,18 @@
 
 更新日期：2026-09-30。
 
+## 查询返回值到包装形参的条件组合
+
+normal_return_guard新增check_call：从原始AST绑定外层包装调用、直接内层
+query的prvalue和同型唯一形参，再fresh检查包装定义。条件结论现在明确涉及
+该次query返回值，不接受旧报告；cast/comma/conditional替换与间接query拒绝。
+query实参按位置记录，但输出写入、API成功、调用正常返回和运行库链接仍未证明。
+选择/身份策略新增独立哈希。真实Clang定向6项、完整1318项CPU回归99.534秒
+无跳过、demo/diff通过；Sol复核无阻断。无GPU，见
+[实录](../experiments/hip-query-guard-evidence-20260930.md)。
+真实HIP两次查询均完成返回值→同一包装形参的fresh条件组合，输入与实现哈希
+未变；query输出对象与字段快照的效果对应仍未建立，不放行GPU部署。
+
 ## 错误检查包装的正常返回必要条件
 
 新增normal_return_guard窄检查：唯一顶层if、参数加载和枚举常量的int转换比较、
