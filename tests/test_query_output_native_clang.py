@@ -8,6 +8,7 @@ from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.verification.field_snapshot import check_query_object, check_query_output, check_query_initializer, check_query_initializer_to_statement, FIELD_READ_PREMISE
 from wavebridge.verification.normal_return_guard import check_enum_binding
+from wavebridge.verification.field_snapshot import check_query_power_minimum
 
 PLUGIN = os.environ.get("WB_ENUM_CAPTURE_PLUGIN") or os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_ENUM_CAPTURE_COMPILER") or os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -26,6 +27,51 @@ class QueryOutputTests(unittest.TestCase):
         cls.targets = {n["name"]: next(c["id"] for body in n["inner"] if body.get("kind") == "CompoundStmt"
                                       for c in body["inner"] if c.get("kind") == "BinaryOperator" and c.get("opcode") == "=")
                        for n in _walk(cls.payload["ast"]) if n.get("kind") == "FunctionDecl" and n.get("name", "").startswith("history_")}
+
+    def composed_selection(self, name="composed_dispatch", caller_name="composed_caller"):
+        functions = {n.get("name"): n for n in _walk(self.payload["ast"]) if n.get("kind") == "FunctionDecl"}
+        function, caller = functions[name], functions[caller_name]
+        variables = {n.get("name"): n["id"] for n in _walk(function) if n.get("kind") == "VarDecl"}
+        assignment = next(n["id"] for n in _walk(function) if n.get("kind") == "BinaryOperator" and n.get("opcode") == "=")
+        selection = {"caller_id": caller["id"], "callee_id": function["id"], "argument_position": 0,
+                     "local_id": next(n["id"] for n in _walk(caller) if n.get("name") == "composed_input"),
+                     "guard_id": next(n["id"] for n in _walk(caller) if n.get("kind") == "IfStmt"),
+                     "call_id": next(n["id"] for n in _walk(caller) if n.get("kind") == "CallExpr"),
+                     "exponent_id": variables["composed_log"], "power_id": variables["composed_power"]}
+        return variables["composed_width"], assignment, selection
+
+    def test_minimum_freshly_binds_two_origins_without_inventing_query_range(self):
+        result = check_query_power_minimum(self.payload, *self.composed_selection(), *self.contracts("guarded_snapshot"))
+        self.assertEqual(result["status"], "checked", result)
+        self.assertTrue(result["conditional_assignment_relation"])
+        self.assertEqual(result["state_relation"]["power_operand"]["value_set"], [128])
+        self.assertEqual(result["checks"]["power"]["entry_values"], [65, 128])
+        self.assertEqual(result["state_relation"]["query_operand_origin"], result["checks"]["query"]["value_origin"])
+        for field in ("query_numeric_domain", "result_numeric_domain"):
+            self.assertIsNone(result[field])
+        for field in ("deployable", "source_program_checked", "later_history_checked", "API_protocol_verified"):
+            self.assertFalse(result[field])
+
+    def test_minimum_changed_source_and_missing_contract_stay_unknown(self):
+        contracts = self.contracts("guarded_snapshot")
+        for name in ("composed_write", "composed_max", "composed_escape"):
+            result = check_query_power_minimum(self.payload, *self.composed_selection(name, name + "_caller"), *contracts)
+            self.assertEqual(result["status"], "unknown", (name, result))
+            self.assertFalse(result["conditional_assignment_relation"])
+        self.assertEqual(check_query_power_minimum(self.payload, *self.composed_selection(), None, contracts[1])["status"], "unknown")
+
+    def test_minimum_selection_identity_ABI_budget_and_immutability(self):
+        contracts = self.contracts("guarded_snapshot")
+        initial, assignment, selection = self.composed_selection()
+        before = copy.deepcopy(self.payload)
+        check_query_power_minimum(self.payload, initial, assignment, selection, *contracts)
+        self.assertEqual(before, self.payload)
+        for key, value in (("power_id", initial), ("callee_id", self.ids["history_good"]),
+                           ("call_id", "missing"), ("argument_position", True), ("result_values", [128])):
+            result = check_query_power_minimum(self.payload, initial, assignment, {**selection, key: value}, *contracts)
+            self.assertEqual(result["status"], "unknown", (key, result))
+        for kwargs in ({"max_ast_nodes": 1}, {"int_bits": 16}, {"int_bits": True}):
+            self.assertEqual(check_query_power_minimum(self.payload, initial, assignment, selection, *contracts, **kwargs)["status"], "unknown")
 
     def test_history_stops_before_target_evaluation(self):
         contracts = self.contracts("guarded_snapshot")

@@ -79,6 +79,14 @@ referencedDecl完全一致；callee decay、调用、变量、声明语句、own
 输出记录policy和共享出现次数；后续历史、数值域、纯度、动态链接、source/
 deploy仍未证明。两次getter调用的结果不被当作同一个值。
 
+`field_snapshot.check_query_power_minimum`进一步fresh组合上述查询初值保持、
+minimum赋值检查及源码guard→power初始化/保持。power选点只包含精确身份，
+不接受数值域或旧成功报告；核对同root、同callee/owner、target和两个operand。
+结论是所选guarded调用中、首次赋值后的query-local等于该次查询符号值与
+某个source-derived power集合成员的最小值，不是对整个集合求minimum。
+query和最终结果数值域仍为null；不推断32/64、正值或除数非零，也不证明
+调用可达、后续历史、实际API/lowering/整核/部署。外部API与转换协议全部保留。
+
 `field_snapshot.check_query_initializer_to_statement`从fresh初始化关系构造内部
 seed，复用`integer_selection._preserve_to_statement`的私有first-entry模式。
 仅用于initialized local，不能与const快捷模式混用；公共调用者不能提交

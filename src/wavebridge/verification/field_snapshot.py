@@ -118,6 +118,83 @@ def check(root, function_id, *, max_ast_nodes=1_000_000):
     return result
 
 
+def check_query_power_minimum(payload, initializer_id, assignment_id, power_selection,
+                              conversion_contract, output_contract, *, int_bits=32,
+                              max_ast_nodes=1_000_000):
+    """Freshly bind both minimum operands; the query value remains symbolic.
+
+    power_selection contains identities, never a numeric domain or prior report.
+    The relation concerns the first assignment in the selected guarded invocation.
+    """
+    from wavebridge.verification.integer_selection import check_local_minimum_update
+    from wavebridge.verification.power_ceiling import check_guarded_shift
+
+    result = {"schema_version": "query-power-minimum/v1", "status": "unknown", "reason": None,
+              "scope": "first_minimum_assignment_for_selected_normally_reached_guarded_invocation",
+              "checks": {}, "conditional_assignment_relation": False, "state_relation": None,
+              "query_numeric_domain": None, "result_numeric_domain": None,
+              "API_protocol_verified": False, "actual_lowering_verified": False,
+              "later_history_checked": False, "call_reachability_proved": False,
+              "source_program_checked": False, "deployable": False, "assumptions": [],
+              "limitations": ["query output and conversion protocols remain external assumptions",
+                              "not an API width, nonzero divisor, launch value or device guarantee",
+                              "relation is conditional on this selected caller, not all callee invocations"]}
+    keys = {"caller_id", "local_id", "guard_id", "call_id", "callee_id",
+            "argument_position", "exponent_id", "power_id"}
+    if (not isinstance(payload, dict) or not isinstance(power_selection, dict) or
+            set(power_selection) != keys or type(int_bits) is not int or not 2 <= int_bits <= 64 or
+            payload.get("ast_int_bits") != int_bits or
+            any(not isinstance(power_selection[k], str) or not power_selection[k]
+                for k in keys - {"argument_position"}) or
+            type(power_selection["argument_position"]) is not int or power_selection["argument_position"] < 0):
+        result["reason"] = "invalid_selection_or_integer_ABI_binding"
+        return result
+    query = check_query_initializer_to_statement(payload, initializer_id, assignment_id,
+                conversion_contract, output_contract, max_ast_nodes=max_ast_nodes)
+    result["checks"]["query"] = query
+    result["assumptions"] = list(query["assumptions"])
+    if query["status"] != "checked" or query.get("value_preserved_to_target_entry") is not True:
+        result["reason"] = "fresh_query_history_not_checked"
+        return result
+    root = payload["ast"]
+    minimum = check_local_minimum_update(root, assignment_id,
+                {"int": {"bits": int_bits, "signed": True}}, max_ast_nodes=max_ast_nodes)
+    result["checks"]["minimum"] = minimum
+    result["assumptions"] = list(dict.fromkeys(result["assumptions"] + minimum["assumptions"]))
+    if minimum["status"] != "checked":
+        result["reason"] = "fresh_minimum_not_checked"
+        return result
+    if (minimum["target_declaration_id"] != initializer_id or
+            set(minimum["operand_declaration_ids"]) != {initializer_id, power_selection["power_id"]} or
+            minimum["function_id"] != query["initializer_check"]["owner_id"] or
+            minimum["function_id"] != power_selection["callee_id"]):
+        result["reason"] = "minimum_operand_or_invocation_binding_mismatch"
+        return result
+    power = check_guarded_shift(root, **power_selection, int_bits=int_bits,
+                max_ast_nodes=max_ast_nodes, target_statement_id=assignment_id)
+    result["checks"]["power"] = power
+    result["assumptions"] = list(dict.fromkeys(result["assumptions"] + power["assumptions"]))
+    if power["status"] != "checked" or power.get("value_preserved_to_target_entry") is not True:
+        result["reason"] = "fresh_power_history_not_checked"
+        return result
+    roots = [item["input_sha256"]["root"] for item in (minimum, power)]
+    roots.append(query["initializer_check"]["getter_output_check"]["object_check"]["input_sha256"]["root"])
+    if len(set(roots)) != 1:
+        result["reason"] = "root_binding_mismatch"
+        return result
+    result.update(status="checked", conditional_assignment_relation=True,
+                  state_relation={"target_declaration_id": initializer_id, "operation": "minimum",
+                      "query_operand_origin": query["value_origin"],
+                      "power_operand": {"declaration_id": power_selection["power_id"],
+                                        "value_set": power["result_values"]},
+                      "time": "immediately_after_first_selected_assignment"},
+                  input_sha256={"root": roots[0], "payload": _hash(payload),
+                      "selection": _hash([initializer_id, assignment_id, power_selection, int_bits]),
+                      "conversion_contract": _hash(conversion_contract),
+                      "output_contract": _hash(output_contract)})
+    return result
+
+
 def check_query_object(root, function_id, *, max_ast_nodes=1_000_000):
     """Bind an adjacent guarded query's address argument to the snapshot object.
 

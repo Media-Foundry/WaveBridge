@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 查询来源与 power 来源在 minimum 赋值处组合
+
+`field_snapshot.check_query_power_minimum`fresh连接查询初值保持、minimum转移
+和guard→power初始化/保持，核对同AST、owner/callee、target与两个operand。
+原HIP重放条件checked：所选源码域{65,128}派生power128，赋值后关系为
+min(该次查询符号值,128)。查询/结果数值域仍null，API/部署不获放行。
+1352项CPU回归109.368秒通过、无跳过；Clang17/23各12项、demo/diff通过，
+Sol复核无阻断。无新GPU或程序执行，见
+[实录](../experiments/hip-query-minimum-20260930.md)。
+
 ## Getter 初值到 minimum 首次入口
 
 `field_snapshot.check_query_initializer_to_statement`从fresh初值生成内部seed，

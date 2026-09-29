@@ -135,3 +135,45 @@ void history_lambda() {
     history_captured = history_captured < 32 ? history_captured : 32;
     auto capture = [&history_captured] { ++history_captured; };
 }
+
+int composed_exponent(int input) {
+    int exponent = 0;
+    while ((1 << exponent) < input) ++exponent;
+    return exponent;
+}
+int composed_dispatch(int input) {
+    int composed_log = composed_exponent(input);
+    const int composed_power = 1 << composed_log;
+    int composed_width = guarded_snapshot();
+    composed_width = composed_power < composed_width ? composed_power : composed_width;
+    return composed_width;
+}
+int composed_caller(int input) {
+    const int composed_input = input;
+    if (composed_input != 65 && composed_input != 128) return 3;
+    composed_dispatch(composed_input);
+    return 0;
+}
+
+// Each variant is compiled into a real AST; the checker does not read these names.
+#define COMPOSED_VARIANT(NAME, BEFORE, EXPR) \
+int NAME(int input) { \
+    int composed_log = composed_exponent(input); \
+    const int composed_power = 1 << composed_log; \
+    int composed_width = guarded_snapshot(); \
+    BEFORE; \
+    composed_width = EXPR; \
+    return composed_width; \
+} \
+int NAME##_caller(int input) { \
+    const int composed_input = input; \
+    if (composed_input != 65 && composed_input != 128) return 3; \
+    NAME(composed_input); \
+    return 0; \
+}
+COMPOSED_VARIANT(composed_write, ++composed_width,
+    composed_power < composed_width ? composed_power : composed_width)
+COMPOSED_VARIANT(composed_max, (void)0,
+    composed_power < composed_width ? composed_width : composed_power)
+COMPOSED_VARIANT(composed_escape, int* aliases[] = {&composed_width},
+    composed_power < composed_width ? composed_power : composed_width)
