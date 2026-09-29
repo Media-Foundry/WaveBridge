@@ -1,5 +1,14 @@
 # 编译器关系检查
 
+## 条件一元 native 效果
+
+现有`builtin_calls.check_call_no_memory_write`增加显式
+`allow_unary_float=True, allow_using_shadows=True`，把fresh外层调用结构与
+fresh builtin叶效果协议组合成条件无写入。不新增自动推断的效果前提。
+`column_loops.recover_with_call_effects`可显式传播选项；默认循环路径不变，
+循环变量写入与未检查实参仍unknown。整个保证依赖未验证leaf前提和子检查
+的存活、初始化、边界等条件，不认证数值、机器码或部署。
+
 ## native 外层调用结构组合
 
 `scalar_call_effects.inspect_native_call(payload, call_expression_id, leaf_call_id,

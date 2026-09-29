@@ -11,6 +11,8 @@ from wavebridge.verification.builtin_calls import inspect_structure, check_no_me
 from wavebridge.verification.getter_returns import _hash
 from wavebridge.verification.scalar_forwarding import inspect_builtin_structure
 from wavebridge.verification.scalar_call_effects import inspect_native_call
+from wavebridge.verification.builtin_calls import check_call_no_memory_write
+from wavebridge.analysis.column_loops import recover_with_call_effects
 
 PLUGIN = os.environ.get("WB_UNARY_BUILTIN_PLUGIN", os.environ.get("WB_NATIVE_CAPTURE_PLUGIN"))
 COMPILER = os.environ.get("WB_UNARY_BUILTIN_COMPILER", os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++"))
@@ -42,6 +44,17 @@ float outer_nested(float x) { return routed(external(x)); }
 float outer_comma(float x) { return (x++, routed)(x); }
 float outer_pointer(float x, float (*p)(float)) { return p(x); }
 float outer_writing(float x) { return writing_wrapper(x); }
+void loop_read(int tid, int n, float x, float* out) {
+  for (int col = tid; col < n; col += 256) out[col] = routed(x);
+}
+void loop_arg_write(int tid, int n, float x, float* out) {
+  for (int col = tid; col < n; col += 256) out[col] = routed(x++);
+}
+void loop_induction_write(int tid, int n, float x, float* out) {
+  for (int col = tid; col < n; col += 256) { out[col] = routed(x); col += 256; }
+}
+float zero_leaf() { return __builtin_huge_valf(); }
+float zero_outer() { return zero_leaf(); }
 """
 
 
@@ -217,6 +230,70 @@ class NativeUnaryBuiltinClangTests(unittest.TestCase):
                 self.assertEqual(result["value_semantics"], "not_established")
                 self.assertFalse(result["deployable"])
         self.assertEqual(before, _hash(self.payload))
+
+    def effect(self, name="outer_read", protocol=None, **options):
+        return check_call_no_memory_write(self.payload, self.call(name)["id"],
+            self.protocol("exp_read") if protocol is None else protocol,
+            allow_unary_float=True, allow_using_shadows=True, **options)
+
+    def test_outer_effect_is_conditional_on_exact_unverified_leaf_protocol(self):
+        result = self.effect()
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["conclusion"]["status"], "conditional")
+        self.assertEqual(result["conclusion"]["call_expression_id"], self.call("outer_read")["id"])
+        self.assertFalse(result["external_leaf_effect_verified"])
+        self.assertFalse(result["deployable"])
+        self.assertEqual(result["input_sha256"]["effect_protocol"], _hash(self.protocol("exp_read")))
+        self.assertEqual(result["input_sha256"]["call_policy"], _hash(result["call_policy"]))
+        self.assertEqual(check_call_no_memory_write(self.payload, self.call("outer_read")["id"],
+                         self.protocol("exp_read"))["status"], "unknown")
+        direct = self.effect("log_read", self.protocol("log_read"))
+        self.assertEqual(direct["status"], "checked", direct)
+        self.assertEqual(direct["dispatch"], "direct_builtin")
+        strict = check_call_no_memory_write(self.payload, self.call("outer_read")["id"],
+            self.protocol("exp_read"), allow_unary_float=True)
+        repeated = sum(n.get("id") == self.call("exp_read")["id"] for n in _walk(self.payload["ast"])) > 1
+        self.assertEqual(strict["status"], "unknown" if repeated else "checked", strict)
+        for options in ({"allow_unary_float": 1}, {"allow_using_shadows": 1}):
+            self.assertEqual(check_call_no_memory_write(self.payload, self.call("outer_read")["id"],
+                             self.protocol("exp_read"), **options)["status"], "unknown")
+
+    def test_outer_effect_premise_cannot_hide_argument_or_wrapper_writes(self):
+        for name in ("outer_increment", "outer_assignment", "outer_nested", "outer_writing", "outer_pointer"):
+            self.assertEqual(self.effect(name)["status"], "unknown", name)
+        for key, value in (("builtin_no_memory_write_assumed", 1),
+                           ("valid_call_and_normal_return_assumed", False),
+                           ("native_envelope_sha256", "stale"),
+                           ("callee_declaration_id", "wrong"), ("evidence_reference", "")):
+            protocol = self.protocol("exp_read")
+            protocol[key] = value
+            failed = self.effect(protocol=protocol)
+            self.assertEqual(failed["status"], "unknown", key)
+            self.assertEqual(failed["native_call_structure"]["status"], "checked", key)
+        self.assertEqual(self.effect(protocol=self.protocol("alternate"))["status"], "unknown")
+        self.assertEqual(self.effect(max_ast_nodes=1)["status"], "unknown")
+
+    def test_unary_mode_preserves_existing_zero_argument_path(self):
+        result = self.effect("zero_outer", self.protocol("zero_leaf"))
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["dispatch"], "direct_zero_argument_wrapper")
+
+    def test_real_source_loop_composes_fresh_native_call_effects(self):
+        for name, expected in (("loop_read", "recovered"), ("loop_arg_write", "unknown"),
+                               ("loop_induction_write", "unknown")):
+            function = next(n for n in self.payload["ast"]["inner"] if n.get("name") == name)
+            protocols = {self.call(name)["id"]: self.protocol("exp_read")}
+            default = recover_with_call_effects(self.payload, function["id"], 32, protocols)
+            self.assertEqual(default["status"], "unknown")
+            result = recover_with_call_effects(self.payload, function["id"], 32, protocols,
+                                               allow_unary_float=True, allow_using_shadows=True)
+            self.assertEqual(result["status"], expected, result)
+            self.assertFalse(result["external_call_effects_verified"])
+            self.assertFalse(result["checked"])
+            self.assertFalse(result["deployable"])
+        for options in ({"allow_unary_float": 1}, {"allow_using_shadows": 1}):
+            self.assertEqual(recover_with_call_effects(self.payload, function["id"], 32, protocols,
+                                                       **options)["status"], "unknown")
 
     def test_writing_and_unsupported_argument_shapes_remain_unknown(self):
         for name in ("increment", "assignment", "nested", "arithmetic", "reference",

@@ -50,7 +50,8 @@ class SoftmaxCallAuditTests(unittest.TestCase):
         # Opt-in modes have dependencies; invalid combinations must fail before
         # reading an artifact, creating output or beginning an expensive replay.
         for options in ({"outer_calls": True}, {"outer_calls": 1},
-                        {"outer_calls": True, "unary_forwarding": True}):
+                        {"outer_calls": True, "unary_forwarding": True},
+                        {"assume_unary_effects": True}, {"assume_unary_effects": 1}):
             with self.subTest(options=options), self.assertRaisesRegex(ValueError, "invalid_using_shadows_option"):
                 run_native("missing-native", "missing-output", **options)
 
@@ -81,6 +82,9 @@ class SoftmaxCallAuditTests(unittest.TestCase):
         self.assertEqual(report["external_effect_protocols"], {})
         self.assertFalse(report["outer_calls_enabled"])
         self.assertEqual(report["outer_call_checks"], [])
+        self.assertEqual(report["conditional_effect_checks"], [])
+        self.assertFalse(report["external_effects_verified"])
+        self.assertFalse(report["outer_call_inventory_complete"])
 
     def test_method_reference_observation_does_not_override_resolver(self):
         root = {"inner": [function("entry", call("method", "CXXMethodDecl")),

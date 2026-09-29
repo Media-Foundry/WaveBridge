@@ -1,5 +1,25 @@
 # 模型、检查与证据协议
 
+## 一元 native 调用的条件效果组合
+
+`builtin_calls.check_call_no_memory_write(..., allow_unary_float=True,
+allow_using_shadows=True)`可显式选择一元wrapper路径：fresh检查完整外层调用
+结构与实参，再fresh检查精确native leaf及现有
+`builtin-leaf-effect-assumption/v1`。leaf假设必须覆盖该外层调用可达的全部
+参数值，不能只针对一个采样值。无协议、错绑定、非布尔前提、实参或wrapper
+写入均保持unknown；零参旧路径保留，默认不开启一元支持。
+
+`checked`仅表示在声明前提下组成`exact_call_expression`的条件无写入，
+external_leaf_effect_verified仍false。实参初始化/存活/边界与正常求值
+前提向上传递；结构子报告继续保留callee/whole-call效果未建立标记。
+父报告不把这些子标记改写成无条件证明。输入哈希绑定call策略及效果协议。
+
+`column_loops.recover_with_call_effects`显式接收相同选项并重新消费每条精确
+协议；循环体其它写入仍检查，保留未使用协议和unknown循环。恢复结果属于
+外部效果前提下的路径，不能交给默认组合器冒充默认源码保持性证明。
+开发驱动`--assume-unary-effects`仅用于敏感性实验，报告保存所有未验证前提；
+不是设备库效果认证，也不授权GPU部署。
+
 ## native 外层调用与实参求值
 
 `scalar_call_effects.inspect_native_call(payload, call_expression_id, leaf_call_id)`

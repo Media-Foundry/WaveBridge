@@ -381,7 +381,8 @@ def check_wrapper_no_memory_write(payload, start_declaration_id, effect_protocol
     return result
 
 
-def check_call_no_memory_write(payload, call_expression_id, effect_protocol, *, max_ast_nodes=None):
+def check_call_no_memory_write(payload, call_expression_id, effect_protocol, *, max_ast_nodes=None,
+                               allow_unary_float=False, allow_using_shadows=False):
     """Freshly bind a complete direct call site and its restricted target chain."""
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result = {
@@ -397,12 +398,44 @@ def check_call_no_memory_write(payload, call_expression_id, effect_protocol, *, 
                         "enclosing expressions and statements, loop and invocation history are not checked",
                         "external effect evidence is unverified; machine code and GPU execution are not checked"],
         "budget": {"max_ast_nodes_per_scan": budget},
+        "call_policy": {"schema_version": "builtin-callsite-policy/v1",
+                        "allow_unary_float": allow_unary_float,
+                        "allow_using_shadows": allow_using_shadows},
     }
     try:
         if (type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES or
                 not isinstance(payload, dict) or not isinstance(effect_protocol, dict) or
-                not isinstance(call_expression_id, str) or not call_expression_id):
+                not isinstance(call_expression_id, str) or not call_expression_id or
+                type(allow_unary_float) is not bool or type(allow_using_shadows) is not bool):
             raise _Unknown("invalid_inputs_or_budget")
+        unary_wrapper = False
+        if allow_unary_float and call_expression_id != effect_protocol.get("call_expression_id"):
+            from wavebridge.verification.scalar_call_effects import _identity_lookup
+            lookup, _ = _identity_lookup(payload.get("ast"), budget, allow_using_shadows)
+            unary_wrapper = len(_children(lookup(call_expression_id))) == 2
+        if unary_wrapper:
+            from wavebridge.verification.scalar_call_effects import inspect_native_call
+            structure = inspect_native_call(payload, call_expression_id,
+                effect_protocol.get("call_expression_id"), max_ast_nodes=budget,
+                allow_using_shadows=allow_using_shadows)
+            result["native_call_structure"] = structure
+            if structure["status"] != "checked":
+                raise _Unknown("fresh_native_call_structure_not_checked")
+            leaf = check_no_memory_write(payload, effect_protocol["call_expression_id"], effect_protocol,
+                max_ast_nodes=budget, allow_unary_float=True, allow_using_shadows=allow_using_shadows)
+            result["target_check"] = leaf
+            if leaf["status"] != "checked":
+                raise _Unknown("fresh_builtin_effect_not_checked")
+            result["assumptions"].extend(structure["assumptions"] + leaf["assumptions"])
+            result["assumptions"].append(
+                "the leaf no-write and normal-return premises cover every argument value reached by this outer call")
+            result.update(status="checked", dispatch="direct_unary_float_native_wrapper",
+                input_sha256={**structure["input_sha256"], "effect_protocol": _hash(effect_protocol),
+                              "call_policy": _hash(result["call_policy"])},
+                conclusion={"status": "conditional", "property": "no_memory_write",
+                            "subject": "exact_call_expression", "call_expression_id": call_expression_id},
+                callsite_evaluation="checked_in_supported_direct_callee_and_argument_subset")
+            return result
         index, pending, count = {}, [payload.get("ast")], 0
         while pending:
             node = pending.pop()
@@ -425,7 +458,8 @@ def check_call_no_memory_write(payload, call_expression_id, effect_protocol, *, 
         call = unique(call_expression_id)
         _typed(call, "CallExpr", "float", "prvalue")
         if call_expression_id == effect_protocol.get("call_expression_id"):
-            target = check_no_memory_write(payload, call_expression_id, effect_protocol, max_ast_nodes=budget)
+            target = check_no_memory_write(payload, call_expression_id, effect_protocol, max_ast_nodes=budget,
+                allow_unary_float=allow_unary_float, allow_using_shadows=allow_using_shadows)
             result["dispatch"] = "direct_builtin"
         else:
             target_id = _direct_wrapper_target(call, unique)
@@ -435,12 +469,14 @@ def check_call_no_memory_write(payload, call_expression_id, effect_protocol, *, 
         result["target_check"] = target
         if target.get("status") != "checked":
             raise _Unknown("fresh_call_target_not_checked")
-        result["input_sha256"] = dict(target["input_sha256"], selected_call_expression_id=_hash(call_expression_id))
+        result["input_sha256"] = dict(target["input_sha256"], selected_call_expression_id=_hash(call_expression_id),
+                                     call_policy=_hash(result["call_policy"]))
+        result["assumptions"].extend(target["assumptions"])
         result.update(status="checked", conclusion={
             "status": "conditional", "property": "no_memory_write", "subject": "exact_call_expression",
             "call_expression_id": call_expression_id},
             callsite_evaluation="checked_in_supported_direct_callee_and_argument_subset")
-    except _Unknown as error:
+    except (_Unknown, IdentityUnknown) as error:
         result["reason"] = str(error)
     except (TypeError, ValueError, RecursionError):
         result["reason"] = "unsupported_callsite_representation"

@@ -121,15 +121,18 @@ def run(ast_path, previous_path, output_dir):
 
 
 def run_native(native_path, output_dir, *, using_shadows=False, unary_float=False, unary_forwarding=False,
-               outer_calls=False):
+               outer_calls=False, assume_unary_effects=False):
     """Observe HIP call paths without deduplicating or modifying checker input."""
     from wavebridge.verification.builtin_calls import inspect_structure
     from wavebridge.verification.using_shadow_identity import UsingShadowIndex, IdentityUnknown
     from wavebridge.verification.getter_returns import _hash
     from wavebridge.verification.scalar_forwarding import inspect_builtin_structure
     from wavebridge.verification.scalar_call_effects import inspect_native_call
-    if (any(type(option) is not bool for option in (using_shadows, unary_float, unary_forwarding, outer_calls)) or
-            unary_forwarding and not (using_shadows and unary_float) or outer_calls and not unary_forwarding):
+    from wavebridge.verification.builtin_calls import check_call_no_memory_write
+    if (any(type(option) is not bool for option in
+            (using_shadows, unary_float, unary_forwarding, outer_calls, assume_unary_effects)) or
+            unary_forwarding and not (using_shadows and unary_float) or outer_calls and not unary_forwarding or
+            assume_unary_effects and not outer_calls):
         raise ValueError("invalid_using_shadows_option")
     native_path = Path(native_path).resolve()
     if sha(native_path) != HIP_NATIVE_SHA:
@@ -181,7 +184,8 @@ def run_native(native_path, output_dir, *, using_shadows=False, unary_float=Fals
             except IdentityUnknown as error:
                 item["reason"] = str(error)
             identity_checks.append(item)
-    forwarding_checks, outer_checks = [], []
+    forwarding_checks, outer_checks, effect_checks, effect_protocols = [], [], [], {}
+    envelope_hash = _hash(payload) if assume_unary_effects else None
     if unary_forwarding:
         # Select syntactic routes only; the checker rebuilds every body and
         # parameter edge. No function name is a relation template or oracle.
@@ -228,11 +232,27 @@ def run_native(native_path, output_dir, *, using_shadows=False, unary_float=Fals
             if outer_calls:
                 for outer_id in outer_ids:
                     print(json.dumps({"phase": "outer_call_start", "call": outer_id}), flush=True)
-                    outer_check = inspect_native_call(payload, outer_id, terminal, allow_using_shadows=True)
+                    if assume_unary_effects:
+                        record = next(r for r in leaves if r["call_expression_id"] == terminal)
+                        protocol = {"schema_version": "builtin-leaf-effect-assumption/v1",
+                            "native_envelope_sha256": envelope_hash, "call_expression_id": terminal,
+                            "callee_declaration_id": record["callee_declaration_id"],
+                            "builtin_no_memory_write_assumed": True,
+                            "valid_call_and_normal_return_assumed": True,
+                            "evidence_reference": "development sensitivity assumption; not verified by this experiment"}
+                        effect_protocols[outer_id] = protocol
+                        effect = check_call_no_memory_write(payload, outer_id, protocol,
+                            allow_unary_float=True, allow_using_shadows=True)
+                        effect_checks.append({"call_expression_id": outer_id, "check": effect})
+                        outer_check = effect.get("native_call_structure") or {
+                            "status": "unknown", "reason": "no_native_structure_report"}
+                    else:
+                        outer_check = inspect_native_call(payload, outer_id, terminal, allow_using_shadows=True)
                     outer_checks.append({"call_expression_id": outer_id, "native_leaf_call_id": terminal,
                                          "check": outer_check})
                     print(json.dumps({"phase": "outer_call_done", "call": outer_id,
-                                      "status": outer_check["status"], "reason": outer_check["reason"]}), flush=True)
+                                      "status": outer_check["status"], "reason": outer_check["reason"],
+                                      "conditional_effect_status": effect["status"] if assume_unary_effects else None}), flush=True)
     report = {"schema_version": "softmax-native-call-audit/v1",
               "command": sys.argv, "native_sha256": HIP_NATIVE_SHA,
               "entry_id": entry["id"], "inventory": observed,
@@ -244,12 +264,14 @@ def run_native(native_path, output_dir, *, using_shadows=False, unary_float=Fals
               "unary_forwarding_enabled": unary_forwarding,
               "unary_forwarding_checks": forwarding_checks,
               "outer_calls_enabled": outer_calls, "outer_call_checks": outer_checks,
+              "assume_unary_effects": assume_unary_effects, "conditional_effect_checks": effect_checks,
+              "outer_call_inventory_complete": False, "external_effects_verified": False,
               "using_shadow_identity_checks": identity_checks,
               "using_shadow_observations": identities.observations if identities else [],
               "driver_dependencies_before": helpers,
               "frontend_reexecuted": False, "GPU_executed": False,
               "source_program_checked": False, "deployable": False,
-              "ast_modified": False, "external_effect_protocols": {}}
+              "ast_modified": False, "external_effect_protocols": effect_protocols}
     report["implementation_after"] = implementation_hashes()
     report["driver_dependencies_after"] = driver_dependencies()
     stable = (before == report["implementation_after"] and
@@ -271,6 +293,8 @@ def main():
     parser.add_argument("--unary-float", action="store_true")
     parser.add_argument("--unary-forwarding", action="store_true")
     parser.add_argument("--outer-calls", action="store_true")
+    parser.add_argument("--assume-unary-effects", action="store_true",
+                        help="sensitivity run under UNVERIFIED leaf no-write/normal-return assumptions")
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     if args.native:
@@ -278,11 +302,11 @@ def main():
             parser.error("--previous-report is not used with --native")
         result = run_native(args.native, args.output_dir, using_shadows=args.using_shadows,
                             unary_float=args.unary_float, unary_forwarding=args.unary_forwarding,
-                            outer_calls=args.outer_calls)
+                            outer_calls=args.outer_calls, assume_unary_effects=args.assume_unary_effects)
     else:
         if not args.previous_report:
             parser.error("--ast requires --previous-report")
-        if args.using_shadows or args.unary_float or args.unary_forwarding or args.outer_calls:
+        if args.using_shadows or args.unary_float or args.unary_forwarding or args.outer_calls or args.assume_unary_effects:
             parser.error("--using-shadows and --unary-float require --native")
         result = run(args.ast, args.previous_report, args.output_dir)
     return 0 if result["inputs_unchanged"] else 2

@@ -756,13 +756,16 @@ def recover_with_builtin_effects(payload, function_id, int_bits, call_protocols,
                                       max_ast_nodes=max_ast_nodes, allow_scalar=False)
 
 
-def recover_with_call_effects(payload, function_id, int_bits, call_protocols, *, max_ast_nodes=None):
+def recover_with_call_effects(payload, function_id, int_bits, call_protocols, *, max_ast_nodes=None,
+                              allow_unary_float=False, allow_using_shadows=False):
     """Fresh builtin or scalar call checks, with explicit unverified leaf premises."""
     return _recover_with_call_effects(payload, function_id, int_bits, call_protocols,
-                                      max_ast_nodes=max_ast_nodes, allow_scalar=True)
+                                      max_ast_nodes=max_ast_nodes, allow_scalar=True,
+                                      allow_unary_float=allow_unary_float, allow_using_shadows=allow_using_shadows)
 
 
-def _recover_with_call_effects(payload, function_id, int_bits, call_protocols, *, max_ast_nodes, allow_scalar):
+def _recover_with_call_effects(payload, function_id, int_bits, call_protocols, *, max_ast_nodes, allow_scalar,
+                               allow_unary_float=False, allow_using_shadows=False):
     from wavebridge.verification.builtin_calls import (
         check_call_no_memory_write, MAX_AST_NODES, HARD_MAX_AST_NODES)
     from wavebridge.verification.scalar_call_effects import check_no_memory_write as check_scalar_call
@@ -778,6 +781,9 @@ def _recover_with_call_effects(payload, function_id, int_bits, call_protocols, *
                               "source validity, memory non-aliasing and recurrence domain remain external",
                               "partial successful calls never upgrade an unknown loop"],
               "budget": {"max_ast_nodes_per_scan": budget, "max_call_protocols": 64}}
+    result["builtin_call_policy"] = {"schema_version": "builtin-callsite-policy/v1",
+                                    "allow_unary_float": allow_unary_float,
+                                    "allow_using_shadows": allow_using_shadows}
     if allow_scalar:
         result["schema_version"] = "column-loop-call-effects/v1"
         result["scope"] = "restricted_loop_recurrence_under_explicit_call_effect_assumptions"
@@ -786,7 +792,8 @@ def _recover_with_call_effects(payload, function_id, int_bits, call_protocols, *
             not isinstance(function_id, str) or not function_id or
             not isinstance(call_protocols, dict) or len(call_protocols) > 64 or
             any(not isinstance(k, str) or not k or not isinstance(v, dict) for k, v in call_protocols.items()) or
-            type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES):
+            type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES or
+            type(allow_unary_float) is not bool or type(allow_using_shadows) is not bool):
         result["reason"] = "invalid_inputs_or_budget"
         return result
     try:
@@ -804,7 +811,8 @@ def _recover_with_call_effects(payload, function_id, int_bits, call_protocols, *
                 return result
             pending.extend(node.get("inner", []))
         result["input_sha256"] = {"native_envelope": _hash(payload), "function_id": _hash(function_id),
-                                  "int_bits": _hash(int_bits), "call_protocols": _hash(call_protocols)}
+                                  "int_bits": _hash(int_bits), "call_protocols": _hash(call_protocols),
+                                  "builtin_call_policy": _hash(result["builtin_call_policy"])}
 
         def check_call(node):
             identifier = node.get("id")
@@ -818,7 +826,8 @@ def _recover_with_call_effects(payload, function_id, int_bits, call_protocols, *
                         payload["ast"], identifier, protocol, max_ast_nodes=budget)
                 else:
                     reports[identifier] = check_call_no_memory_write(
-                        payload, identifier, protocol, max_ast_nodes=budget)
+                        payload, identifier, protocol, max_ast_nodes=budget,
+                        allow_unary_float=allow_unary_float, allow_using_shadows=allow_using_shadows)
             return reports[identifier]["status"] == "checked"
 
         recovery = _recover(payload["ast"], function_id, int_bits, call_callback=check_call)

@@ -2,6 +2,19 @@
 
 更新日期：2026-09-30。
 
+## 一元 native 调用已接入条件效果协议
+
+现有builtin callsite入口增加显式一元/using模式：fresh组合外层实参、参数链
+和精确leaf协议。零参旧路与默认拒绝范围保留，模式/协议绑定hash。
+column_loops显式call-effects入口可传播选项，真实Clang小循环正例在前提下
+recovered，实参或induction写入负例unknown；不是完整生产循环验收。
+真实HIP四处exp与一处log在未验证leaf假设下均条件checked，报告/实现哈希
+稳定，见[敏感性重放](../experiments/hip-native-effect-evidence-20260930.md)。
+没有认证库效果、浮点值、机器码或GPU；结构结果与条件效果结果分别保留。
+1258项CPU测试通过（105.238秒，无跳过），补充定向28项在SDK23及AOCC17
+匹配插件上通过，demo/diff通过。GPT-5.6 Sol复核无阻断。下一步接入真实
+循环work检查并保留全部未解除前提，不以本轮假设替代设备库语义证据。
+
 ## native 外层调用已连接实参求值
 
 新增精确outer call组合入口，fresh检查callee、受限实参求值及native参数链，
