@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## Host 初始化到同次 getter 查询字段
+
+`field_snapshot.check_query_initializer`连接唯一automatic plain int初始声明、
+直接getter调用及fresh输出关系。支持唯一普通块/if词法链，不证明分支可达；
+模板共享callee叶仅在全部语义引用字段一致时接受，其余关键身份仍唯一。
+原HIP实例化变量最终02条件checked，初值来自本次getter内query字段；
+首次01因顶层限制unknown保留。未建立后续保持、数值域、纯度或实际链接。
+1346项CPU回归102.342秒无跳过；Clang17/23各6项、demo/diff通过，Sol复核
+无阻断，无GPU/程序执行。见[实录](../experiments/hip-query-initializer-20260930.md)。
+
 ## 外部 API 后置协议到 getter 返回值
 
 `field_snapshot.check_query_output` fresh组合对象/地址对应与query枚举相等，

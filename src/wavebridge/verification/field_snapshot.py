@@ -271,3 +271,104 @@ def check_query_output(payload, function_id, conversion_contract, output_contrac
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
         result["reason"] = str(error)
     return result
+
+
+def check_query_initializer(payload, initializer_id, conversion_contract, output_contract, *, max_ast_nodes=1_000_000):
+    """Bind one automatic int initialization to this getter invocation's field.
+
+    The conclusion ends at initialization. No purity, later value preservation,
+    numeric interval, or relation between distinct getter invocations is inferred.
+    """
+    from wavebridge.verification.using_shadow_identity import UsingShadowIndex, IDENTITY_POLICY
+    from wavebridge.verification.launch_binding import _direct_callee
+
+    result = {"schema_version": "query-output-initializer/v1", "status": "unknown", "reason": None,
+              "scope": "automatic_int_initial_value_equals_this_getter_invocation_query_poststate_under_contracts",
+              "getter_output_check": None, "conditional_initial_value_relation": False,
+              "history_preserved_to_use": False, "runtime_implementation_linkage_verified": False,
+              "initializer_reached_or_completed": False, "getter_purity_verified": False,
+              "runtime_return_interval": None, "source_program_checked": False, "deployable": False,
+              "assumptions": [],
+              "limitations": ["only the completed initialization, not any subsequent use or minimum update",
+                              "distinct calls may return different values and may have side effects"]}
+    try:
+        if (not isinstance(payload, dict) or not isinstance(initializer_id, str) or not initializer_id or
+                type(max_ast_nodes) is not int or not 1 <= max_ast_nodes <= 10_000_000):
+            raise ValueError("invalid_input_or_budget")
+        root = payload.get("ast")
+        if not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl":
+            raise ValueError("translation_unit_required")
+        index = UsingShadowIndex(root, max_ast_nodes)
+        variable = index.unique(initializer_id)
+        locations, pending = {}, [(root, None, None)]
+        while pending:
+            node, parent, owner = pending.pop()
+            locations[id(node)] = (parent, owner)
+            if node.get("kind") in {"FunctionDecl", "CXXMethodDecl", "CXXConstructorDecl",
+                                    "CXXDestructorDecl", "LambdaExpr"}:
+                owner = node
+            pending.extend((n, node, owner) for n in node.get("inner", []))
+        statement, owner = locations[id(variable)]
+        block = locations[id(statement)][0] if statement else None
+        if (variable.get("kind") != "VarDecl" or variable.get("type") != {"qualType": "int"} or
+                variable.get("init") != "c" or variable.get("storageClass") not in (None, "auto", "register") or
+                any(variable.get(k) is not None for k in ("tls", "tlsKind", "thread_local", "threadLocal")) or
+                len(variable.get("inner", [])) != 1 or not statement or statement.get("kind") != "DeclStmt" or
+                statement.get("inner") != [variable] or
+                not block or block.get("kind") != "CompoundStmt" or not owner or owner.get("kind") != "FunctionDecl"):
+            raise ValueError("direct_automatic_plain_int_initializer_required")
+        lexical_path, context = [], block
+        while context is not owner:
+            if (context is None or context.get("kind") not in {"CompoundStmt", "IfStmt"} or
+                    index.unique(context.get("id")) is not context):
+                raise ValueError("initializer_lexical_context_unsupported")
+            lexical_path.append({"id": context["id"], "kind": context["kind"]})
+            context = locations[id(context)][0]
+        if not lexical_path or lexical_path[-1]["kind"] != "CompoundStmt":
+            raise ValueError("function_body_context_required")
+        for node in (statement, block, owner):
+            if index.unique(node.get("id")) is not node:
+                raise ValueError("initializer_context_not_unique")
+        call = variable["inner"][0]
+        if (call.get("kind") != "CallExpr" or index.unique(call.get("id")) is not call or
+                call.get("type") != {"qualType": "int"} or call.get("valueCategory") != "prvalue" or
+                len(call.get("inner", [])) != 1):
+            raise ValueError("direct_zero_argument_int_call_required")
+        callee = call["inner"][0]
+        if (callee.get("kind") != "ImplicitCastExpr" or callee.get("castKind") != "FunctionToPointerDecay" or
+                index.unique(callee.get("id")) is not callee or
+                callee.get("valueCategory") != "prvalue" or len(callee.get("inner", [])) != 1):
+            raise ValueError("direct_function_decay_required")
+        leaf = callee["inner"][0]
+        getter = index.unique(leaf.get("referencedDecl", {}).get("id"))
+        # A template may reuse the same DeclRefExpr ID in an instantiation.
+        # Select this occurrence via the unique call's child path, not leaf ID.
+        if (leaf.get("valueCategory") != "lvalue" or getter.get("kind") != "FunctionDecl" or
+                getter.get("type") != {"qualType": "int ()"} or not _direct_callee(callee, getter)):
+            raise ValueError("getter_definition_binding_required")
+        occurrences = index.nodes.get(leaf.get("id"), [])
+        keys = ("kind", "type", "valueCategory", "referencedDecl")
+        if not occurrences or any(node.get("inner") or any(node.get(k) != leaf.get(k) for k in keys)
+                                  for node, _ in occurrences):
+            raise ValueError("shared_callee_reference_conflict")
+        output = check_query_output(payload, getter["id"], conversion_contract, output_contract,
+                                    max_ast_nodes=max_ast_nodes)
+        result["getter_output_check"] = output
+        if output["status"] != "checked" or output["function_id"] != getter["id"]:
+            raise ValueError("fresh_getter_output_not_checked")
+        selection = {"initializer_id": initializer_id, "getter_call_id": call["id"],
+                     "getter_definition_id": getter["id"], "owner_id": owner["id"],
+                     "declaration_statement_id": statement["id"]}
+        result.update(status="checked", **selection, conditional_initial_value_relation=True,
+                      initial_value_origin={**output["returned_value_origin"], "getter_call_id": call["id"],
+                                            "invocation": "the_same_dynamic_invocation_used_by_this_initializer"},
+                      assumptions=output["assumptions"] + ["selected initializer completes normally with a live local object",
+                          "selected getter call executes the checked getter definition"],
+                      input_sha256={**output["input_sha256"], "selection": _hash(selection),
+                                    "identity_policy": _hash(IDENTITY_POLICY)},
+                      callee_occurrence_policy="unique_call_direct_child_path_with_consistent_shared_leaf_references",
+                      lexical_context_path=lexical_path, branch_reachability_proved=False,
+                      callee_reference_occurrences=len(occurrences))
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result

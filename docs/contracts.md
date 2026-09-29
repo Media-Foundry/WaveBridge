@@ -64,6 +64,21 @@ counter增量有定义、global存储不同、无异步干扰等前提继续保�
 不提供数值域/设备波宽。API协议、实际输出、生命周期、链接/lowering均未
 验证，source/deploy false，不能仅凭status checked放行。
 
+`field_snapshot.check_query_initializer`进一步连接一个精确局部VarDecl的初始化。
+当前仅支持函数body及可追溯普通块/if嵌套中的单变量声明、automatic非TLS plain int、单一直接
+零参int prvalue调用和精确getter定义；不会剥离cast/comma或把函数指针调用
+当成getter。重新执行getter输出检查，继承其全部外部协议与前提，再显式
+要求本次调用执行选中定义、初始化正常完成。只建立初始化时的值关系。
+词法祖先路径逐项唯一绑定并记录，循环/异常等其他祖先保持unknown；不证明
+分支可达，不把conditional执行解释为所有调用都会初始化该变量。
+
+模板实例可共享最终callee DeclRefExpr ID：选点使用唯一CallExpr的实际child
+路径，不按该leaf ID索引。所有同ID叶出现必须childless且kind/type/category/
+referencedDecl完全一致；callee decay、调用、变量、声明语句、owner和getter
+仍要求唯一。该局部规则不改变其他checker的identity policy。
+输出记录policy和共享出现次数；后续历史、数值域、纯度、动态链接、source/
+deploy仍未证明。两次getter调用的结果不被当作同一个值。
+
 ## 一元 native 调用的条件效果组合
 
 `loop_exit_guards.check_iteration_bounds`显式接收相同一元/using选项，向其

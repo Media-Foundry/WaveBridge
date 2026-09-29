@@ -6,7 +6,7 @@ import unittest
 
 from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
-from wavebridge.verification.field_snapshot import check_query_object, check_query_output, FIELD_READ_PREMISE
+from wavebridge.verification.field_snapshot import check_query_object, check_query_output, check_query_initializer, FIELD_READ_PREMISE
 from wavebridge.verification.normal_return_guard import check_enum_binding
 
 PLUGIN = os.environ.get("WB_ENUM_CAPTURE_PLUGIN") or os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
@@ -22,6 +22,47 @@ class QueryOutputTests(unittest.TestCase):
         if report["status"] != "collected": raise AssertionError(report)
         cls.payload = report["payload"]
         cls.ids = {n["name"]: n["id"] for n in _walk(cls.payload["ast"]) if n.get("kind") == "FunctionDecl"}
+        cls.variables = {n["name"]: n["id"] for n in _walk(cls.payload["ast"]) if n.get("kind") == "VarDecl"}
+
+    def test_initializer_relation_stops_before_later_writes(self):
+        for name, getter in (("local_good", "guarded_snapshot"), ("local_other", "reordered_snapshot"),
+                             ("local_nested", "guarded_snapshot"), ("local_branch", "guarded_snapshot")):
+            result = check_query_initializer(self.payload, self.variables[name], *self.contracts(getter))
+            self.assertEqual(result["status"], "checked", result)
+            self.assertTrue(result["conditional_initial_value_relation"])
+            for key in ("history_preserved_to_use", "getter_purity_verified", "initializer_reached_or_completed", "branch_reachability_proved",
+                        "runtime_implementation_linkage_verified", "source_program_checked", "deployable"):
+                self.assertFalse(result[key])
+            self.assertIsNone(result["runtime_return_interval"])
+        templates = [n["id"] for n in _walk(self.payload["ast"]) if n.get("kind") == "VarDecl" and n.get("name") == "local_template"]
+        self.assertEqual(len(templates), 2)
+        for identifier in templates:
+            result = check_query_initializer(self.payload, identifier, *self.contracts("guarded_snapshot"))
+            self.assertEqual(result["status"], "checked", result)
+            self.assertEqual(result["callee_reference_occurrences"], 2)
+
+    def test_initializer_unsupported_shapes_and_wrong_protocol(self):
+        contracts = self.contracts("guarded_snapshot")
+        for name in ("local_static", "local_tls", "local_const", "local_long", "local_comma",
+                     "local_indirect", "local_multi", "local_try", "local_other"):
+            self.assertEqual(check_query_initializer(self.payload, self.variables[name], *contracts)["status"], "unknown", name)
+        self.assertEqual(check_query_initializer(self.payload, self.variables["local_good"], *contracts,
+                                                 max_ast_nodes=1)["status"], "unknown")
+
+    def test_initializer_shared_reference_conflicts_and_unique_selection(self):
+        contracts = self.contracts("guarded_snapshot")
+        identifier = self.variables["local_template"]
+        before = copy.deepcopy(self.payload)
+        check_query_initializer(self.payload, identifier, *contracts)
+        self.assertEqual(before, self.payload)
+        variable = next(n for n in _walk(before["ast"]) if n.get("id") == identifier)
+        leaf_id = variable["inner"][0]["inner"][0]["inner"][0]["id"]
+        refs = [n for n in _walk(before["ast"]) if n.get("id") == leaf_id]
+        refs[0]["referencedDecl"]["id"] = "wrong"
+        self.assertEqual(check_query_initializer(before, identifier, *contracts)["status"], "unknown")
+        duplicate = copy.deepcopy(self.payload)
+        duplicate["ast"]["inner"].append(copy.deepcopy(next(n for n in _walk(duplicate["ast"]) if n.get("id") == identifier)))
+        self.assertEqual(check_query_initializer(duplicate, identifier, *contracts)["status"], "unknown")
 
     def contracts(self, name):
         objects = check_query_object(self.payload["ast"], self.ids[name])

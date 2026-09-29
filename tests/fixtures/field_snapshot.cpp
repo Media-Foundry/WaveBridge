@@ -84,3 +84,25 @@ int result_discarded() {
     guard((property_query(&p, 0), success));
     observed = p.width; ++calls; return observed;
 }
+
+void initializer_cases() {
+    int local_good = guarded_snapshot();
+    local_good = 7; // This checker must not claim preservation to later uses.
+    int local_other = reordered_snapshot();
+    static int local_static = guarded_snapshot();
+    thread_local int local_tls = guarded_snapshot();
+    const int local_const = guarded_snapshot();
+    long local_long = guarded_snapshot();
+    int local_comma = (guarded_snapshot(), 0);
+    int (*fp)() = guarded_snapshot;
+    int local_indirect = fp();
+    int local_multi = guarded_snapshot(), second = 0;
+    { int local_nested = guarded_snapshot(); }
+    if (observed) { int local_branch = guarded_snapshot(); }
+    try { int local_try = guarded_snapshot(); } catch (...) {}
+}
+template<class T> int template_initializer() {
+    int local_template = guarded_snapshot();
+    return local_template;
+}
+template int template_initializer<int>();
