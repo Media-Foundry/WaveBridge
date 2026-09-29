@@ -176,6 +176,9 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                                 *power_input_domain),
                             "initialized_shift_check": check_initialized_shift(
                                 root, exponent_id, identifier, argument_id, *power_input_domain),
+                            "entry_to_shift_check": check_initialized_shift(
+                                root, exponent_id, identifier, argument_id, *power_input_domain,
+                                entry_function_id=exponent_owner["id"]),
                             "check": check_power(root, ref.get("id"), *power_input_domain)})
         result["status"] = "observed"
     except (ValueError, KeyError, TypeError) as error:

@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## Host 入口到幂次初始化已增加条件组合入口
+
+power_ceiling的entry_function_id模式fresh检查入口参数保持，再凭完整直接
+callee/单参数读取形状连接实参域、helper与紧邻移位，不接受旧成功报告。
+argument_domain_derived_from_entry仅表示外部入口域前提下的条件推导；
+真实入口/调用域、链接、后续值历史和API宽度仍未验证。
+13项定向真实Clang回归、1298项完整CPU测试（101.301秒，无跳过）通过，
+demo/diff通过，Sol复核无阻断。本轮无GPU。
+见[组合实录](../experiments/hip-entry-shift-evidence-20260930.md)。
+
 ## Host 参数入口前缀的有限域检查
 
 新增独立 parameter_entry 检查，对给定整数域逐值检查实际条件分支，不按断言

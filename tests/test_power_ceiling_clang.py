@@ -33,6 +33,38 @@ class PowerCeilingClangTests(unittest.TestCase):
         self.assertFalse(result["argument_domain_verified"])
         self.assertFalse(result["deployable"])
 
+    def test_entry_domain_is_freshly_carried_to_direct_call_and_shift(self):
+        for name in ("adjacent", "guarded_entry"):
+            result = check_initialized_shift(self.root, *self.shift_ids(name), 65, 128,
+                                             entry_function_id=self.ids[name])
+            self.assertEqual(result["status"], "checked", result)
+            self.assertTrue(result["argument_domain_derived_from_entry"])
+            self.assertTrue(result["initializer_prefix_preserves_parameter"])
+            self.assertEqual(result["checks"]["parameter_entry"]["status"], "checked")
+            self.assertEqual(result["result_interval"], {"lower": 128, "upper": 128})
+            self.assertFalse(result["entry_domain_verified"])
+            self.assertFalse(result["argument_domain_verified"])
+            self.assertFalse(result["deployable"])
+
+    def test_entry_or_initializer_mutation_blocks_composition(self):
+        for name in ("modified_entry", "changed_call", "intervening"):
+            result = check_initialized_shift(self.root, *self.shift_ids(name), 65, 128,
+                                             entry_function_id=self.ids[name])
+            self.assertEqual(result["status"], "unknown", (name, result))
+            self.assertFalse(result["argument_domain_derived_from_entry"])
+        # An at-read assumption can still check the old path; it cannot establish
+        # preservation of the different entry value in the new path.
+        self.assertEqual(check_initialized_shift(self.root, *self.shift_ids("modified_entry"),
+                                                 65, 128)["status"], "checked")
+
+    def test_wrong_entry_owner_and_unsupported_domain_fail_closed(self):
+        result = check_initialized_shift(self.root, *self.shift_ids("adjacent"), 65, 128,
+                                         entry_function_id=self.ids["guarded_entry"])
+        self.assertEqual(result["status"], "unknown", result)
+        result = check_initialized_shift(self.root, *self.shift_ids("adjacent"), 1, 8192,
+                                         entry_function_id=self.ids["adjacent"])
+        self.assertEqual(result["status"], "unknown", result)
+
     def test_intervening_write_wrong_shift_and_static_are_unknown(self):
         for name in ("intervening", "changed_base", "shifted_other", "static_result"):
             result = check_initialized_shift(self.root, *self.shift_ids(name), 65, 128)

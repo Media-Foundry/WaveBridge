@@ -3,7 +3,7 @@ from wavebridge.verification.getter_returns import _hash
 
 
 def check_initialized_shift(root, exponent_id, power_id, argument_id, lower, upper,
-                            *, int_bits=32, max_ast_nodes=1_000_000):
+                            *, int_bits=32, max_ast_nodes=1_000_000, entry_function_id=None):
     """Bind adjacent local initializers under an argument-at-read domain premise."""
     from wavebridge.verification.launch_binding import _direct_callee
 
@@ -15,6 +15,11 @@ def check_initialized_shift(root, exponent_id, power_id, argument_id, lower, upp
         "assumptions": ["faithful valid AST, matching integer ABI and ordinary sequential execution",
             "the exact argument declaration holds a value in the supplied interval at the call read",
             "the selected source function is the actual invoked implementation"]}
+    result["argument_domain_derived_from_entry"] = False
+    result["entry_domain_verified"] = False
+    if entry_function_id is not None:
+        result["scope"] = "function_entry_to_first_shift_initialization_under_external_parameter_domain"
+        result["assumptions"][1] = "the exact parameter holds a value in the supplied interval at host function entry"
     try:
         if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
                 type(max_ast_nodes) is not int or not 1 <= max_ast_nodes <= 10_000_000 or
@@ -101,6 +106,19 @@ def check_initialized_shift(root, exponent_id, power_id, argument_id, lower, upp
         if base.get("value") != "1":
             raise ValueError("subsequent_shift_base_not_one")
         read(amount, exponent_id)
+        if entry_function_id is not None:
+            from wavebridge.verification.parameter_entry import check as check_entry
+
+            entry = check_entry(root, entry_function_id, argument_id, first["id"], lower, upper,
+                                int_bits=int_bits, max_ast_nodes=max_ast_nodes)
+            result["checks"]["parameter_entry"] = entry
+            if entry["status"] != "checked" or entry.get("parameter_preserved") is not True:
+                raise ValueError("fresh_parameter_entry_not_checked")
+            # The complete initializer has only a direct function designator and
+            # one plain parameter load. Neither can change the parameter before
+            # its read; no overloaded conversion/default argument is admitted.
+            if entry.get("result_interval") != {"lower": lower, "upper": upper}:
+                raise ValueError("entry_interval_mismatch")
         body = check(root, function["id"], lower, upper, int_bits=int_bits, max_ast_nodes=max_ast_nodes)
         result["checks"]["function_body"] = body
         if body["status"] != "checked":
@@ -114,6 +132,11 @@ def check_initialized_shift(root, exponent_id, power_id, argument_id, lower, upp
                 "expression_id": base["id"], "occurrences": len(index[base["id"]])},
             input_sha256={"root": _hash(root), "selection_and_domain": _hash(
                 [exponent_id, power_id, argument_id, lower, upper, int_bits])})
+        if entry_function_id is not None:
+            result.update(argument_domain_derived_from_entry=True,
+                          initializer_prefix_preserves_parameter=True,
+                          host_entry_function_id=entry_function_id)
+            result["input_sha256"]["entry_selection"] = _hash([entry_function_id, first["id"]])
     except (ValueError, KeyError, TypeError, IndexError, StopIteration, RecursionError) as error:
         result["reason"] = str(error)
     return result

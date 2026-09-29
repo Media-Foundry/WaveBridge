@@ -49,3 +49,22 @@ int static_result(int input) {
     const int power = 1 << exponent;
     return power;
 }
+int guarded_entry(int input) {
+    if (input == 0) return 0;
+    else {
+        int exponent = renamed(input);
+        const int power = 1 << exponent;
+        return power;
+    }
+}
+int modified_entry(int input) {
+    ++input;
+    int exponent = renamed(input);
+    const int power = 1 << exponent;
+    return power;
+}
+int changed_call(int input) {
+    int exponent = renamed(++input);
+    const int power = 1 << exponent;
+    return power;
+}
