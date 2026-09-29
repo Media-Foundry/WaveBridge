@@ -13,7 +13,7 @@ from wavebridge.verification.scalar_forwarding import inspect_builtin_structure
 from wavebridge.verification.scalar_call_effects import inspect_native_call
 from wavebridge.verification.builtin_calls import check_call_no_memory_write
 from wavebridge.analysis.column_loops import recover_with_call_effects
-from wavebridge.verification.loop_exit_guards import check_work_preservation
+from wavebridge.verification.loop_exit_guards import check_work_preservation, check_iteration_bounds
 
 PLUGIN = os.environ.get("WB_UNARY_BUILTIN_PLUGIN", os.environ.get("WB_NATIVE_CAPTURE_PLUGIN"))
 COMPILER = os.environ.get("WB_UNARY_BUILTIN_COMPILER", os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++"))
@@ -371,6 +371,35 @@ class NativeUnaryBuiltinClangTests(unittest.TestCase):
         for child in result["call_effect_checks"].values():
             self.assertTrue(set(child["assumptions"]).issubset(result["assumptions"]))
             self.assertEqual(child["input_sha256"]["call_policy"], result["input_sha256"]["builtin_call_policy"])
+
+    def iteration(self, name="guarded_read", interval=None, **options):
+        function = next(n for n in self.payload["ast"]["inner"] if n.get("name") == name)
+        loop = next(n for n in _walk(function) if n.get("kind") == "ForStmt")
+        limit = next(n for n in function["inner"] if n.get("kind") == "ParmVarDecl" and n.get("name") == "limit")
+        return check_iteration_bounds(self.payload, loop["id"], 32,
+            {self.call(name)["id"]: self.protocol("exp_read")},
+            {limit["id"]: [-2147483648, 2147483647] if interval is None else interval}, **options)
+
+    def test_iteration_bounds_freshly_consume_native_work_and_external_domain(self):
+        self.assertEqual(self.iteration()["status"], "unknown")
+        for interval, expected in ((None, [0, 8]), ([3, 3], [3, 3]), ([-1, 0], [0, 0])):
+            result = self.iteration(interval=interval, allow_unary_float=True, allow_using_shadows=True)
+            self.assertEqual(result["status"], "checked", result)
+            self.assertEqual(result["work_count_bounds"], expected)
+            self.assertTrue(result["iteration_bounds_established"])
+            self.assertFalse(result["full_iteration_domain_established"])
+            self.assertFalse(result["deployable"])
+            self.assertTrue(set(result["work_check"]["assumptions"]).issubset(result["assumptions"]))
+            self.assertEqual(result["input_sha256"]["builtin_call_policy"],
+                             result["work_check"]["input_sha256"]["builtin_call_policy"])
+
+    def test_iteration_domain_does_not_override_writes_or_invalid_integer_bounds(self):
+        for name in ("guarded_write", "guarded_partial", "guarded_argument"):
+            self.assertEqual(self.iteration(name, allow_unary_float=True, allow_using_shadows=True)["status"], "unknown")
+        for interval in ([0, 2147483648], [5, 2], [True, True]):
+            self.assertEqual(self.iteration(interval=interval, allow_unary_float=True,
+                                            allow_using_shadows=True)["status"], "unknown")
+        self.assertEqual(self.iteration(allow_unary_float=1)["status"], "unknown")
 
     def test_writing_and_unsupported_argument_shapes_remain_unknown(self):
         for name in ("increment", "assignment", "nested", "arithmetic", "reference",

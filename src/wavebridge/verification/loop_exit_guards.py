@@ -155,7 +155,7 @@ def inspect_structure(root, loop_id, *, max_ast_nodes=None):
 
 def check_iteration_bounds(payload, loop_id, int_bits, call_protocols, declaration_intervals, *,
                            max_ast_nodes=None, use_static_branches=False, use_nested_loops=False,
-                           use_source_constants=False):
+                           use_source_constants=False, allow_unary_float=False, allow_using_shadows=False):
     """Conservative work-count bounds; check each evaluated prefix/guard operation.
 
     External declaration intervals are assumptions at entry, not inferred launch
@@ -163,7 +163,8 @@ def check_iteration_bounds(payload, loop_id, int_bits, call_protocols, declarati
     """
     work = check_work_preservation(payload, loop_id, int_bits, call_protocols,
                                   max_ast_nodes=max_ast_nodes,
-                                  use_static_branches=use_static_branches, use_nested_loops=use_nested_loops)
+                                  use_static_branches=use_static_branches, use_nested_loops=use_nested_loops,
+                                  allow_unary_float=allow_unary_float, allow_using_shadows=allow_using_shadows)
     result = {"schema_version": "guarded-loop-iteration-bounds/v1", "status": "unknown", "reason": None,
               "scope": "selected_loop_work_count_bounds_and_prefix_guard_integer_safety",
               "work_check": work, "source_program_checked": False, "deployable": False,

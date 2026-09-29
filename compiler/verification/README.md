@@ -2,6 +2,11 @@
 
 ## 条件一元 native 效果
 
+`check_iteration_bounds`提供相同opt-in并fresh调用work检查。外部输入区间
+与已检查的前提共同约束次数上/下界；不把work保持性直接改成完整域证明。
+实验驱动`softmax_unary_work --iteration-bounds`使用fresh guard声明ID和
+完整signed-int32范围，不窄化为猜测的launch域，与`--recurrence`互斥。
+
 guarded-work入口`loop_exit_guards.check_work_preservation`显式提供相同选项，
 包括已启用nested循环内部的call消费。全部受保护依赖与其它work仍需通过，
 子调用假设向上传递；不自动建立完整迭代域或源程序正确性。

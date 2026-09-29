@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 输出循环的条件次数界已接通
+
+迭代界入口显式传递一元/using选项并fresh检查work；没有消费旧成功报告。
+真实HIP外层输出循环在完整signed-int32守卫输入域下，默认unknown，启用后
+条件checked，工作区执行次数保守界[0,2]；不是输入初始化或launch域推断。
+完整迭代域、nested/work-body算术、输出覆盖和FP值仍未建立，见
+[实际重放](../experiments/hip-unary-bounds-evidence-20260930.md)。
+输入/src/driver hash稳定并结束后复核。1268项CPU测试104.284秒通过，无跳过，
+demo/diff通过；Sol只读复核无阻断。未运行GPU，仍不能部署自动适配候选。
+
 ## 普通计算循环的实际拒绝点已解除到条件递推层
 
 未修改生产checker，使用相同8条未验证协议对真实HIP整entry做默认/一元

@@ -1,4 +1,4 @@
-"""Fresh guarded-work or entry-recurrence replay under unverified leaf premises.
+"""Fresh guarded-work, iteration-bounds or recurrence replay under leaf premises.
 
 Prior reports supply only protocol dictionaries, never successful conclusions.
 """
@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from experiments.pytorch_softmax_intake import implementation_hashes, select_entry, sha, walk
-from wavebridge.verification.loop_exit_guards import check_work_preservation
+from wavebridge.verification.loop_exit_guards import check_work_preservation, check_header_connection, check_iteration_bounds
 from wavebridge.analysis.column_loops import recover_with_call_effects
 
 NATIVE_SHA = "46ac52b1c672fadd0e5a66bb3ab380373e0cd69929713d96e7010f375a0cd63e"
@@ -15,8 +15,8 @@ MATH_SHA = "a8af8a027126343d9221d593efdd2a1e709b1ba1588d89ee129fcf21fa9f617b"
 ZERO_SHA = "7952d53d103ccbf4c130fc4c775a67b726a039b4c652eddc4b270dc42939de87"
 
 
-def run(native, math_protocols, zero_protocols, output, *, recurrence=False):
-    if type(recurrence) is not bool:
+def run(native, math_protocols, zero_protocols, output, *, recurrence=False, iteration_bounds=False):
+    if type(recurrence) is not bool or type(iteration_bounds) is not bool or recurrence and iteration_bounds:
         raise ValueError("invalid_recurrence_option")
     paths = [Path(p).resolve() for p in (native, math_protocols, zero_protocols)]
     expected = [NATIVE_SHA, MATH_SHA, ZERO_SHA]
@@ -57,9 +57,23 @@ def run(native, math_protocols, zero_protocols, output, *, recurrence=False):
             continue
         selected = {k: v for k, v in protocols.items() if k in ids}
         item = {"loop_id": node["id"], "range": node.get("range"), "call_protocols": selected}
+        if iteration_bounds:
+            connection = check_header_connection(payload["ast"], node["id"], 32)
+            item["domain_selection_check"] = connection
+            if connection["status"] != "checked":
+                item["domain_selection_reason"] = "fresh_header_connection_not_checked"
+                results.append(item)
+                continue
+            required = set(connection["prefix_check"]["external_read_declaration_ids"])
+            required.discard(connection["induction_declaration_id"])
+            intervals = {identifier: [-2147483648, 2147483647] for identifier in sorted(required)}
+            item["declaration_intervals"] = intervals
+            item["domain_policy"] = "full signed int32 range under external ABI; no launch or initialization inference"
         for label, enabled in (("default", False), ("unary_enabled", True)):
             print(json.dumps({"phase": label, "loop_id": node["id"]}), flush=True)
-            checked = check_work_preservation(payload, node["id"], 32, selected,
+            checker = check_iteration_bounds if iteration_bounds else check_work_preservation
+            extra = {"declaration_intervals": intervals} if iteration_bounds else {}
+            checked = checker(payload, node["id"], 32, selected, **extra,
                 use_static_branches=False, use_nested_loops=True,
                 allow_unary_float=enabled, allow_using_shadows=enabled)
             item[label] = checked
@@ -68,17 +82,20 @@ def run(native, math_protocols, zero_protocols, output, *, recurrence=False):
         results.append(item)
     after = implementation_hashes()
     stable = before == after and driver == sha(__file__) and [sha(p) for p in paths] == expected
-    report = {"schema_version": "softmax-unary-entry-recurrence/v1" if recurrence else "softmax-unary-guarded-work/v1",
-        "mode": "entry_recurrence" if recurrence else "guarded_work",
+    report = {"schema_version": ("softmax-unary-entry-recurrence/v1" if recurrence else
+                                 "softmax-unary-iteration-bounds/v1" if iteration_bounds else "softmax-unary-guarded-work/v1"),
+        "mode": "entry_recurrence" if recurrence else "iteration_bounds" if iteration_bounds else "guarded_work",
         "status": "observed" if stable else "inputs_changed",
         "inputs_unchanged": stable, "input_files": dict(zip(map(str, paths), expected)),
         "implementation_before": before, "implementation_after": after, "driver_sha256": driver,
         "entry_id": entry["id"], "checks": results, "int_bits": 32,
         "recurrence_enabled": recurrence, "recurrence_checks": recurrence_checks,
+        "iteration_bounds_enabled": iteration_bounds,
         "integer_abi_source": "external int32 assumption; not newly probed",
         "selection": ("fresh full selected-entry recurrence using all sealed protocol dictionaries; no guarded-loop preselection"
                       if recurrence else "syntactic loops containing a selected math call and a break; non-exhaustive"),
-        "result_fields": {"checks": "guarded-work-only", "recurrence_checks": "entry-recurrence-only"},
+        "result_fields": {"checks": "iteration-bounds-only" if iteration_bounds else "guarded-work-only",
+                          "recurrence_checks": "entry-recurrence-only"},
         "static_branches_pruned": False, "external_call_effects_verified": False,
         "source_program_checked": False, "deployable": False, "GPU_executed": False,
         "previous_success_reports_consumed": False}
@@ -92,10 +109,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("native", "math-protocols", "zero-protocols", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
-    parser.add_argument("--recurrence", action="store_true",
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--recurrence", action="store_true",
                         help="instead replay full selected-function recurrence with default/opt-in call checks")
+    modes.add_argument("--iteration-bounds", action="store_true",
+                       help="fresh guarded iteration bounds with full external int32 guard-input ranges")
     args = parser.parse_args()
-    result = run(args.native, args.math_protocols, args.zero_protocols, args.output, recurrence=args.recurrence)
+    result = run(args.native, args.math_protocols, args.zero_protocols, args.output,
+                 recurrence=args.recurrence, iteration_bounds=args.iteration_bounds)
     return 0 if result["inputs_unchanged"] else 2
 
 

@@ -10,8 +10,10 @@ from experiments.softmax_unary_work import run
 
 class UnaryWorkDriverTests(unittest.TestCase):
     def test_recurrence_option_is_strict_boolean(self):
-        with self.assertRaisesRegex(ValueError, "invalid_recurrence_option"):
-            run("native", "math", "zero", "output", recurrence=1)
+        for options in ({"recurrence": 1}, {"iteration_bounds": 1},
+                        {"recurrence": True, "iteration_bounds": True}):
+            with self.subTest(options=options), self.assertRaisesRegex(ValueError, "invalid_recurrence_option"):
+                run("native", "math", "zero", "output", **options)
 
     def test_unsealed_input_fails_before_loading_or_output(self):
         with patch("experiments.softmax_unary_work.sha", return_value="wrong"):
@@ -66,4 +68,37 @@ class UnaryWorkDriverTests(unittest.TestCase):
                     {"zero": {"unverified": True}, "math": {"unverified": True}}))
                 self.assertEqual(call.kwargs, {"allow_unary_float": enabled, "allow_using_shadows": enabled})
             self.assertFalse(result["source_program_checked"])
+            self.assertFalse(result["deployable"])
+
+    def test_iteration_driver_uses_full_int32_ranges_and_fresh_bounds(self):
+        from experiments.softmax_unary_work import NATIVE_SHA, MATH_SHA, ZERO_SHA
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [Path(directory) / name for name in ("native", "math", "zero")]
+            entry = {"id": "entry", "inner": [{"kind": "ForStmt", "id": "loop", "inner": [
+                {"kind": "CallExpr", "id": "math"}, {"kind": "BreakStmt"}]}]}
+            payload = {"ast": {"kind": "TranslationUnitDecl", "inner": [entry]}}
+            data = [{"status": "collected", "payload": payload},
+                    {"external_effect_protocols": {"math": {"unverified": True}}}, {"call_protocols": {}}]
+            for path, value in zip(paths, data):
+                path.write_text(json.dumps(value))
+            digests = dict(zip(paths, (NATIVE_SHA, MATH_SHA, ZERO_SHA)))
+            connection = {"status": "checked", "induction_declaration_id": "i",
+                          "prefix_check": {"external_read_declaration_ids": ["limit", "i"]}}
+            with patch("experiments.softmax_unary_work.sha", side_effect=lambda p: digests.get(Path(p), "driver")), \
+                    patch("experiments.softmax_unary_work.implementation_hashes", return_value={}), \
+                    patch("experiments.softmax_unary_work.select_entry", return_value=entry), \
+                    patch("experiments.softmax_unary_work.check_header_connection", return_value=connection), \
+                    patch("experiments.softmax_unary_work.check_iteration_bounds",
+                          return_value={"status": "unknown", "reason": "fresh_unknown"}) as fresh:
+                result = run(*paths, Path(directory) / "output", iteration_bounds=True)
+            self.assertEqual(result["mode"], "iteration_bounds")
+            self.assertEqual(result["schema_version"], "softmax-unary-iteration-bounds/v1")
+            self.assertEqual(result["result_fields"]["checks"], "iteration-bounds-only")
+            self.assertEqual(result["recurrence_checks"], {})
+            self.assertEqual(fresh.call_count, 2)
+            for call, enabled in zip(fresh.call_args_list, (False, True)):
+                self.assertEqual(call.kwargs["declaration_intervals"], {"limit": [-2147483648, 2147483647]})
+                self.assertEqual(call.kwargs["allow_unary_float"], enabled)
+                self.assertEqual(call.kwargs["allow_using_shadows"], enabled)
+            self.assertEqual(result["checks"][0]["unary_enabled"]["status"], "unknown")
             self.assertFalse(result["deployable"])

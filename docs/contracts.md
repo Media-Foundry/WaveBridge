@@ -2,6 +2,13 @@
 
 ## 一元 native 调用的条件效果组合
 
+`loop_exit_guards.check_iteration_bounds`显式接收相同一元/using选项，向其
+fresh work检查传递；只有work通过后才消费外部声明区间并计算次数边界。
+成功hash继承work策略与输入绑定，另外绑定声明区间，完整保留子调用前提。
+次数边界不是完整迭代域：nested/work-body算术、输出覆盖、初始化/launch
+域与FP值仍未建立。完整int32区间仅表示外部ABI范围，不表示变量实际遍历
+该范围，也不是对未初始化值或越界访问的许可。
+
 `loop_exit_guards.check_work_preservation`也可显式接收一元/using选项。
 只在精确call回调中启用；其余work、guard、prefix及启用的nested结构仍逐项
 检查。父报告继承实际消费的子调用前提，输入hash绑定builtin call策略；
