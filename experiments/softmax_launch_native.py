@@ -137,7 +137,7 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                 if power_input_domain is not None and len(initializers) == 1:
                     expression = initializers[0]
                     if expression.get("kind") == "BinaryOperator" and expression.get("opcode") == "<<":
-                        from wavebridge.verification.power_ceiling import check as check_power
+                        from wavebridge.verification.power_ceiling import check as check_power, check_initialized_shift
                         shift_parts = expression.get("inner", [])
                         if len(shift_parts) != 2:
                             raise ValueError("shift_origin_shape_unsupported")
@@ -157,10 +157,20 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                         ref = callee.get("referencedDecl", {})
                         if callee.get("kind") != "DeclRefExpr" or ref.get("kind") != "FunctionDecl":
                             raise ValueError("exponent_callee_not_direct")
+                        argument = parts[1]
+                        if (argument.get("kind") != "ImplicitCastExpr" or
+                                argument.get("castKind") != "LValueToRValue" or len(argument.get("inner", [])) != 1):
+                            raise ValueError("power_argument_not_direct_read")
+                        argument_reference = argument["inner"][0]
+                        if argument_reference.get("kind") != "DeclRefExpr":
+                            raise ValueError("power_argument_not_declaration_read")
+                        argument_id = argument_reference.get("referencedDecl", {}).get("id")
                         result["power_loop_checks"].append({"call_ast": call,
                             "exponent_declaration_id": exponent_id,
                             "domain_policy": "explicit diagnostic assumption; not established at this call",
-                            "call_domain_established": False, "subsequent_shift_checked": False,
+                            "call_domain_established": False,
+                            "initialized_shift_check": check_initialized_shift(
+                                root, exponent_id, identifier, argument_id, *power_input_domain),
                             "check": check_power(root, ref.get("id"), *power_input_domain)})
         result["status"] = "observed"
     except (ValueError, KeyError, TypeError) as error:

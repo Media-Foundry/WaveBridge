@@ -746,6 +746,14 @@ host尺寸来源的受限整数循环：唯一int(int)函数，counter=0，while
 它不按函数名识别，不覆盖移入符号位、调用域/身份绑定、后继移位、host历史或launch。
 不支持域返回unknown，不把保守域限制之外一概判为C++未定义行为。
 
+`power_ceiling.check_initialized_shift`进一步fresh绑定相邻的两个自动局部声明：
+普通int指数由精确直接helper调用初始化，下一条int/const int声明用`1 << 指数`
+初始化。实参必须为精确plain-int声明的直接读取；域由外部给在该读取点，
+不是函数入口或先前赋值的已证域。重新检查helper后可得条件幂区间及指数到
+紧邻移位的保持；不证明实参域、链接解析、后续历史或launch。
+模板复用仅允许此处移位底数的无children IntegerLiteral出现多个完全一致
+副本；保留policy/count，不去重原AST、不放宽声明或其它表达式身份。
+
 ## 构造器实现的受限副作用检查
 
 `verification.constructor_effects.check(root, constructor_id, integer_types,

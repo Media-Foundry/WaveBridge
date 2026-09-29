@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## HIP 调用到紧邻移位的条件值关系已接通
+
+power_ceiling新增fresh调用/相邻局部初始化入口，核对精确实参声明、callee、
+普通自动指数声明及紧邻`1 << exponent`，不消费旧helper成功报告。
+真实HIP在参数读取点域[65,128]这一外部前提下，指数[7,7]并保持到移位，
+next_power_of_two初始域[128,128]条件checked。该实参域仍未验证，后续历史、
+设备API宽度和完整host配置未建立。模板重复字面量只按完全一致叶节点处理，
+声明/父shift等身份不放宽；首轮unknown保留。见[实录](../experiments/hip-initialized-shift-evidence-20260930.md)。
+1290项CPU测试98.563秒通过、无跳过，定向16项、demo/diff通过；Sol复核无阻断。
+
 ## 输入相关幂次循环已有独立条件检查
 
 新增power_ceiling严格识别三语句整数循环及精确参数/计数器关系，不按helper

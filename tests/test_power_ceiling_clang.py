@@ -4,7 +4,7 @@ import shutil
 import unittest
 
 from wavebridge.frontend.clang_ast import collect, _walk
-from wavebridge.verification.power_ceiling import check
+from wavebridge.verification.power_ceiling import check, check_initialized_shift
 
 
 @unittest.skipUnless(shutil.which("clang++"), "requires real clang++")
@@ -17,6 +17,51 @@ class PowerCeilingClangTests(unittest.TestCase):
             raise AssertionError(report)
         cls.root = report["ast_roots"][0]
         cls.ids = {n["name"]: n["id"] for n in _walk(cls.root) if n.get("kind") == "FunctionDecl"}
+
+    def shift_ids(self, name):
+        function = next(n for n in _walk(self.root) if n.get("id") == self.ids[name])
+        declarations = {n.get("name"): n["id"] for n in _walk(function)
+                        if n.get("kind") in {"VarDecl", "ParmVarDecl"}}
+        return declarations["exponent"], declarations["power"], declarations["input"]
+
+    def test_adjacent_initializers_bind_call_and_shift(self):
+        result = check_initialized_shift(self.root, *self.shift_ids("adjacent"), 65, 128)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["result_interval"], {"lower": 128, "upper": 128})
+        self.assertTrue(result["exponent_preserved_to_shift"])
+        self.assertTrue(result["subsequent_shift_checked"])
+        self.assertFalse(result["argument_domain_verified"])
+        self.assertFalse(result["deployable"])
+
+    def test_intervening_write_wrong_shift_and_static_are_unknown(self):
+        for name in ("intervening", "changed_base", "shifted_other", "static_result"):
+            result = check_initialized_shift(self.root, *self.shift_ids(name), 65, 128)
+            self.assertEqual(result["status"], "unknown", (name, result))
+
+    def test_shift_wrong_argument_and_missing_domain(self):
+        exponent, power, argument = self.shift_ids("adjacent")
+        other = self.shift_ids("changed_base")[2]
+        self.assertEqual(check_initialized_shift(self.root, exponent, power, other, 65, 128)["status"], "unknown")
+        self.assertEqual(check_initialized_shift(self.root, exponent, power, argument, 0, 128)["status"], "unknown")
+
+    def test_shared_literal_occurrence_is_not_global_identity_relaxation(self):
+        selected = self.shift_ids("adjacent")
+        for conflict in (False, True):
+            root = copy.deepcopy(self.root)
+            power = next(n for n in _walk(root) if n.get("id") == selected[1])
+            literal = next(n for n in _walk(power) if n.get("kind") == "IntegerLiteral")
+            duplicate = copy.deepcopy(literal)
+            if conflict:
+                duplicate["value"] = "2"
+            root["inner"].append(duplicate)
+            result = check_initialized_shift(root, *selected, 65, 128)
+            self.assertEqual(result["status"], "unknown" if conflict else "checked", result)
+            if not conflict:
+                self.assertEqual(result["base_literal_identity"]["occurrences"], 2)
+        root = copy.deepcopy(self.root)
+        declaration = next(n for n in _walk(root) if n.get("id") == selected[0])
+        root["inner"].append(copy.deepcopy(declaration))
+        self.assertEqual(check_initialized_shift(root, *selected, 65, 128)["status"], "unknown")
 
     def test_renamed_and_postfix_real_sources(self):
         for name in ("renamed", "postfix"):

@@ -23,3 +23,29 @@ int persistent(int x) {
     while ((1 << i) < x) ++i;
     return i;
 }
+int adjacent(int input) {
+    int exponent = renamed(input);
+    const int power = 1 << exponent;
+    return power;
+}
+int intervening(int input) {
+    int exponent = renamed(input);
+    ++exponent;
+    const int power = 1 << exponent;
+    return power;
+}
+int changed_base(int input) {
+    int exponent = renamed(input);
+    const int power = 2 << exponent;
+    return power;
+}
+int shifted_other(int input) {
+    int exponent = renamed(input);
+    const int power = 1 << input;
+    return power;
+}
+int static_result(int input) {
+    static int exponent = renamed(input);
+    const int power = 1 << exponent;
+    return power;
+}
