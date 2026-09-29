@@ -1,6 +1,8 @@
 """Check an integer field snapshot/counter/return suffix, not device API semantics."""
 from wavebridge.verification.getter_returns import _hash
 
+FIELD_READ_PREMISE = "selected field is valid to read"
+
 
 def check(root, function_id, *, max_ast_nodes=1_000_000):
     result = {"schema_version": "field-snapshot-return/v1", "status": "unknown", "reason": None,
@@ -8,9 +10,11 @@ def check(root, function_id, *, max_ast_nodes=1_000_000):
               "prefix_effects_checked": False, "field_value_initialized": False,
               "field_numeric_domain": None, "API_success_verified": False,
               "function_reachability_proved": False, "source_program_checked": False, "deployable": False,
+              "obligations": {"field_read_validity": FIELD_READ_PREMISE,
+                              "counter_increment_defined": "counter increment has defined behavior"},
               "assumptions": ["faithful valid C++ AST and ordinary sequential execution",
                   "execution reaches the selected suffix and returns normally",
-                  "selected field is valid to read; counter increment has defined behavior",
+                  FIELD_READ_PREMISE, "counter increment has defined behavior",
                   "distinct selected global declarations denote distinct storage",
                   "no asynchronous interference, nonlocal jumps or lifetime replacement"],
               "limitations": ["not a proof of API success, initialized properties, device selection or field range",
@@ -186,6 +190,84 @@ def check_query_object(root, function_id, *, max_ast_nodes=1_000_000):
                       input_sha256={"root": snapshot["input_sha256"]["root"],
                                     "selection": _hash(selection), "identity_policy": _hash(IDENTITY_POLICY)},
                       identity_policy=IDENTITY_POLICY, identity_observations=index.observations)
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
+def check_query_output(payload, function_id, conversion_contract, output_contract, *, max_ast_nodes=1_000_000):
+    """Conditional output-to-getter relation, not a verified API implementation."""
+    from wavebridge.verification.normal_return_guard import check_call_enum_equality
+
+    result = {"schema_version": "query-output-snapshot/v1", "status": "unknown", "reason": None,
+              "object_check": None, "query_equality_check": None,
+              "scope": "getter_return_equals_selected_query_poststate_field_under_external_contracts",
+              "conditional_output_to_return_relation": False,
+              "API_output_contract_verified": False, "query_output_effects_verified": False,
+              "actual_lowering_verified": False, "dynamic_lifetime_verified": False,
+              "runtime_linkage_verified": False, "external_API_protocol_assumed": False,
+              "function_reachability_proved": False, "call_normal_return_proved": False,
+              "field_numeric_domain": None, "source_program_checked": False, "deployable": False,
+              "assumptions": [], "discharged_child_assumptions": [],
+              "limitations": ["output and conversion protocols are external assumptions, not implementation proofs",
+                              "no device identity, wave width, numeric domain or whole-program guarantee"]}
+    try:
+        if not isinstance(payload, dict):
+            raise ValueError("native_payload_required")
+        objects = check_query_object(payload.get("ast"), function_id, max_ast_nodes=max_ast_nodes)
+        result["object_check"] = objects
+        if objects["status"] != "checked":
+            raise ValueError("fresh_query_object_not_checked")
+        equality = check_call_enum_equality(payload, objects["wrapper_call_id"], conversion_contract,
+                                            max_ast_nodes=max_ast_nodes)
+        result["query_equality_check"] = equality
+        if equality["status"] != "checked":
+            raise ValueError("fresh_query_equality_not_checked")
+        if (equality["call_check"]["input_sha256"]["root"] != objects["input_sha256"]["root"] or
+                any(equality[key] != objects[key] for key in ("query_call_id", "query_declaration_id"))):
+            raise ValueError("query_output_identity_mismatch")
+        original_call = objects["query_result_check"]
+        current_call = equality["call_check"]
+        if any(original_call[key] != current_call[key] for key in
+               ("call_id", "wrapper_id", "parameter_id", "constant_id", "converted_operand_ids", "query_arguments")):
+            raise ValueError("fresh_query_argument_or_guard_mismatch")
+        selection = {key: objects[key] for key in
+                     ("function_id", "wrapper_call_id", "query_call_id", "query_declaration_id",
+                      "query_parameter_id", "argument_position", "argument_expression_id",
+                      "object_declaration_id", "field_declaration_id", "field_read_id")}
+        required = {"schema_version": "query-field-output-contract/v1", **selection,
+                    "payload_sha256": equality["input_sha256"]["payload"],
+                    "status_constant_id": equality["constant_id"],
+                    "arguments": [{key: arg[key] for key in ("position", "parameter_id", "expression_id")}
+                                  for arg in current_call["query_arguments"]],
+                    "effect": "on_equal_status_selected_field_holds_API_initialized_determinate_plain_int_in_completed_query_poststate",
+                    "validity": "all_argument_evaluations_and_API_preconditions_hold_including_aliasing_layout_alignment_and_live_readable_writable_object_field",
+                    "preservation": "query_poststate_field_and_lifetime_remain_unchanged_through_selected_read_including_callbacks_and_retained_aliases",
+                    "linkage": "selected_query_declaration_invokes_implementation_obeying_this_contract"}
+        if (not isinstance(output_contract, dict) or
+                type(output_contract.get("argument_position")) is not int or
+                not isinstance(output_contract.get("arguments"), list) or
+                any(not isinstance(arg, dict) or type(arg.get("position")) is not int
+                    for arg in output_contract["arguments"]) or output_contract != required):
+            raise ValueError("exact_external_output_contract_required")
+        premise = objects["snapshot_check"]["obligations"].get("field_read_validity")
+        if premise != FIELD_READ_PREMISE or premise not in objects["assumptions"]:
+            raise ValueError("snapshot_read_premise_not_identified")
+        assumptions = [a for a in objects["assumptions"] if a != premise]
+        assumptions += equality["assumptions"] + [required[k] for k in ("effect", "validity", "preservation", "linkage")]
+        result.update(status="checked", **selection, conditional_output_to_return_relation=True,
+                      external_API_protocol_assumed=True,
+                      control_flow_bridge="ordinary_sequential_execution_reaching_direct_suffix_follows_normal_completion_of_adjacent_wrapper",
+                      external_output_contract=dict(output_contract),
+                      returned_value_origin={"query_call_id": objects["query_call_id"],
+                                             "object_declaration_id": objects["object_declaration_id"],
+                                             "field_declaration_id": objects["field_declaration_id"],
+                                             "time": "selected_query_normal_return"},
+                      assumptions=list(dict.fromkeys(assumptions)),
+                      discharged_child_assumptions=[{"obligation_id": "field_read_validity", "premise": premise,
+                          "by": "conditionally_supplied_by_external_API_poststate_lifetime_and_preservation_protocol"}],
+                      input_sha256={**equality["input_sha256"], "selection": _hash(selection),
+                                    "output_contract": _hash(output_contract)})
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
         result["reason"] = str(error)
     return result

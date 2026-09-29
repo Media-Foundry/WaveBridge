@@ -43,6 +43,27 @@ enum值相等。字段`conditional_enum_equality_under_external_lowering_assumpt
 仍为条件性结论；actual_lowering/contract/API/output/linkage/source/deploy
 均未验证，正常返回也未被证明。常量的名字不用于决定API语义。
 
+## 查询后置状态到字段快照
+
+`field_snapshot.check_query_output`在同payload中fresh组合地址/字段对象对应与
+query枚举相等。核对root、call/decl、wrapper/parameter/constant/cast和完整
+实参表后，才消费`query-field-output-contract/v1`。协议精确绑定payload、
+getter/query/wrapper、输出位置/address/formal/object/field/read、status常量
+及完整有序实参身份；缺项、多项和错误绑定均unknown。
+
+输出协议是外部假设：返回指定状态时，完成调用后的字段含API初始化的确定
+plain int；所有实参求值、alias/layout/alignment、对象有效性和API前提成立；
+字段及生命周期保持至指定读取（含callbacks/retained aliases）；链接实现遵守
+该协议。“曾经写过”不足以替代这个后置状态，也不按函数或常量名推断语义。
+
+在保留的到达suffix/正常执行前提下，紧邻顶层wrapper语句已经正常完成。
+父报告将稳定义务ID `field_read_validity`标记为由外部API协议条件性供应，
+不在父假设中循环要求同一字段已经可读；child仍保留原始义务。
+counter增量有定义、global存储不同、无异步干扰等前提继续保留。
+`conditional_output_to_return_relation`只是getter返回该次query后置字段值；
+不提供数值域/设备波宽。API协议、实际输出、生命周期、链接/lowering均未
+验证，source/deploy false，不能仅凭status checked放行。
+
 ## 一元 native 调用的条件效果组合
 
 `loop_exit_guards.check_iteration_bounds`显式接收相同一元/using选项，向其

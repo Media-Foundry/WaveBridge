@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## 外部 API 后置协议到 getter 返回值
+
+`field_snapshot.check_query_output` fresh组合对象/地址对应与query枚举相等，
+消费精确绑定的完成调用后置状态、全部实参有效性、生命周期/保持及链接
+外部协议。原HIP getter重放条件checked，只得到该次query字段值→getter
+返回的符号关系，不给32/64或其他数值域。field-read义务按稳定ID条件性
+供应，counter等其余前提保留；API输出/协议/实际lowering未验证，deploy false。
+1343项CPU回归102.292秒通过、无跳过；Clang17/23各3项专项、demo/diff通过，
+Sol复核无阻断，无新GPU/程序执行。见
+[实录](../experiments/hip-query-output-20260930.md)。
+
 ## 同一次查询返回值的条件枚举相等
 
 `normal_return_guard.check_call_enum_equality` fresh组合query→wrapper参数保持
