@@ -112,3 +112,80 @@ def check(root, function_id, *, max_ast_nodes=1_000_000):
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
         result["reason"] = str(error)
     return result
+
+
+def check_query_object(root, function_id, *, max_ast_nodes=1_000_000):
+    """Bind an adjacent guarded query's address argument to the snapshot object.
+
+    This proves an address/field-base correspondence in the supported syntax,
+    not that the query treats the pointer as an output or writes that field.
+    """
+    from wavebridge.verification.normal_return_guard import check_call
+    from wavebridge.verification.using_shadow_identity import UsingShadowIndex, IDENTITY_POLICY
+
+    result = {"schema_version": "query-snapshot-object/v1", "status": "unknown", "reason": None,
+              "scope": "adjacent_guarded_query_address_argument_and_snapshot_field_base_share_declaration",
+              "snapshot_check": None, "query_result_check": None,
+              "query_argument_direction": "unverified", "query_output_effects_verified": False,
+              "field_value_initialized": False, "field_numeric_domain": None,
+              "API_success_verified": False, "call_normal_return_proved": False,
+              "dynamic_lifetime_verified": False, "source_program_checked": False, "deployable": False,
+              "assumptions": [],
+              "limitations": ["address correspondence does not establish an output-pointer API contract",
+                              "no proof that query initializes or writes the selected field",
+                              "not a whole-function reachability or lifetime proof"]}
+    try:
+        snapshot = check(root, function_id, max_ast_nodes=max_ast_nodes)
+        result["snapshot_check"] = snapshot
+        if snapshot["status"] != "checked":
+            raise ValueError("snapshot_relation_not_established")
+        # The snapshot checker establishes the final three top-level statements.
+        # Only the immediately preceding statement can be the selected guard.
+        prefixes = snapshot["unchecked_prefix_statement_ids"]
+        if not prefixes:
+            raise ValueError("adjacent_query_statement_missing")
+        query = check_call(root, prefixes[-1], max_ast_nodes=max_ast_nodes)
+        result["query_result_check"] = query
+        if query["status"] != "checked":
+            raise ValueError("adjacent_guarded_query_not_established")
+        if snapshot["input_sha256"]["root"] != query["input_sha256"]["root"]:
+            raise ValueError("fresh_root_binding_mismatch")
+        index = UsingShadowIndex(root, max_ast_nodes)
+        obj = index.unique(snapshot["object_declaration_id"])
+        candidates = []
+        for argument in query["query_arguments"]:
+            address = index.unique(argument["expression_id"])
+            if (address.get("kind") != "UnaryOperator" or address.get("opcode") != "&" or
+                    address.get("valueCategory") != "prvalue" or len(address.get("inner", [])) != 1):
+                continue
+            ref = address["inner"][0]
+            if (ref.get("kind") != "DeclRefExpr" or ref.get("inner") or
+                    ref.get("valueCategory") != "lvalue" or index.unique(ref.get("id")) is not ref):
+                continue
+            binding = ref.get("referencedDecl", {})
+            if (binding.get("kind") != "VarDecl" or binding.get("id") != obj["id"] or
+                    binding.get("type") != obj.get("type") or ref.get("type") != obj.get("type")):
+                continue
+            # Builtin '&' of this exact object, with no argument conversion.
+            if address.get("type") != {"qualType": obj["type"]["qualType"] + " *"}:
+                raise ValueError("address_pointer_type_unsupported")
+            candidates.append(argument)
+        if len(candidates) != 1:
+            raise ValueError("unique_direct_object_address_argument_required")
+        argument = candidates[0]
+        selection = {"function_id": function_id, "wrapper_call_id": query["call_id"],
+                     "query_call_id": query["query_call_id"], "argument_position": argument["position"],
+                     "object_declaration_id": obj["id"], "field_declaration_id": snapshot["field_declaration_id"]}
+        result.update(status="checked", **selection, argument_expression_id=argument["expression_id"],
+                      query_parameter_id=argument["parameter_id"],
+                      query_declaration_id=query["query_declaration_id"],
+                      snapshot_assignment_id=snapshot["snapshot_assignment_id"],
+                      field_read_id=snapshot["field_read_id"],
+                      same_object_declaration=True, adjacent_top_level_statements=True,
+                      assumptions=list(dict.fromkeys(snapshot["assumptions"] + query["assumptions"])),
+                      input_sha256={"root": snapshot["input_sha256"]["root"],
+                                    "selection": _hash(selection), "identity_policy": _hash(IDENTITY_POLICY)},
+                      identity_policy=IDENTITY_POLICY, identity_observations=index.observations)
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result

@@ -2,6 +2,18 @@
 
 更新日期：2026-09-30。
 
+## 查询地址实参与字段快照对象的对应
+
+field_snapshot新增check_query_object：fresh检查快照后缀及紧邻的query/guard，
+再绑定唯一builtin &object实参与字段基对象的同一声明。参数位置自动记录，
+不假定第零项或输出方向；不同对象、别名、非邻接及多候选保持unknown。
+输出效果、字段初始化/数值域、动态生命周期与API成功仍未证明。
+6项真实Clang定向测试通过；完整1321项CPU回归100.449秒，无跳过，demo/diff
+通过，Sol只读复核无阻断。无GPU执行，见
+[实录](../experiments/hip-query-object-evidence-20260930.md)。
+真实HIP组合父级checked：属性查询第零个实参直接取地址的对象，与后续字段
+读取基对象一致；输入/实现哈希未变。方向、写入效果及数值保证仍未建立。
+
 ## 查询返回值到包装形参的条件组合
 
 normal_return_guard新增check_call：从原始AST绑定外层包装调用、直接内层

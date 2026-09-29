@@ -132,9 +132,10 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                     try:
                         item["call_observation"] = observe_call(root, call["id"],
                             callee.get("referencedDecl", {}).get("id"), identifier)
-                        from wavebridge.verification.field_snapshot import check as check_field_snapshot
-                        item["field_snapshot_check"] = check_field_snapshot(
+                        from wavebridge.verification.field_snapshot import check_query_object
+                        item["query_snapshot_object_check"] = check_query_object(
                             root, callee.get("referencedDecl", {}).get("id"))
+                        item["field_snapshot_check"] = item["query_snapshot_object_check"]["snapshot_check"]
                         snapshot = item["field_snapshot_check"]
                         item["prefix_normal_return_guards"] = []
                         if snapshot["status"] == "checked":
