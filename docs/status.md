@@ -2,6 +2,18 @@
 
 更新日期：2026-09-30。
 
+## API 状态类型的独立 host ABI 观测
+
+新增compile-only HIP API探针，无程序/GPU执行。真实SDK Clang观测int与
+hipError_t均32位，后者底层为unsigned int，hipSuccess转int为0，hipErrorTbd
+转int为1055；最后一项不是runtime值域。报告绑定源码/编译器哈希、124个
+编译后依赖观测和dry-run trace，不证明实际AST进程身份或冻结输入闭包。
+明确不绑定原kernel TU ABI、不证明API成功/输出写入/一般转换规律；checker
+接受能力未改变。首轮bool解析unknown保留，修复及trace门控后最终03 observed。
+见[实录](../experiments/hip-api-abi-evidence-20260930.md)。
+最终1325项CPU回归98.580秒通过、无跳过，定向4项/演示/diff通过；Sol复核
+修复后无阻断。真实证据为独立SDK编译，不是fixture或新GPU结果。
+
 ## 查询地址实参与字段快照对象的对应
 
 field_snapshot新增check_query_object：fresh检查快照后缀及紧邻的query/guard，
