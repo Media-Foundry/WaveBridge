@@ -11,6 +11,15 @@ promotion字段，该字段存在不表示语言允许其隐式转换。
 这些是可信编译器观测，不是独立类型定理、运行库API保证或整核检查；消费方
 必须fresh绑定同AST精确声明和具体转换，不能仅按类型拼写或跨TU ID连接。
 
+`normal_return_guard.check_enum_binding(payload, function_id)`重新检查嵌入AST的
+guard，再由精确参数的typeAliasDeclId穿过直接typedef/alias（至多一层
+ElaboratedType）连接EnumDecl。guard常量必须属于该枚举；native记录唯一，
+常量ID列表与声明直接成员逐项相同。当前仅接受int/unsigned int底层、同宽
+signed int提升观测和非scoped枚举，不扩展任意类型别名或转换支持。
+`checked`仅描述这一声明/观测对应。输出保留fresh guard报告、实际转换ID、
+payload与选点hash；元数据属于可信前端前提，不是独立类型验证。常量列表
+不用于推导runtime域，未反推enum相等，API成功/source/deploy均保持false。
+
 ## 一元 native 调用的条件效果组合
 
 `loop_exit_guards.check_iteration_bounds`显式接收相同一元/using选项，向其

@@ -2,6 +2,15 @@
 
 更新日期：2026-09-30。
 
+## 原 HIP 守卫与枚举观测的精确绑定
+
+`normal_return_guard.check_enum_binding` fresh检查同payload guard，并连接精确
+参数typedef、枚举定义、常量成员、native记录及实际转换节点。原HIP新工件
+重放checked；这是声明/观测对应，不是enum相等、API成功或逆转换证明。
+完整1333项CPU测试99.460秒通过，无跳过；Clang17/23各6项专项通过，
+demo/diff通过，Sol复核无阻断。无新GPU或程序执行，旧driver未升级放行。
+见[实录](../experiments/hip-guard-enum-binding-20260930.md)。
+
 ## 原始 TU 同次原生枚举观测
 
 native插件新增枚举类型/常量观察和target int位宽。未改写原harness、未forceinclude

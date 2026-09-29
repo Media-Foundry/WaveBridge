@@ -124,6 +124,85 @@ def check(root, function_id, *, max_ast_nodes=1_000_000):
     return result
 
 
+def check_enum_binding(payload, function_id, *, max_ast_nodes=1_000_000):
+    """Bind compiler enum observations to a freshly checked guard.
+
+    This is a declaration/observation correspondence, not an inverse conversion
+    theorem. In particular, enumerator values are not a runtime value domain.
+    """
+    result = {"schema_version": "normal-return-enum-binding/v1", "status": "unknown",
+              "reason": None, "guard_check": None,
+              "scope": "guard_parameter_and_constant_share_observed_enum_declaration",
+              "enum_equality_established": False, "API_success_verified": False,
+              "source_program_checked": False, "deployable": False,
+              "assumptions": ["native metadata and embedded AST faithfully originate from the same compiler invocation"],
+              "limitations": ["no runtime value domain or inverse integral conversion proof",
+                              "compiler observations are trusted, not independently proved"]}
+    try:
+        if not isinstance(payload, dict) or payload.get("schema_version") != "clang-native-captures/v1":
+            raise ValueError("native_envelope_required")
+        root = payload.get("ast")
+        guard = check(root, function_id, max_ast_nodes=max_ast_nodes)
+        result["guard_check"] = guard
+        if guard["status"] != "checked":
+            raise ValueError("fresh_guard_not_checked")
+        result["assumptions"].extend(guard["assumptions"])
+        index = UsingShadowIndex(root, max_ast_nodes)
+        parameter = index.unique(guard["parameter_id"])
+        alias = index.unique(parameter["type"].get("typeAliasDeclId"))
+        if alias.get("kind") not in {"TypedefDecl", "TypeAliasDecl"}:
+            raise ValueError("direct_enum_alias_required")
+        types = alias.get("inner", [])
+        # Clang wraps typedef enum declarations in ElaboratedType. Do not
+        # unwrap arbitrary aliases, qualifiers, pointers or references.
+        if len(types) == 1 and types[0].get("kind") == "ElaboratedType":
+            types = types[0].get("inner", [])
+        if len(types) != 1 or types[0].get("kind") != "EnumType":
+            raise ValueError("direct_enum_type_required")
+        enum_ref = types[0].get("decl", {})
+        enum = index.unique(enum_ref.get("id"))
+        if enum_ref.get("kind") != "EnumDecl" or enum.get("kind") != "EnumDecl":
+            raise ValueError("enum_declaration_required")
+        constants = [n for n in enum.get("inner", []) if n.get("kind") == "EnumConstantDecl"]
+        ids = [n.get("id") for n in constants]
+        if guard["constant_id"] not in ids or any(index.unique(n.get("id")) is not n for n in constants):
+            raise ValueError("guard_constant_not_in_parameter_enum")
+        records = payload.get("enum_types")
+        if not isinstance(records, list) or any(not isinstance(r, dict) for r in records):
+            raise ValueError("enum_observations_required")
+        matches = [r for r in records if r.get("enum_declaration_id") == enum["id"]]
+        if len(matches) != 1:
+            raise ValueError("enum_observation_not_unique")
+        record = matches[0]
+        bits = payload.get("ast_int_bits")
+        if (type(bits) is not int or not 1 <= bits <= 1024 or
+                record.get("is_scoped") is not False or type(record.get("is_fixed")) is not bool or
+                record.get("underlying_type") not in {"int", "unsigned int"} or
+                type(record.get("underlying_bits")) is not int or record["underlying_bits"] != bits or
+                record.get("underlying_signed") is not (record["underlying_type"] == "int") or
+                record.get("promotion_type") != "int" or record.get("promotion_signed") is not True or
+                type(record.get("promotion_bits")) is not int or record["promotion_bits"] != bits):
+            raise ValueError("supported_int_promotion_observation_required")
+        values = record.get("enumerators")
+        if (not isinstance(values, list) or any(not isinstance(v, dict) for v in values) or
+                [v.get("declaration_id") for v in values] != ids):
+            raise ValueError("enumerator_identity_list_mismatch")
+        for value in values:
+            spelling = value.get("value_decimal")
+            if (not isinstance(spelling, str) or len(spelling) > 400 or
+                    str(int(spelling)) != spelling):
+                raise ValueError("canonical_decimal_constant_required")
+        selected = values[ids.index(guard["constant_id"])]
+        result.update(status="checked", function_id=function_id, parameter_id=parameter["id"],
+                      alias_id=alias["id"], enum_declaration_id=enum["id"],
+                      constant_id=guard["constant_id"], constant_value_decimal=selected["value_decimal"],
+                      converted_operand_ids=guard["converted_operand_ids"], enum_observation=record,
+                      input_sha256={"payload": _hash(payload), "selection": _hash(function_id)})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def check_call(root, call_id, *, max_ast_nodes=1_000_000):
     """Freshly compose a direct nested query result with its guard definition.
 

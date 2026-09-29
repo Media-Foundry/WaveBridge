@@ -1,9 +1,11 @@
 """Same-invocation compiler enum observations, not runtime range proofs."""
+import copy
 import os
 from pathlib import Path
 import unittest
 from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
+from wavebridge.verification.normal_return_guard import check_enum_binding
 
 PLUGIN = os.environ.get("WB_ENUM_CAPTURE_PLUGIN") or os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_ENUM_CAPTURE_COMPILER") or os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -55,3 +57,54 @@ class NativeEnumTypesTests(unittest.TestCase):
         self.assertFalse(self.payload["source_program_checked"])
         self.assertFalse(self.payload["deployable"])
         self.assertTrue(self.report["inputs_stable"])
+
+
+@unittest.skipUnless(PLUGIN, "requires compiler-matched enum observation plugin")
+class NativeGuardEnumBindingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        report = collect(Path(__file__).parent / "fixtures/normal_return_guard.cpp", COMPILER,
+                         Path(PLUGIN), ["-std=c++17"])
+        if report["status"] != "collected": raise AssertionError(report)
+        cls.payload = report["payload"]
+        cls.function = next(n["id"] for n in _walk(cls.payload["ast"])
+                            if n.get("kind") == "FunctionDecl" and n.get("name") == "good")
+
+    def test_fresh_binding_and_limits(self):
+        before = copy.deepcopy(self.payload)
+        result = check_enum_binding(self.payload, self.function)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["constant_value_decimal"], "0")
+        self.assertEqual(result["guard_check"]["converted_operand_ids"], result["converted_operand_ids"])
+        for key in ("enum_equality_established", "API_success_verified", "source_program_checked", "deployable"):
+            self.assertFalse(result[key])
+        self.assertEqual(before, self.payload)
+
+    def test_missing_duplicate_or_malformed_metadata(self):
+        for mutation in ("missing", "duplicate", "id", "constant", "promotion", "bits", "decimal"):
+            payload = copy.deepcopy(self.payload)
+            record = payload["enum_types"][0]
+            if mutation == "missing": payload.pop("enum_types")
+            elif mutation == "duplicate": payload["enum_types"].append(copy.deepcopy(record))
+            elif mutation == "id": record["enum_declaration_id"] = "wrong"
+            elif mutation == "constant": record["enumerators"][0]["declaration_id"] = "wrong"
+            elif mutation == "promotion": record["promotion_type"] = "unsigned int"
+            elif mutation == "bits": record["promotion_bits"] = True
+            elif mutation == "decimal": record["enumerators"][0]["value_decimal"] = "00"
+            self.assertEqual(check_enum_binding(payload, self.function)["status"], "unknown", mutation)
+
+    def test_source_identity_and_guard_are_rechecked(self):
+        for mutation in ("alias", "comparison", "constant_owner"):
+            payload = copy.deepcopy(self.payload)
+            nodes = list(_walk(payload["ast"]))
+            function = next(n for n in nodes if n.get("id") == self.function)
+            local = list(_walk(function))
+            if mutation == "alias":
+                next(n for n in local if n.get("kind") == "ParmVarDecl")["type"]["typeAliasDeclId"] = "missing"
+            elif mutation == "comparison":
+                next(n for n in local if n.get("kind") == "BinaryOperator")["opcode"] = "=="
+            else:
+                enum = next(n for n in nodes if n.get("kind") == "EnumDecl")
+                enum["inner"] = [n for n in enum["inner"] if n.get("name") != "success"]
+            self.assertEqual(check_enum_binding(payload, self.function)["status"], "unknown", mutation)
+        self.assertEqual(check_enum_binding(self.payload, self.function, max_ast_nodes=1)["status"], "unknown")
