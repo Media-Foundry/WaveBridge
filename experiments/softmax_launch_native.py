@@ -135,6 +135,29 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                         from wavebridge.verification.field_snapshot import check as check_field_snapshot
                         item["field_snapshot_check"] = check_field_snapshot(
                             root, callee.get("referencedDecl", {}).get("id"))
+                        snapshot = item["field_snapshot_check"]
+                        item["prefix_normal_return_guards"] = []
+                        if snapshot["status"] == "checked":
+                            from wavebridge.verification.normal_return_guard import check as check_return_guard
+                            from wavebridge.verification.launch_binding import _direct_callee
+                            for prefix_id in snapshot["unchecked_prefix_statement_ids"]:
+                                prefix, _, _ = unique(prefix_id)
+                                arguments = prefix.get("inner", [])
+                                if prefix.get("kind") != "CallExpr" or len(arguments) != 2:
+                                    continue
+                                leaf = arguments[0]
+                                while leaf.get("kind") in {"ParenExpr", "ImplicitCastExpr"} and len(leaf.get("inner", [])) == 1:
+                                    leaf = leaf["inner"][0]
+                                wrapper_id = leaf.get("referencedDecl", {}).get("id")
+                                wrapper, _, _ = unique(wrapper_id)
+                                if not _direct_callee(arguments[0], wrapper):
+                                    continue
+                                item["prefix_normal_return_guards"].append({
+                                    "call_id": prefix_id, "argument_id": arguments[1].get("id"),
+                                    "argument_ast": arguments[1],
+                                    "wrapper_check": check_return_guard(root, wrapper_id),
+                                    "query_API_semantics_verified": False,
+                                    "call_normal_return_proved": False})
                     except ValueError as error:
                         item["call_observation_reason"] = str(error)
                 if len(initializers) == 1:
