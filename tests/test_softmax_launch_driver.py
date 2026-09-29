@@ -112,6 +112,8 @@ class SoftmaxLaunchDriverTests(unittest.TestCase):
                 driver.run("missing", "unused", profile="hip", **{option: True})
 
     def test_profile_and_hash_mismatch_stop_before_read(self):
+        with self.assertRaisesRegex(ValueError, "power_domain_requires"):
+            driver.run("missing", "unused", power_input_domain=[65, 128])
         with self.assertRaisesRegex(ValueError, "unsupported_input_profile"):
             driver.run("missing", "unused", profile="other")
         with patch.object(driver, "sha", return_value=driver.NATIVE_SHA):

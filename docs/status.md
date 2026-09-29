@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 输入相关幂次循环已有独立条件检查
+
+新增power_ceiling严格识别三语句整数循环及精确参数/计数器关系，不按helper
+名称套模板。正域且不移入符号位时检查最小k使2^k>=input；不支持域unknown。
+真实HIP helper在显式诊断域[65,128]下checked，返回[7,7]、最多7次递增。
+域未在调用点建立，后继移位、API宽度、完整host尺寸和launch仍未证明。
+见[实录](../experiments/hip-power-ceiling-evidence-20260930.md)。下一步绑定host
+实参域和调用身份，再组合后继移位，而不是将当前条件域写入配置报告。
+最终1286项CPU测试96.563秒通过、无跳过，定向12项、demo/diff通过；Sol复核无阻断。
+
 ## HIP minimum 操作数的真实初始化来源已绑定
 
 从同次minimum检查的operand IDs重取唯一同owner声明、保存initializer并fresh

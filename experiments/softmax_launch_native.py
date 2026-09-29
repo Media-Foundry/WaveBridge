@@ -34,14 +34,14 @@ def selected_copy_source(binding, position):
     return reference["id"]
 
 
-def check_host_dimensions(root, binding):
+def check_host_dimensions(root, binding, *, power_input_domain=None):
     """Select sources from the bound object initializer, then independently check."""
     from wavebridge.verification.integer_selection import (
         check_local_minimum_update, check_minimum_to_statement,
         check_minimum_quotient, check_quotient_to_statement)
 
     result = {"status": "unknown", "reason": None, "selection": None, "checks": {},
-              "operand_initializers": [], "source_program_checked": False,
+              "operand_initializers": [], "power_loop_checks": [], "source_program_checked": False,
               "numeric_domains_established": False, "deployable": False}
     try:
         variable = selected_copy_source(binding, 1)
@@ -134,6 +134,34 @@ def check_host_dimensions(root, binding):
                             callee.get("referencedDecl", {}).get("id"), identifier)
                     except ValueError as error:
                         item["call_observation_reason"] = str(error)
+                if power_input_domain is not None and len(initializers) == 1:
+                    expression = initializers[0]
+                    if expression.get("kind") == "BinaryOperator" and expression.get("opcode") == "<<":
+                        from wavebridge.verification.power_ceiling import check as check_power
+                        shift_parts = expression.get("inner", [])
+                        if len(shift_parts) != 2:
+                            raise ValueError("shift_origin_shape_unsupported")
+                        exponent_id = reference(shift_parts[1])
+                        exponent_declaration, _, _ = unique(exponent_id)
+                        expressions = exponent_declaration.get("inner", [])
+                        if len(expressions) != 1 or expressions[0].get("kind") != "CallExpr":
+                            raise ValueError("exponent_initializer_not_call")
+                        call = expressions[0]
+                        parts = call.get("inner", [])
+                        if len(parts) != 2:
+                            raise ValueError("exponent_call_arity_unsupported")
+                        callee = parts[0]
+                        if callee.get("kind") != "ImplicitCastExpr" or callee.get("castKind") != "FunctionToPointerDecay" or len(callee.get("inner", [])) != 1:
+                            raise ValueError("exponent_callee_shape_unsupported")
+                        callee = callee["inner"][0]
+                        ref = callee.get("referencedDecl", {})
+                        if callee.get("kind") != "DeclRefExpr" or ref.get("kind") != "FunctionDecl":
+                            raise ValueError("exponent_callee_not_direct")
+                        result["power_loop_checks"].append({"call_ast": call,
+                            "exponent_declaration_id": exponent_id,
+                            "domain_policy": "explicit diagnostic assumption; not established at this call",
+                            "call_domain_established": False, "subsequent_shift_checked": False,
+                            "check": check_power(root, ref.get("id"), *power_input_domain)})
         result["status"] = "observed"
     except (ValueError, KeyError, TypeError) as error:
         result["reason"] = str(error)
@@ -142,10 +170,12 @@ def check_host_dimensions(root, binding):
 
 def run(native, output, *, threads_object=False, host_minimum_update=False, host_minimum_history=False,
         host_minimum_quotient=False, host_quotient_history=False, constructor_argument_effects=False,
-        constructor_field_forwarding=False, profile="cuda", host_dimensions=False):
+        constructor_field_forwarding=False, profile="cuda", host_dimensions=False, power_input_domain=None):
     native, output = Path(native).resolve(), Path(output).resolve()
     if profile not in {"cuda", "hip"}:
         raise ValueError("unsupported_input_profile")
+    if power_input_domain is not None and (not host_dimensions or len(power_input_domain) != 2):
+        raise ValueError("power_domain_requires_host_dimensions_and_two_bounds")
     if profile == "hip" and any((host_minimum_update, host_minimum_history,
             host_minimum_quotient, host_quotient_history, constructor_argument_effects,
             constructor_field_forwarding)):
@@ -179,7 +209,7 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
                      "configuration_expression_ids": [arg["id"] for arg in site["configuration_arguments"]]}
         checked = check(root, selection)
     object_report = None
-    dimensions_report = (check_host_dimensions(root, checked)
+    dimensions_report = (check_host_dimensions(root, checked, power_input_domain=power_input_domain)
                          if host_dimensions and checked.get("status") == "checked" else None)
     if threads_object and checked.get("status") == "checked":
         from wavebridge.verification.object_use_closure import inspect_structure
@@ -298,6 +328,7 @@ if __name__ == "__main__":
     parser.add_argument("--profile", choices=("cuda", "hip"), default="cuda")
     parser.add_argument("--threads-object", action="store_true")
     parser.add_argument("--host-dimensions", action="store_true")
+    parser.add_argument("--power-input-domain", nargs=2, type=int, metavar=("LOWER", "UPPER"))
     parser.add_argument("--host-minimum-update", action="store_true")
     parser.add_argument("--host-minimum-history", action="store_true")
     parser.add_argument("--host-minimum-quotient", action="store_true")
@@ -310,4 +341,4 @@ if __name__ == "__main__":
         host_minimum_quotient=args.host_minimum_quotient, host_quotient_history=args.host_quotient_history,
         constructor_argument_effects=args.constructor_argument_effects,
         constructor_field_forwarding=args.constructor_field_forwarding, profile=args.profile,
-        host_dimensions=args.host_dimensions)
+        host_dimensions=args.host_dimensions, power_input_domain=args.power_input_domain)

@@ -737,6 +737,15 @@ checked 仅在这些条件下表示复制实参的 lvalue 指向对应的同一�
 复制子报告保留原有 identity=not_established，新增条件结论单独记录，不回写升级。
 原生捕获元数据仍是可信前端的一部分，不宣称独立验证了 Clang API。
 
+## 输入相关幂次循环
+
+另有独立`power_ceiling.check(root, function_id, lower, upper, int_bits=32)`用于
+host尺寸来源的受限整数循环：唯一int(int)函数，counter=0，while条件为
+`(1 << counter) < parameter`，循环仅递增同counter并最终返回它。
+在外部正整数域upper<=2^(int_bits-2)下检查最小满足2^k>=input的k和返回区间。
+它不按函数名识别，不覆盖移入符号位、调用域/身份绑定、后继移位、host历史或launch。
+不支持域返回unknown，不把保守域限制之外一概判为C++未定义行为。
+
 ## 构造器实现的受限副作用检查
 
 `verification.constructor_effects.check(root, constructor_id, integer_types,
