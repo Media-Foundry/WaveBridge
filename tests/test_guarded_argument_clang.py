@@ -25,10 +25,36 @@ class GuardedArgumentTests(unittest.TestCase):
                     any(c.get("referencedDecl", {}).get("id") == callee["id"] for c in _walk(n)))
         return function["id"], variable["id"], guard["id"], call["id"], callee["id"]
 
-    def power_ids(self):
-        function = next(n for n in _walk(self.root) if n.get("kind") == "FunctionDecl" and n.get("name") == "power_dispatch")
+    def power_ids(self, name="power_dispatch"):
+        function = next(n for n in _walk(self.root) if n.get("kind") == "FunctionDecl" and n.get("name") == name)
         variables = {n.get("name"): n["id"] for n in _walk(function) if n.get("kind") == "VarDecl"}
         return variables["exponent"], variables["power"]
+
+    def target(self, name="power_dispatch"):
+        function = next(n for n in _walk(self.root) if n.get("kind") == "FunctionDecl" and n.get("name") == name)
+        return next(n["id"] for n in _walk(function) if n.get("kind") == "ReturnStmt")
+
+    def test_const_history_does_not_assume_opaque_call_purity(self):
+        result = check_guarded_shift(self.root, *self.select("guarded_power", "power_dispatch"), 0,
+                                    *self.power_ids(), target_statement_id=self.target())
+        self.assertEqual(result["status"], "checked", result)
+        self.assertTrue(result["value_preserved_to_target_entry"])
+        history = result["history_check"]
+        self.assertFalse(history["target_statement_checked"])
+        self.assertFalse(history["intervening_effects_checked"])
+        self.assertEqual(history["statement_checks"][0]["status"], "not_evaluated")
+        self.assertEqual(result["result_values"], [128])
+
+    def test_escape_mutable_storage_and_wrong_history_target_fail_closed(self):
+        for caller, callee in (("guarded_escaped_power", "escaped_power_dispatch"),
+                               ("guarded_mutable_power", "mutable_power_dispatch")):
+            result = check_guarded_shift(self.root, *self.select(caller, callee), 0,
+                                        *self.power_ids(callee), target_statement_id=self.target(callee))
+            self.assertEqual(result["status"], "unknown", result)
+            self.assertFalse(result["value_preserved_to_target_entry"])
+        result = check_guarded_shift(self.root, *self.select("guarded_power", "power_dispatch"), 0,
+                                    *self.power_ids(), target_statement_id=self.target("mutable_power_dispatch"))
+        self.assertEqual(result["status"], "unknown", result)
 
     def test_guard_to_power_composition_has_no_external_numeric_domain(self):
         result = check_guarded_shift(self.root, *self.select("guarded_power", "power_dispatch"), 0, *self.power_ids())

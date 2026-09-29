@@ -4,7 +4,7 @@ from wavebridge.verification.getter_returns import _hash
 
 def check_guarded_shift(root, caller_id, local_id, guard_id, call_id, callee_id,
                         argument_position, exponent_id, power_id, *, int_bits=32,
-                        max_ast_nodes=1_000_000):
+                        max_ast_nodes=1_000_000, target_statement_id=None):
     """Derive discrete entry values from source, then freshly check each path.
 
     No numeric input domain or precomputed successful report is accepted.
@@ -59,6 +59,34 @@ def check_guarded_shift(root, caller_id, local_id, guard_id, call_id, callee_id,
                   input_sha256={"root": guard["input_sha256"]["root"], "selection": _hash(
                       [caller_id, local_id, guard_id, call_id, callee_id, argument_position,
                        exponent_id, power_id, int_bits])})
+    if target_statement_id is not None:
+        from wavebridge.verification.integer_selection import _preserve_to_statement
+        # This seed is internal and comes only from the fresh source composition.
+        # The history checker independently rebinds the declaration, parent and
+        # function and audits all references; no supplied value report is used.
+        pending, starts = [root], []
+        while pending:
+            node = pending.pop()
+            if node.get("kind") == "DeclStmt" and any(c.get("id") == power_id for c in node.get("inner", [])):
+                starts.append(node.get("id"))
+            pending.extend(node.get("inner", []))
+        if len(starts) != 1:
+            result.update(status="unknown", reason="power_initialization_statement_not_unique")
+            return result
+        seed = {"status": "checked", "target_declaration_id": power_id, "function_id": callee_id,
+                "state_relation": {"declaration_id": power_id, "value_set": sorted(outputs)},
+                "input_sha256": result["input_sha256"], "assumptions": result["assumptions"]}
+        history = _preserve_to_statement(root, seed, starts[0], target_statement_id, max_ast_nodes,
+                                         initialized_local=True, const_local_no_escape=True)
+        result["history_check"] = history
+        result["target_statement_id"] = target_statement_id
+        result["input_sha256"]["target_statement"] = _hash(target_statement_id)
+        result["scope"] = "source_derived_power_value_at_first_later_statement_entry_for_selected_call"
+        result["value_preserved_to_target_entry"] = history.get("history_preserved_to_use") is True
+        if history["status"] != "checked" or not result["value_preserved_to_target_entry"]:
+            result.update(status="unknown", reason="fresh_const_history_not_checked")
+        else:
+            result["assumptions"] = history["assumptions"]
     return result
 
 

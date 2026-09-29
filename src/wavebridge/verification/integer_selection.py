@@ -280,7 +280,8 @@ def check_minimum_to_statement(root, assignment_id, statement_id, integer_types,
     return _preserve_to_statement(root, update, assignment_id, statement_id, budget)
 
 
-def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *, initialized_local=False):
+def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *, initialized_local=False,
+                           const_local_no_escape=False):
     """Internal composition only: callers must freshly establish the start value."""
     from wavebridge.analysis.column_loops import _check_body, _Unknown as BodyUnknown
 
@@ -301,6 +302,8 @@ def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *,
         result["schema_version"] = "initialized-local-to-statement-history/v1"
         result["scope"] = "initialized_local_value_at_first_entry_to_later_same_block_statement"
     try:
+        if type(const_local_no_escape) is not bool or (const_local_no_escape and not initialized_local):
+            raise _Unknown("const_history_mode_requires_local_initialization")
         if not isinstance(statement_id, str) or not statement_id:
             raise _Unknown("invalid_target_statement_id")
         index, parents, pending, count = {}, {}, [(root, None)], 0
@@ -342,6 +345,20 @@ def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *,
                     _children(assignment) != [unique(protected)] or
                     unique(protected).get("kind") != "VarDecl"):
                 raise _Unknown("history_start_not_checked_single_local_initialization")
+        if const_local_no_escape:
+            declaration = unique(protected)
+            if (declaration.get("type") != {"qualType": "const int"} or
+                    declaration.get("storageClass") not in (None, "auto", "register") or
+                    any(declaration.get(k) is not None for k in ("tls", "tlsKind", "thread_local", "threadLocal"))):
+                raise _Unknown("const_history_requires_plain_automatic_const_int")
+            ancestor = block
+            while ancestor is not None and ancestor.get("kind") not in {"FunctionDecl", "CXXMethodDecl", "LambdaExpr"}:
+                ancestor = parents[id(ancestor)]
+            if ancestor is not function:
+                raise _Unknown("const_history_function_owner_mismatch")
+            result["assumptions"].append("valid C++ execution with the selected const object's lifetime not replaced")
+            result["intervening_effects_checked"] = False
+            result["preservation_basis"] = "automatic_const_int_with_complete_non_escaping_read_inventory"
         update_nodes, pending = set(), [] if initialized_local else [assignment]
         while pending:
             node = pending.pop()
@@ -360,9 +377,19 @@ def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *,
                 current, depth = node, 0
                 parent = parents[id(current)]
                 while parent is not None and (parent.get("kind") == "ParenExpr" or
-                        (parent.get("kind") == "ImplicitCastExpr" and parent.get("castKind") == "NoOp")):
+                        (parent.get("kind") == "ImplicitCastExpr" and parent.get("castKind") == "NoOp") or
+                        (const_local_no_escape and parent.get("kind") == "ConditionalOperator")):
                     depth += 1
-                    if (depth > MAX_EXPRESSION_DEPTH or _children(parent) != [current] or
+                    operands = _children(parent)
+                    if parent.get("kind") == "ConditionalOperator":
+                        wrapper_ok = (len(operands) == 3 and any(n is current for n in operands[1:]) and
+                            operands[0].get("type") == {"qualType": "bool"} and
+                            operands[0].get("valueCategory") == "prvalue" and
+                            all(n.get("valueCategory") == "lvalue" and n.get("type") == parent.get("type")
+                                for n in operands[1:]))
+                    else:
+                        wrapper_ok = operands == [current]
+                    if (depth > MAX_EXPRESSION_DEPTH or not wrapper_ok or
                             parent.get("valueCategory") != "lvalue" or
                             _raw_type(parent) not in {"int", "const int"}):
                         raise _Unknown("history_reference_wrapper_unsupported")
@@ -385,8 +412,12 @@ def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *,
             statement = statements[position]
             item = {"statement_id": statement.get("id"), "block_child_index": position, "status": "unknown"}
             result["statement_checks"].append(item)
-            _check_body(statement, {protected})
-            item["status"] = "checked"
+            if const_local_no_escape:
+                item["status"] = "not_evaluated"
+                item["reason"] = "const_non_escaping_storage_preservation_does_not_require_global_call_purity"
+            else:
+                _check_body(statement, {protected})
+                item["status"] = "checked"
         result.update(status="checked", history_preserved_to_use=True,
                       target_declaration_id=protected, state_relation=update["state_relation"],
                       block_id=block.get("id"), assignment_child_index=begin, target_child_index=end,

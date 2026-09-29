@@ -198,7 +198,7 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                                                         guard["id"], candidate["id"], exponent_owner["id"], position),
                                                     "guard_to_shift_check": check_guarded_shift(root, caller["id"], local_id,
                                                         guard["id"], candidate["id"], exponent_owner["id"], position,
-                                                        exponent_id, identifier)})
+                                                        exponent_id, identifier, target_statement_id=assignment)})
                         result["power_loop_checks"].append({"call_ast": call,
                             "caller_guard_checks": caller_domains,
                             "exponent_declaration_id": exponent_id,

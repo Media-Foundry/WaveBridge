@@ -2,6 +2,21 @@
 
 更新日期：2026-09-30。
 
+## 源码派生 power 的 const 历史组合
+
+既有私有history检查新增显式const-local/no-escape模式；默认minimum/quotient
+路径不变。严格自动const int、同函数/同块顺序与全函数引用闭合之后，仅在
+有效顺序执行/对象存活不替换等前提下建立到目标语句入口的值保持。中间API
+效果未检查，逐句not_evaluated，不假设全局纯度，目标语句求值也未覆盖。
+power组合入口可fresh连接这一history，driver目标绑定minimum assignment。
+7项真实Clang定向回归通过，Sol只读复核无阻断，无GPU。
+见[实录](../experiments/hip-power-history-evidence-20260930.md)。
+首轮完整CPU回归通过，但真实history仍unknown，已定位为minimum条件左值
+读取形态；仅新模式补充最终取值的条件左值路径，保留首轮未通过工件并重验。
+最终完整1309项CPU测试98.331秒通过、无跳过，定向7项、demo/diff通过。
+真实02重放确认{128}保持到minimum assignment首次入口；中间API声明仍
+not_evaluated，目标求值未检查。首轮01的history unknown保留，不计作通过。
+
 ## 源码守卫域可直接驱动幂次初始化组合
 
 power_ceiling新增check_guarded_shift，不接受手填数值域或旧报告。fresh恢复

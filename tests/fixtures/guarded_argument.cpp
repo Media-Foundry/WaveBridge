@@ -56,6 +56,9 @@ int power_helper(int input) {
 int power_dispatch(int input) {
     int exponent = power_helper(input);
     const int power = 1 << exponent;
+    other();
+    int width = 16;
+    width = (power < width) ? power : width;
     return power;
 }
 int guarded_power(int input) {
@@ -68,5 +71,29 @@ int unsafe_guarded_power(int input) {
     const int value = input;
     if (value != 0 && value != 128) return 3;
     power_dispatch(value);
+    return 0;
+}
+int escaped_power_dispatch(int input) {
+    int exponent = power_helper(input);
+    const int power = 1 << exponent;
+    escape(&(other() ? power : input));
+    return power;
+}
+int guarded_escaped_power(int input) {
+    const int value = input;
+    if (value != 65 && value != 128) return 3;
+    escaped_power_dispatch(value);
+    return 0;
+}
+int mutable_power_dispatch(int input) {
+    int exponent = power_helper(input);
+    int power = 1 << exponent;
+    other();
+    return power;
+}
+int guarded_mutable_power(int input) {
+    const int value = input;
+    if (value != 65 && value != 128) return 3;
+    mutable_power_dispatch(value);
     return 0;
 }
