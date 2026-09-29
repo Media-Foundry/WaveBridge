@@ -8,6 +8,7 @@
 #include "clang/Basic/Builtins.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
@@ -58,6 +59,45 @@ public:
   // JSON dumping includes instantiated definitions. Observe those same bodies,
   // rather than leaving their local objects and calls absent from the metadata.
   bool shouldVisitTemplateInstantiations() const { return true; }
+
+  bool VisitEnumDecl(EnumDecl *Declaration) {
+    if (!Declaration || !Declaration->isCompleteDefinition() ||
+        Declaration->isDependentContext() ||
+        Declaration->getIntegerType().isNull() ||
+        !SeenEnumTypes.insert(Declaration).second)
+      return true;
+    QualType Underlying = Declaration->getIntegerType().getCanonicalType();
+    QualType Promotion = Declaration->getPromotionType();
+    llvm::json::Object Item;
+    Item["enum_declaration_id"] = pointerID(Declaration);
+    Item["is_fixed"] = Declaration->isFixed();
+    Item["is_scoped"] = Declaration->isScoped();
+    Item["underlying_type"] = Underlying.getAsString();
+    Item["underlying_bits"] = static_cast<int64_t>(Context.getTypeSize(Underlying));
+    Item["underlying_signed"] = Underlying->isSignedIntegerType();
+    if (!Promotion.isNull()) {
+      Promotion = Promotion.getCanonicalType();
+      Item["promotion_type"] = Promotion.getAsString();
+      Item["promotion_bits"] = static_cast<int64_t>(Context.getTypeSize(Promotion));
+      Item["promotion_signed"] = Promotion->isSignedIntegerType();
+    } else {
+      Item["promotion_type"] = nullptr;
+      Item["promotion_bits"] = nullptr;
+      Item["promotion_signed"] = nullptr;
+    }
+    llvm::json::Array Constants;
+    for (const EnumConstantDecl *Constant : Declaration->enumerators()) {
+      llvm::SmallString<32> Value;
+      Constant->getInitVal().toString(Value, 10);
+      llvm::json::Object Entry;
+      Entry["declaration_id"] = pointerID(Constant);
+      Entry["value_decimal"] = Value.str().str();
+      Constants.push_back(std::move(Entry));
+    }
+    Item["enumerators"] = std::move(Constants);
+    EnumTypes.push_back(std::move(Item));
+    return true;
+  }
 
   bool VisitCXXConstructExpr(CXXConstructExpr *Expression) {
     if (!Expression || !SeenConstructorCalls.insert(Expression).second)
@@ -251,6 +291,7 @@ public:
   }
 
   llvm::json::Array takeCaptures() { return std::move(Captures); }
+  llvm::json::Array takeEnumTypes() { return std::move(EnumTypes); }
   llvm::json::Array takeBuiltinCalls() { return std::move(BuiltinCalls); }
   llvm::json::Array takeConstructorCalls() { return std::move(ConstructorCalls); }
   llvm::json::Array takeExpressionCleanups() {
@@ -262,6 +303,8 @@ public:
 
 private:
   ASTContext &Context;
+  llvm::DenseSet<const EnumDecl *> SeenEnumTypes;
+  llvm::json::Array EnumTypes;
   llvm::DenseSet<const CallExpr *> SeenBuiltinCalls;
   llvm::json::Array BuiltinCalls;
   llvm::DenseSet<const CXXConstructExpr *> SeenConstructorCalls;
@@ -295,6 +338,8 @@ public:
                     "\"visits_template_instantiations\":true,"
                     "\"constructor_call_coverage\":\"visited_construct_expressions_not_exhaustive\","
                     "\"constructor_call_semantics\":\"compiler_identity_not_effect_or_lifetime_proof\","
+                    "\"enum_type_coverage\":\"visited_complete_nondependent_enum_definitions_not_exhaustive\","
+                    "\"enum_type_semantics\":\"compiler_type_and_named_constant_observations_not_runtime_domain_proof\","
                     "\"source_program_checked\":false,"
                     "\"deployable\":false,\"plugin_build_clang_version\":"
                  << llvm::formatv("{0}", llvm::json::Value(CLANG_VERSION_STRING))
@@ -302,6 +347,7 @@ public:
                  << llvm::formatv(
                         "{0}", llvm::json::Value(
                                    Context.getTargetInfo().getTriple().str()))
+                 << ",\"ast_int_bits\":" << Context.getTypeSize(Context.IntTy)
                  << ",\"ast\":";
     Context.getTranslationUnitDecl()->dump(llvm::outs(), false, ADOF_JSON);
     llvm::outs() << ",\"captures\":"
@@ -320,6 +366,8 @@ public:
                  << ",\"constructor_calls\":"
                  << llvm::formatv("{0}", llvm::json::Value(
                         Visitor.takeConstructorCalls()))
+                 << ",\"enum_types\":"
+                 << llvm::formatv("{0}", llvm::json::Value(Visitor.takeEnumTypes()))
                  << "}\n";
   }
 };

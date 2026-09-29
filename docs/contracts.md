@@ -1,5 +1,16 @@
 # 模型、检查与证据协议
 
+## 同次原生枚举类型观测
+
+native envelope可包含enum_types与ast_int_bits。前者记录被访问的完整、非依赖
+上下文枚举定义：精确EnumDecl/EnumConstantDecl ID、fixed/scoped、canonical
+underlying type、Clang存储的promotion type、各自位宽/符号及named constant
+十进制值。ID只在同次嵌入AST内有效；旧插件缺少这些可选字段不代表空集合。
+coverage非穷尽，常量列表不等于运行时表达式值域。Clang可为scoped enum填写
+promotion字段，该字段存在不表示语言允许其隐式转换。
+这些是可信编译器观测，不是独立类型定理、运行库API保证或整核检查；消费方
+必须fresh绑定同AST精确声明和具体转换，不能仅按类型拼写或跨TU ID连接。
+
 ## 一元 native 调用的条件效果组合
 
 `loop_exit_guards.check_iteration_bounds`显式接收相同一元/using选项，向其

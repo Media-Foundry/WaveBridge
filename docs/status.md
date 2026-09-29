@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## 原始 TU 同次原生枚举观测
+
+native插件新增枚举类型/常量观察和target int位宽。未改写原harness、未forceinclude
+探针，使用匹配Clang23插件重新采集完整TU：206个枚举，目标amdgcn，int32。
+新AST中错误包装参数经typedef精确指向同次hipError_t记录：underlying unsigned
+int32、存储的promotion signed int32、success常量0。新旧AST ID不混用。
+这是可信前端观察，不证明runtime域/API成功；高层旧工件driver尚未消费新记录。
+Clang23/17匹配插件构建和各3项真实回归通过；完整1330项CPU回归98.193秒
+通过、无跳过，补充唯一性断言后两版专项再通过。无GPU，见
+[实录](../experiments/hip-native-enum-evidence-20260930.md)。
+
 ## 原 HIP device-only 上下文的 ABI 探针
 
 核实原native实际使用hipcc/device-only，而前轮探针为普通x86_64 host编译。
