@@ -16,13 +16,31 @@ HIP_NATIVE_SHA = "46ac52b1c672fadd0e5a66bb3ab380373e0cd69929713d96e7010f375a0cd6
 HIP_KERNEL_ID = "0x745c579e5490"
 
 
+def selected_copy_source(binding, position):
+    """Select a direct copy source from a freshly bound slot, not its value."""
+    slots = [s for s in binding.get("configuration_slots", []) if s.get("position") == position]
+    if binding.get("status") != "checked" or len(slots) != 1:
+        raise ValueError("configuration_copy_slot_not_unique")
+    expression = slots[0].get("expression_ast", {})
+    if expression.get("kind") != "CXXConstructExpr" or len(expression.get("inner", [])) != 1:
+        raise ValueError("configuration_not_direct_copy_candidate")
+    source = expression["inner"][0]
+    if source.get("kind") == "ImplicitCastExpr" and source.get("castKind") == "NoOp" and len(source.get("inner", [])) == 1:
+        source = source["inner"][0]
+    reference = source.get("referencedDecl", {})
+    if (source.get("kind") != "DeclRefExpr" or source.get("inner") or
+            reference.get("kind") != "VarDecl" or not isinstance(reference.get("id"), str) or not reference["id"]):
+        raise ValueError("configuration_copy_source_not_direct_variable")
+    return reference["id"]
+
+
 def run(native, output, *, threads_object=False, host_minimum_update=False, host_minimum_history=False,
         host_minimum_quotient=False, host_quotient_history=False, constructor_argument_effects=False,
         constructor_field_forwarding=False, profile="cuda"):
     native, output = Path(native).resolve(), Path(output).resolve()
     if profile not in {"cuda", "hip"}:
         raise ValueError("unsupported_input_profile")
-    if profile == "hip" and any((threads_object, host_minimum_update, host_minimum_history,
+    if profile == "hip" and any((host_minimum_update, host_minimum_history,
             host_minimum_quotient, host_quotient_history, constructor_argument_effects,
             constructor_field_forwarding)):
         raise ValueError("cuda_only_selection_not_available_in_hip_profile")
@@ -58,7 +76,7 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
         from wavebridge.verification.object_use_closure import inspect_structure
 
         # Exact development-input selection, not a constructor-value oracle.
-        selected_variable = "0x30d69b78"
+        selected_variable = ("0x30d69b78" if profile == "cuda" else selected_copy_source(checked, 1))
         owners = []
         pending = [(root, None)]
         while pending:

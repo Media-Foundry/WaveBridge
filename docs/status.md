@@ -2,6 +2,18 @@
 
 更新日期：2026-09-30。
 
+## HIP 配置对象检查已连接，初始化仍未知
+
+HIP threads-object模式从fresh绑定的第二配置槽位提取直接构造来源变量，
+再以唯一函数owner重做对象结构检查，不复用CUDA对象ID。真实对象
+0x745c57a5bfe8在初始化处unknown：constructor effects为
+record_attribute_unsupported，两个host尺寸变量也仍symbolic。
+没有枚举成功的copy inventory，不能说观测调用无写入或配置copy安全。
+实际record带implicit/default VisibilityAttr；尚未放宽checker属性规则。
+1277项CPU测试97.147秒通过、无跳过，demo/diff通过，Sol复核无阻断。
+详见[对象重放](../experiments/hip-threads-object-evidence-20260930.md)。
+下一步核对SDK record属性的实际语义，再建立host尺寸值历史；不跳过unknown。
+
 ## HIP kernel 与 launch 的精确绑定已重放
 
 复用现有launch驱动新增显式hip profile，固定独立HIP输入hash/kernel ID，
