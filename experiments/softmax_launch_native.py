@@ -12,12 +12,23 @@ from wavebridge.verification.launch_binding import check
 
 NATIVE_SHA = "a59c12247f796fe2034ba03ecc43782f77ac3942496b18a140ceacbb24c7ff45"
 KERNEL_ID = "0x30d762e0"
+HIP_NATIVE_SHA = "46ac52b1c672fadd0e5a66bb3ab380373e0cd69929713d96e7010f375a0cd63e"
+HIP_KERNEL_ID = "0x745c579e5490"
 
 
 def run(native, output, *, threads_object=False, host_minimum_update=False, host_minimum_history=False,
         host_minimum_quotient=False, host_quotient_history=False, constructor_argument_effects=False,
-        constructor_field_forwarding=False):
-    if sha(native) != NATIVE_SHA or output.exists():
+        constructor_field_forwarding=False, profile="cuda"):
+    native, output = Path(native).resolve(), Path(output).resolve()
+    if profile not in {"cuda", "hip"}:
+        raise ValueError("unsupported_input_profile")
+    if profile == "hip" and any((threads_object, host_minimum_update, host_minimum_history,
+            host_minimum_quotient, host_quotient_history, constructor_argument_effects,
+            constructor_field_forwarding)):
+        raise ValueError("cuda_only_selection_not_available_in_hip_profile")
+    native_sha, kernel_id = ((NATIVE_SHA, KERNEL_ID) if profile == "cuda" else
+                             (HIP_NATIVE_SHA, HIP_KERNEL_ID))
+    if sha(native) != native_sha or output.exists():
         raise ValueError("native_mismatch_or_output_exists")
     before = implementation_hashes()
     dependencies = {str(path): sha(path) for path in
@@ -27,9 +38,9 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
         raise ValueError("native_not_collected")
     root = capture["payload"]["ast"]
     kernel = select_entry(root)
-    if kernel["id"] != KERNEL_ID:
+    if kernel["id"] != kernel_id:
         raise ValueError("fixed_kernel_identity_mismatch")
-    facts = inspect(root, KERNEL_ID)
+    facts = inspect(root, kernel_id)
     sites = facts["sites"]
     print(json.dumps({"phase": "launch_discovery", "selected_kernel_sites": len(sites),
                       "unresolved_sites": len(facts["unresolved_sites"])}), flush=True)
@@ -38,7 +49,7 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
     if len(sites) == 1:
         site = sites[0]
         selection = {"schema_version": "launch-selection/v1", "ast_root_sha256": _hash(root),
-                     "kernel_declaration_id": KERNEL_ID, "launch_id": site["launch_id"],
+                     "kernel_declaration_id": kernel_id, "launch_id": site["launch_id"],
                      "configuration_declaration_id": site["configuration_declaration_id"],
                      "configuration_expression_ids": [arg["id"] for arg in site["configuration_arguments"]]}
         checked = check(root, selection)
@@ -130,7 +141,8 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
             max_ast_nodes=10_000_000)
     after = implementation_hashes()
     report = {"schema_version": "softmax-native-launch-observation/v1", "check": checked,
-              "selection": selection, "launch_discovery": facts, "native_sha256": NATIVE_SHA,
+              "selection": selection, "launch_discovery": facts, "native_sha256": native_sha,
+              "input_profile": profile,
               "threads_object_check": object_report,
               "host_minimum_update_check": minimum_report,
               "host_minimum_history_check": history_report,
@@ -140,19 +152,22 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
               "constructor_field_forwarding_check": forwarding_report,
               "implementation_before": before, "implementation_after": after,
               "driver_dependencies": dependencies,
-              "inputs_unchanged": before == after and sha(native) == NATIVE_SHA and
+              "inputs_unchanged": before == after and sha(native) == native_sha and
                   all(sha(path) == digest for path, digest in dependencies.items()),
               "configuration_values_established": False, "lane_family_established": False,
               "GPU_executed": False, "source_program_checked": False, "deployable": False}
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"status": checked["status"], "reason": checked.get("reason"),
                       "inputs_unchanged": report["inputs_unchanged"], "sha256": sha(output)}), flush=True)
+    return report
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--profile", choices=("cuda", "hip"), default="cuda")
     parser.add_argument("--threads-object", action="store_true")
     parser.add_argument("--host-minimum-update", action="store_true")
     parser.add_argument("--host-minimum-history", action="store_true")
@@ -165,4 +180,4 @@ if __name__ == "__main__":
         host_minimum_update=args.host_minimum_update, host_minimum_history=args.host_minimum_history,
         host_minimum_quotient=args.host_minimum_quotient, host_quotient_history=args.host_quotient_history,
         constructor_argument_effects=args.constructor_argument_effects,
-        constructor_field_forwarding=args.constructor_field_forwarding)
+        constructor_field_forwarding=args.constructor_field_forwarding, profile=args.profile)

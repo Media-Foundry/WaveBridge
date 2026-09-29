@@ -2,6 +2,18 @@
 
 更新日期：2026-09-30。
 
+## HIP kernel 与 launch 的精确绑定已重放
+
+复用现有launch驱动新增显式hip profile，固定独立HIP输入hash/kernel ID，
+禁止沿用CUDA专用对象和host声明选点。真实HIP的一个选定launch fresh checked，
+绑定4个配置槽位、8个kernel实参；22个其它未解析位置完整保留。
+第二槽位是threads对象的copy，不是已检查常量；第一槽位还包含观测函数调用。
+对象值保持、配置值、API/坐标范围、host可达性均未建立，不能因此赋予lane域。
+见[重放实录](../experiments/hip-launch-binding-evidence-20260930.md)。
+1275项CPU测试96.597秒通过、无跳过，demo/diff通过；Sol只读复核无阻断。
+未改生产checker、未运行GPU。下一步按绑定的threads声明和copy做对象/初始化
+检查，且不能忽略同一配置中的其它求值效果。
+
 ## HIP 索引初始化的类型域诊断
 
 新增固定工件诊断驱动，未修改生产checker。local_idx的初始化连接到HIP属性
