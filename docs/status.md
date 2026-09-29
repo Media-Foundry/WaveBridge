@@ -2,6 +2,19 @@
 
 更新日期：2026-09-30。
 
+## 普通计算循环的实际拒绝点已解除到条件递推层
+
+未修改生产checker，使用相同8条未验证协议对真实HIP整entry做默认/一元
+启用对照。源码149/152行两个嵌套计算循环由call_effect_not_checked变为
+条件recovered，起点0、步长1、bound分别2/4；其余4个普通循环保持恢复。
+192/197行guarded循环仍因控制流unknown，整体unknown，log协议仍未消费。
+不能把6/8语法节点写成语料覆盖率或整核通过。见
+[递推重放](../experiments/hip-unary-recurrence-evidence-20260930.md)。
+首轮报告标签问题已按Sol复核修正并重新运行；最终02与01子检查完全一致，
+输入/src/driver hash稳定并复核。1265项CPU回归106.376秒通过，无跳过，
+demo/diff通过。无GPU、FP等价或部署结果；下一步需要连接两类循环的实际
+域义务，不能直接拼接普通恢复与guarded work的成功状态。
+
 ## 真实输出循环已消费一元条件效果
 
 guarded-work入口可显式启用一元/using检查并向上传递子调用前提，策略绑定

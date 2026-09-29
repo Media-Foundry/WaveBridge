@@ -1,4 +1,4 @@
-"""Fresh guarded-work replay using sealed, explicitly unverified leaf premises.
+"""Fresh guarded-work or entry-recurrence replay under unverified leaf premises.
 
 Prior reports supply only protocol dictionaries, never successful conclusions.
 """
@@ -8,13 +8,16 @@ from pathlib import Path
 
 from experiments.pytorch_softmax_intake import implementation_hashes, select_entry, sha, walk
 from wavebridge.verification.loop_exit_guards import check_work_preservation
+from wavebridge.analysis.column_loops import recover_with_call_effects
 
 NATIVE_SHA = "46ac52b1c672fadd0e5a66bb3ab380373e0cd69929713d96e7010f375a0cd63e"
 MATH_SHA = "a8af8a027126343d9221d593efdd2a1e709b1ba1588d89ee129fcf21fa9f617b"
 ZERO_SHA = "7952d53d103ccbf4c130fc4c775a67b726a039b4c652eddc4b270dc42939de87"
 
 
-def run(native, math_protocols, zero_protocols, output):
+def run(native, math_protocols, zero_protocols, output, *, recurrence=False):
+    if type(recurrence) is not bool:
+        raise ValueError("invalid_recurrence_option")
     paths = [Path(p).resolve() for p in (native, math_protocols, zero_protocols)]
     expected = [NATIVE_SHA, MATH_SHA, ZERO_SHA]
     if [sha(p) for p in paths] != expected:
@@ -34,7 +37,18 @@ def run(native, math_protocols, zero_protocols, output):
         raise ValueError("protocol_identity_collision")
     protocols.update(math)
     results = []
+    recurrence_checks = {}
+    if recurrence:
+        for label, enabled in (("default", False), ("unary_enabled", True)):
+            print(json.dumps({"phase": "recurrence_" + label, "function_id": entry["id"]}), flush=True)
+            checked = recover_with_call_effects(payload, entry["id"], 32, protocols,
+                allow_unary_float=enabled, allow_using_shadows=enabled)
+            recurrence_checks[label] = checked
+            print(json.dumps({"phase": "recurrence_" + label + "_done", "status": checked["status"],
+                              "reason": checked["reason"]}), flush=True)
     for node in walk(entry):
+        if recurrence:
+            break
         if node.get("kind") != "ForStmt":
             continue
         descendants = list(walk(node))
@@ -54,12 +68,17 @@ def run(native, math_protocols, zero_protocols, output):
         results.append(item)
     after = implementation_hashes()
     stable = before == after and driver == sha(__file__) and [sha(p) for p in paths] == expected
-    report = {"schema_version": "softmax-unary-guarded-work/v1", "status": "observed" if stable else "inputs_changed",
+    report = {"schema_version": "softmax-unary-entry-recurrence/v1" if recurrence else "softmax-unary-guarded-work/v1",
+        "mode": "entry_recurrence" if recurrence else "guarded_work",
+        "status": "observed" if stable else "inputs_changed",
         "inputs_unchanged": stable, "input_files": dict(zip(map(str, paths), expected)),
         "implementation_before": before, "implementation_after": after, "driver_sha256": driver,
         "entry_id": entry["id"], "checks": results, "int_bits": 32,
+        "recurrence_enabled": recurrence, "recurrence_checks": recurrence_checks,
         "integer_abi_source": "external int32 assumption; not newly probed",
-        "selection": "syntactic loops containing a selected math call and a break; non-exhaustive",
+        "selection": ("fresh full selected-entry recurrence using all sealed protocol dictionaries; no guarded-loop preselection"
+                      if recurrence else "syntactic loops containing a selected math call and a break; non-exhaustive"),
+        "result_fields": {"checks": "guarded-work-only", "recurrence_checks": "entry-recurrence-only"},
         "static_branches_pruned": False, "external_call_effects_verified": False,
         "source_program_checked": False, "deployable": False, "GPU_executed": False,
         "previous_success_reports_consumed": False}
@@ -73,8 +92,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("native", "math-protocols", "zero-protocols", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--recurrence", action="store_true",
+                        help="instead replay full selected-function recurrence with default/opt-in call checks")
     args = parser.parse_args()
-    result = run(args.native, args.math_protocols, args.zero_protocols, args.output)
+    result = run(args.native, args.math_protocols, args.zero_protocols, args.output, recurrence=args.recurrence)
     return 0 if result["inputs_unchanged"] else 2
 
 
