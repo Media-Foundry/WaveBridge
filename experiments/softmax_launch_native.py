@@ -166,7 +166,38 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                             raise ValueError("power_argument_not_declaration_read")
                         argument_id = argument_reference.get("referencedDecl", {}).get("id")
                         from wavebridge.verification.parameter_entry import check as check_parameter_entry
+                        from wavebridge.verification.parameter_entry import check_guarded_argument
+                        parameters = [n for n in exponent_owner.get("inner", []) if n.get("kind") == "ParmVarDecl"]
+                        positions = [i for i, n in enumerate(parameters) if n.get("id") == argument_id]
+                        caller_domains = []
+                        if len(positions) == 1:
+                            position = positions[0]
+                            for occurrences in index.values():
+                                for candidate, caller, _ in occurrences:
+                                    parts = candidate.get("inner", [])
+                                    if candidate.get("kind") != "CallExpr" or len(parts) <= position + 1:
+                                        continue
+                                    direct = parts[0]
+                                    while direct.get("kind") in {"ImplicitCastExpr", "ParenExpr"} and len(direct.get("inner", [])) == 1:
+                                        direct = direct["inner"][0]
+                                    if direct.get("referencedDecl", {}).get("id") != exponent_owner["id"] or caller is None:
+                                        continue
+                                    read = parts[position + 1]
+                                    leaves = read.get("inner", [])
+                                    if read.get("kind") != "ImplicitCastExpr" or len(leaves) != 1:
+                                        continue
+                                    local_id = leaves[0].get("referencedDecl", {}).get("id")
+                                    for body in caller.get("inner", []):
+                                        if body.get("kind") != "CompoundStmt":
+                                            continue
+                                        for guard in body.get("inner", []):
+                                            if guard.get("kind") == "IfStmt":
+                                                caller_domains.append({"caller_id": caller["id"], "call_id": candidate["id"],
+                                                    "guard_id": guard["id"], "argument_position": position,
+                                                    "check": check_guarded_argument(root, caller["id"], local_id,
+                                                        guard["id"], candidate["id"], exponent_owner["id"], position)})
                         result["power_loop_checks"].append({"call_ast": call,
+                            "caller_guard_checks": caller_domains,
                             "exponent_declaration_id": exponent_id,
                             "domain_policy": "explicit diagnostic assumption; not established at this call",
                             "call_domain_established": False,
