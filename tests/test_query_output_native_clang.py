@@ -8,7 +8,7 @@ from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.verification.field_snapshot import check_query_object, check_query_output, check_query_initializer, check_query_initializer_to_statement, FIELD_READ_PREMISE
 from wavebridge.verification.normal_return_guard import check_enum_binding
-from wavebridge.verification.field_snapshot import check_query_power_minimum
+from wavebridge.verification.field_snapshot import check_query_power_minimum, check_query_power_quotient
 
 PLUGIN = os.environ.get("WB_ENUM_CAPTURE_PLUGIN") or os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_ENUM_CAPTURE_COMPILER") or os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -51,6 +51,50 @@ class QueryOutputTests(unittest.TestCase):
             self.assertIsNone(result[field])
         for field in ("deployable", "source_program_checked", "later_history_checked", "API_protocol_verified"):
             self.assertFalse(result[field])
+
+    def quotient_selection(self, name="composed_dispatch", caller_name="composed_caller"):
+        initial, assignment, selection = self.composed_selection(name, caller_name)
+        function = next(n for n in _walk(self.payload["ast"]) if n.get("id") == selection["callee_id"])
+        quotient = next(n["id"] for n in _walk(function) if n.get("kind") == "VarDecl" and n.get("name") == "composed_quotient")
+        return initial, assignment, quotient, selection
+
+    def test_quotient_substitutes_origins_but_does_not_discharge_nonzero(self):
+        result = check_query_power_quotient(self.payload, *self.quotient_selection(), *self.contracts("guarded_snapshot"))
+        self.assertEqual(result["status"], "checked", result)
+        self.assertTrue(result["conditional_quotient_relation"])
+        relation = result["quotient_relation"]
+        self.assertEqual(relation["numerator"], 128)
+        self.assertEqual(relation["denominator"], result["checks"]["origins"]["state_relation"])
+        self.assertEqual(result["unresolved_obligations"], [{"property": "denominator_nonzero_at_division",
+                         "declaration_id": self.quotient_selection()[0], "established": False}])
+        self.assertTrue(any("nonzero" in a for a in result["assumptions"]))
+        for key in ("division_safety_established", "launch_dimension_usable", "later_history_checked", "source_program_checked", "deployable"):
+            self.assertFalse(result[key])
+        self.assertIsNone(result["query_numeric_domain"])
+        self.assertIsNone(result["quotient_numeric_domain"])
+
+    def test_quotient_rechecks_changed_escaped_and_wrong_denominator(self):
+        contracts = self.contracts("guarded_snapshot")
+        for name in ("quotient_changed", "quotient_wrong", "quotient_escaped"):
+            result = check_query_power_quotient(self.payload, *self.quotient_selection(name, name + "_caller"), *contracts)
+            self.assertEqual(result["status"], "unknown", (name, result))
+            self.assertEqual(result["checks"]["origins"]["status"], "checked", result)
+            self.assertFalse(result["conditional_quotient_relation"])
+
+    def test_quotient_wrong_identity_budget_contract_and_input_immutability(self):
+        contracts = self.contracts("guarded_snapshot")
+        initial, assignment, quotient, selection = self.quotient_selection()
+        before = copy.deepcopy(self.payload)
+        check_query_power_quotient(self.payload, initial, assignment, quotient, selection, *contracts)
+        self.assertEqual(before, self.payload)
+        other = self.quotient_selection("quotient_wrong", "quotient_wrong_caller")[2]
+        for identifier in ("missing", initial, other):
+            result = check_query_power_quotient(self.payload, initial, assignment, identifier, selection, *contracts)
+            self.assertEqual(result["status"], "unknown", result)
+        self.assertEqual(check_query_power_quotient(self.payload, initial, assignment, quotient, selection, *contracts,
+                                                 max_ast_nodes=1)["status"], "unknown")
+        self.assertEqual(check_query_power_quotient(self.payload, initial, assignment, quotient, selection,
+                                                 None, contracts[1])["status"], "unknown")
 
     def test_minimum_changed_source_and_missing_contract_stay_unknown(self):
         contracts = self.contracts("guarded_snapshot")

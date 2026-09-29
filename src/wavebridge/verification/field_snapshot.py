@@ -118,6 +118,61 @@ def check(root, function_id, *, max_ast_nodes=1_000_000):
     return result
 
 
+def check_query_power_quotient(payload, initializer_id, assignment_id, quotient_id, power_selection,
+                               conversion_contract, output_contract, *, int_bits=32,
+                               max_ast_nodes=1_000_000):
+    """Connect query provenance to a source quotient, preserving nonzero debt.
+
+    No query domain is supplied or guessed. A checked relation is conditional
+    on defined division and must not be consumed as a safe launch dimension.
+    """
+    from wavebridge.verification.integer_selection import check_minimum_quotient
+
+    result = {"schema_version": "query-power-quotient/v1", "status": "unknown", "reason": None,
+              "scope": "conditional_first_quotient_initialization_in_selected_guarded_invocation",
+              "checks": {}, "conditional_quotient_relation": False, "quotient_relation": None,
+              "division_safety_established": False, "unresolved_obligations": [],
+              "query_numeric_domain": None, "quotient_numeric_domain": None,
+              "launch_dimension_usable": False, "later_history_checked": False,
+              "source_program_checked": False, "deployable": False, "assumptions": [],
+              "limitations": ["nonzero denominator remains an explicit unproved premise",
+                              "no runtime API domain, launch or deployment guarantee"]}
+    minimum = check_query_power_minimum(payload, initializer_id, assignment_id, power_selection,
+                conversion_contract, output_contract, int_bits=int_bits, max_ast_nodes=max_ast_nodes)
+    result["checks"]["origins"] = minimum
+    result["assumptions"] = list(minimum["assumptions"])
+    if minimum["status"] != "checked" or minimum.get("conditional_assignment_relation") is not True:
+        result["reason"] = "fresh_operand_origins_not_checked"
+        return result
+    quotient = check_minimum_quotient(payload["ast"], assignment_id, quotient_id,
+                {"int": {"bits": int_bits, "signed": True}}, max_ast_nodes=max_ast_nodes)
+    result["checks"]["quotient"] = quotient
+    result["assumptions"] = list(dict.fromkeys(result["assumptions"] + quotient["assumptions"]))
+    result["unresolved_obligations"] = list(quotient["unresolved_obligations"])
+    if quotient["status"] != "checked":
+        result["reason"] = "fresh_quotient_and_history_not_checked"
+        return result
+    update = quotient["history_check"]["update_check"]
+    origin_update = minimum["checks"]["minimum"]
+    if (quotient["denominator_declaration_id"] != initializer_id or
+            update["assignment_id"] != assignment_id or
+            update["function_id"] != origin_update["function_id"] or
+            update["state_relation"] != origin_update["state_relation"] or
+            update["input_sha256"] != origin_update["input_sha256"]):
+        result["reason"] = "quotient_origin_binding_mismatch"
+        return result
+    result.update(status="checked", conditional_quotient_relation=True,
+                  quotient_relation={"operation": "truncate_toward_zero_division",
+                      "numerator": quotient["quotient_relation"]["numerator"],
+                      "denominator": minimum["state_relation"],
+                      "evaluation_point": quotient["quotient_relation"]["evaluation_point"],
+                      "result_declaration_id": quotient_id,
+                      "time": "completion_of_selected_quotient_initialization"},
+                  input_sha256={"origins": minimum["input_sha256"],
+                                "quotient": quotient["input_sha256"]})
+    return result
+
+
 def check_query_power_minimum(payload, initializer_id, assignment_id, power_selection,
                               conversion_contract, output_contract, *, int_bits=32,
                               max_ast_nodes=1_000_000):

@@ -146,7 +146,9 @@ int composed_dispatch(int input) {
     const int composed_power = 1 << composed_log;
     int composed_width = guarded_snapshot();
     composed_width = composed_power < composed_width ? composed_power : composed_width;
-    return composed_width;
+    const int composed_threads = 128;
+    int composed_quotient = composed_threads / composed_width;
+    return composed_quotient;
 }
 int composed_caller(int input) {
     const int composed_input = input;
@@ -177,3 +179,24 @@ COMPOSED_VARIANT(composed_max, (void)0,
     composed_power < composed_width ? composed_width : composed_power)
 COMPOSED_VARIANT(composed_escape, int* aliases[] = {&composed_width},
     composed_power < composed_width ? composed_power : composed_width)
+
+#define QUOTIENT_VARIANT(NAME, BETWEEN, DENOMINATOR) \
+int NAME(int input) { \
+    int composed_log = composed_exponent(input); \
+    const int composed_power = 1 << composed_log; \
+    int composed_width = guarded_snapshot(); \
+    composed_width = composed_power < composed_width ? composed_power : composed_width; \
+    BETWEEN; \
+    const int composed_threads = 128; \
+    int composed_quotient = composed_threads / DENOMINATOR; \
+    return composed_quotient; \
+} \
+int NAME##_caller(int input) { \
+    const int composed_input = input; \
+    if (composed_input != 65 && composed_input != 128) return 3; \
+    NAME(composed_input); \
+    return 0; \
+}
+QUOTIENT_VARIANT(quotient_changed, ++composed_width, composed_width)
+QUOTIENT_VARIANT(quotient_wrong, (void)0, input)
+QUOTIENT_VARIANT(quotient_escaped, int* aliases[] = {&composed_width}, composed_width)

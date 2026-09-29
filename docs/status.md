@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 查询来源连接到 quotient 初始化
+
+`field_snapshot.check_query_power_quotient`fresh组合来源minimum与既有除法/
+历史检查，核对声明、assignment/function、状态及输入hash。原HIP重放条件
+checked：warps_per_block初值为向零截断的128/min(同次query值,128)。
+除数非零义务仍未证明，query/quotient域null，launch可用性和deploy为false。
+1355项CPU测试116.742秒无跳过通过，Clang17/23各15项、demo/diff通过；
+Sol只读复核无阻断。无GPU/程序执行，见
+[实录](../experiments/hip-query-quotient-20260930.md)。
+
 ## 查询来源与 power 来源在 minimum 赋值处组合
 
 `field_snapshot.check_query_power_minimum`fresh连接查询初值保持、minimum转移

@@ -79,6 +79,15 @@ referencedDecl完全一致；callee decay、调用、变量、声明语句、own
 输出记录policy和共享出现次数；后续历史、数值域、纯度、动态链接、source/
 deploy仍未证明。两次getter调用的结果不被当作同一个值。
 
+`field_snapshot.check_query_power_quotient`fresh重跑minimum来源组合和既有
+minimum→quotient历史/除法检查，精确核对分母声明、assignment、function、
+state_relation及minimum输入哈希。符号代入后的分母来自同次query与power，
+不是名称相同的另一次查询；numerator仍由源码常量checker确定。
+非零义务和全部条件原样继承；`division_safety_established`、
+`launch_dimension_usable`、source/deploy均false。query/quotient域为null。
+此处`checked`仅描述有非零前提的初始化关系，不是合法launch值。
+最终hash嵌套绑定fresh origins与quotient，包含payload、外部协议和全部选点。
+
 `field_snapshot.check_query_power_minimum`进一步fresh组合上述查询初值保持、
 minimum赋值检查及源码guard→power初始化/保持。power选点只包含精确身份，
 不接受数值域或旧成功报告；核对同root、同callee/owner、target和两个operand。
