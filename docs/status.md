@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## HIP minimum 操作数的真实初始化来源已绑定
+
+从同次minimum检查的operand IDs重取唯一同owner声明、保存initializer并fresh
+常量求值。两项求值均unknown：const next_power_of_two依赖可变log2_elements；
+warp_size直接来自有定义的host helper，而不是常量返回。helper查询设备属性、
+更新全局观测状态，再返回wb_api_width；只记录调用身份，不证明API域或无写入。
+原四项条件关系保持checked，初始化值到更新点的保持与数值域仍未建立。
+见[来源实录](../experiments/hip-host-origins-evidence-20260930.md)。下一步应分别
+处理输入相关移位域和设备API协议，不能将helper简化为return 32。
+1280项CPU测试98.018秒通过、无跳过，demo/diff通过；Sol复核无阻断。
+
 ## HIP host 尺寸的条件关系与语句入口保持已连接
 
 host-dimensions诊断从fresh launch对象的构造实参身份选点，不按变量名或旧

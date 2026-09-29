@@ -41,6 +41,7 @@ def check_host_dimensions(root, binding):
         check_minimum_quotient, check_quotient_to_statement)
 
     result = {"status": "unknown", "reason": None, "selection": None, "checks": {},
+              "operand_initializers": [], "source_program_checked": False,
               "numeric_domains_established": False, "deployable": False}
     try:
         variable = selected_copy_source(binding, 1)
@@ -106,6 +107,33 @@ def check_host_dimensions(root, binding):
             "minimum_history": check_minimum_to_statement(root, assignment, statement["id"], abi, **options),
             "quotient": check_minimum_quotient(root, assignment, quotient, abi, **options),
             "quotient_history": check_quotient_to_statement(root, assignment, quotient, statement["id"], abi, **options)}
+        minimum = result["checks"]["minimum"]
+        if minimum.get("status") == "checked":
+            from experiments.softmax_host_api_evidence import observe_call
+            from wavebridge.analysis.integer_constants import evaluate
+
+            for identifier in minimum["operand_declaration_ids"]:
+                operand, operand_owner, _ = unique(identifier)
+                if operand_owner is not owner or operand.get("kind") != "VarDecl":
+                    raise ValueError("minimum_operand_declaration_mismatch")
+                item = {"declaration_id": identifier, "declaration_ast": operand,
+                        "constant_evaluation": evaluate(root, identifier, 32),
+                        "call_observation": None, "call_observation_reason": None,
+                        "initial_value_preserved_to_update": False,
+                        "runtime_return_interval": None, "api_effects_established": False}
+                result["operand_initializers"].append(item)
+                initializers = operand.get("inner", [])
+                if len(initializers) == 1 and initializers[0].get("kind") == "CallExpr":
+                    call = initializers[0]
+                    parts = call.get("inner", [])
+                    callee = parts[0] if parts else {}
+                    if callee.get("kind") == "ImplicitCastExpr" and len(callee.get("inner", [])) == 1:
+                        callee = callee["inner"][0]
+                    try:
+                        item["call_observation"] = observe_call(root, call["id"],
+                            callee.get("referencedDecl", {}).get("id"), identifier)
+                    except ValueError as error:
+                        item["call_observation_reason"] = str(error)
         result["status"] = "observed"
     except (ValueError, KeyError, TypeError) as error:
         result["reason"] = str(error)
@@ -128,7 +156,8 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
         raise ValueError("native_mismatch_or_output_exists")
     before = implementation_hashes()
     dependencies = {str(path): sha(path) for path in
-                    (Path(__file__), Path(__file__).with_name("pytorch_softmax_intake.py"))}
+                    (Path(__file__), Path(__file__).with_name("pytorch_softmax_intake.py"),
+                     Path(__file__).with_name("softmax_host_api_evidence.py"))}
     capture = json.loads(native.read_text())
     if capture.get("status") != "collected":
         raise ValueError("native_not_collected")

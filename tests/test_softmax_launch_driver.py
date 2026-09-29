@@ -36,6 +36,24 @@ class SoftmaxLaunchDriverTests(unittest.TestCase):
         self.assertEqual(qhistory.call_args.args[:4], (root, "update", "b", "target"))
         self.assertTrue(all(c["status"] == "unknown" for c in result["checks"].values()))
         self.assertFalse(result["numeric_domains_established"])
+        owner["inner"][0]["inner"] = [{"kind": "CallExpr", "id": "api-call", "inner": [
+            {"kind": "ImplicitCastExpr", "inner": [{"kind": "DeclRefExpr",
+             "referencedDecl": {"id": "api"}}]}]}]
+        with patch(prefix + "check_local_minimum_update", return_value={"status": "checked", "operand_declaration_ids": ["a", "b"]}), \
+                patch(prefix + "check_minimum_to_statement", return_value={"status": "unknown"}), \
+                patch(prefix + "check_minimum_quotient", return_value={"status": "unknown"}), \
+                patch(prefix + "check_quotient_to_statement", return_value={"status": "unknown"}), \
+                patch("wavebridge.analysis.integer_constants.evaluate", return_value={"status": "unknown"}) as constants, \
+                patch("experiments.softmax_host_api_evidence.observe_call", return_value={"status": "observed"}) as api:
+            origins = driver.check_host_dimensions(root, binding)
+        api.assert_called_once_with(root, "api-call", "api", "a")
+        self.assertEqual([c.args for c in constants.call_args_list], [(root, "a", 32), (root, "b", 32)])
+        self.assertEqual(len(origins["operand_initializers"]), 2)
+        self.assertEqual(origins["operand_initializers"][0]["declaration_ast"], owner["inner"][0])
+        self.assertTrue(all(o["runtime_return_interval"] is None and
+                            not o["initial_value_preserved_to_update"] and not o["api_effects_established"]
+                            for o in origins["operand_initializers"]))
+        self.assertFalse(origins["source_program_checked"])
         duplicate = copy.deepcopy(root)
         duplicate["inner"][0]["inner"].append(copy.deepcopy(assignment))
         rejected = driver.check_host_dimensions(duplicate, binding)
