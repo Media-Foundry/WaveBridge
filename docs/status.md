@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 冻结 HIP 数值面板可离线重新审计
+
+新增历史记录审计入口：固定报告SHA、核对18项完整面板/命令/原始stdout，
+fresh reference重新评分，并重读适配源码与binary核对哈希。最终02工件通过，
+只报告列数{65,128}、行数{1,3,17}及历史API宽度32；不把连续静态域当GPU覆盖。
+严格JSON拒绝重复key和非标准常量，保存逐项fresh指标与完整依赖hash。
+本轮无GPU，host参数域/API语义/AST-to-binary绑定仍未证明；下一步不能直接
+把历史width32注入静态checker。见[审计实录](../experiments/hip-panel-audit-evidence-20260930.md)。
+最终1302项CPU测试97.906秒通过、无跳过；定向4项、demo/diff通过，Sol复核无阻断。
+
 ## Host 入口到幂次初始化已增加条件组合入口
 
 power_ceiling的entry_function_id模式fresh检查入口参数保持，再凭完整直接
