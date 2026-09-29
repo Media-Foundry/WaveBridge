@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
-from wavebridge.verification.normal_return_guard import check_enum_binding, check_enum_equality
+from wavebridge.verification.normal_return_guard import check_enum_binding, check_enum_equality, check_call_enum_equality
 
 PLUGIN = os.environ.get("WB_ENUM_CAPTURE_PLUGIN") or os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_ENUM_CAPTURE_COMPILER") or os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -69,6 +69,9 @@ class NativeGuardEnumBindingTests(unittest.TestCase):
         cls.payload = report["payload"]
         cls.function = next(n["id"] for n in _walk(cls.payload["ast"])
                             if n.get("kind") == "FunctionDecl" and n.get("name") == "good")
+        cls.calls = {n["name"]: next(c for c in n["inner"] if c.get("kind") == "CompoundStmt")["inner"][0]["id"]
+                     for n in _walk(cls.payload["ast"]) if n.get("kind") == "FunctionDecl"
+                     and n.get("name", "").startswith("call_")}
 
     def contract(self):
         # Test-only external assumption. Binding IDs does not verify lowering.
@@ -94,6 +97,41 @@ class NativeGuardEnumBindingTests(unittest.TestCase):
                     "source_program_checked", "deployable"):
             self.assertFalse(report[key])
         self.assertFalse(report["conversion_check"]["numeric_value_preservation_established"])
+
+    def test_query_equality_is_bound_to_this_invocation(self):
+        reports = [check_call_enum_equality(self.payload, self.calls[name], self.contract())
+                   for name in ("call_good", "call_other")]
+        for report in reports:
+            self.assertEqual(report["status"], "checked", report)
+            self.assertTrue(report["conditional_query_enum_equality_under_external_lowering_assumption"])
+            self.assertEqual(report["call_check"]["query_call_id"], report["query_call_id"])
+            for key in ("actual_lowering_verified", "conversion_contract_verified", "call_normal_return_proved",
+                        "API_success_verified", "query_output_effects_verified", "runtime_linkage_verified",
+                        "source_program_checked", "deployable"):
+                self.assertFalse(report[key])
+        self.assertNotEqual(reports[0]["query_declaration_id"], reports[1]["query_declaration_id"])
+        self.assertNotEqual(reports[0]["input_sha256"]["selection"], reports[1]["input_sha256"]["selection"])
+        self.assertIn("selected wrapper call executes the selected definition", reports[0]["assumptions"])
+
+    def test_query_equality_rechecks_query_and_conversion_contract(self):
+        for name in ("call_constant", "call_discarded", "call_converted", "call_conditional",
+                     "call_indirect", "call_unguarded"):
+            result = check_call_enum_equality(self.payload, self.calls[name], self.contract())
+            self.assertEqual(result["status"], "unknown", name)
+            self.assertFalse(result["conditional_query_enum_equality_under_external_lowering_assumption"])
+        for contract in (None, {}, {**self.contract(), "parameter_id": "wrong"}):
+            result = check_call_enum_equality(self.payload, self.calls["call_good"], contract)
+            self.assertEqual(result["status"], "unknown")
+        self.assertEqual(check_call_enum_equality(self.payload, self.calls["call_good"], self.contract(),
+                                                 max_ast_nodes=1)["status"], "unknown")
+
+    def test_query_equality_input_immutability_and_ast_tamper(self):
+        original = copy.deepcopy(self.payload)
+        check_call_enum_equality(self.payload, self.calls["call_good"], self.contract())
+        self.assertEqual(original, self.payload)
+        call = next(n for n in _walk(original["ast"]) if n.get("id") == self.calls["call_good"])
+        call["inner"][1]["type"] = {"qualType": "int"}
+        self.assertEqual(check_call_enum_equality(original, self.calls["call_good"], self.contract())["status"], "unknown")
 
     def test_equality_rejects_unbound_partial_or_conclusion_contracts(self):
         for key in self.contract():

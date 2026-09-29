@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 同一次查询返回值的条件枚举相等
+
+`normal_return_guard.check_call_enum_equality` fresh组合query→wrapper参数保持
+与外部保位协议下的enum相等，核对同root/parameter/constant/转换ID。原HIP
+新AST两个查询位置均条件checked；不同query的身份/selection独立，不解释
+常量名字或API输出效果。actual lowering/协议真实性/API/source/deploy仍false。
+1340项CPU测试100.492秒通过、无跳过；Clang17/23各11项、demo/diff通过，
+Sol复核无阻断，无新GPU/程序执行。见
+[实录](../experiments/hip-query-enum-equality-20260930.md)。
+
 ## 外部全域保位协议下的枚举相等
 
 新增独立位模式相等反射检查及fresh守卫组合，显式绑定payload/声明/两侧转换

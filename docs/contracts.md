@@ -35,6 +35,14 @@ enum值相等。字段`conditional_enum_equality_under_external_lowering_assumpt
 显式保留条件，`actual_lowering_verified`和`conversion_contract_verified`仍false。
 没有默认协议或按编译器名称自动启用；API成功/输出效果/source/deploy仍false。
 
+`check_call_enum_equality(payload, call_id, conversion_contract)`进一步fresh执行
+`check_call`和`check_enum_equality`。核对同root、parameter/constant/转换ID后，
+只把相等关系连接到被选中的这一次query调用返回值，不是后续重求值。
+报告绑定query call及声明、wrapper call及定义，合并两侧全部假设，保留两个
+子报告。字段`conditional_query_enum_equality_under_external_lowering_assumption`
+仍为条件性结论；actual_lowering/contract/API/output/linkage/source/deploy
+均未验证，正常返回也未被证明。常量的名字不用于决定API语义。
+
 ## 一元 native 调用的条件效果组合
 
 `loop_exit_guards.check_iteration_bounds`显式接收相同一元/using选项，向其

@@ -124,6 +124,54 @@ def check(root, function_id, *, max_ast_nodes=1_000_000):
     return result
 
 
+def check_call_enum_equality(payload, call_id, conversion_contract, *, max_ast_nodes=1_000_000):
+    """Relate this query invocation's returned value, never a re-evaluation.
+
+    Both constituent checks are fresh; the external conversion contract remains
+    an assumption. A constant named 'success' is not an API specification.
+    """
+    result = {"schema_version": "normal-return-query-enum-equality/v1", "status": "unknown",
+              "reason": None, "call_check": None, "enum_equality_check": None,
+              "scope": "normal_wrapper_return_implies_this_query_result_equals_guard_constant_under_contract",
+              "conditional_query_enum_equality_under_external_lowering_assumption": False,
+              "actual_lowering_verified": False, "conversion_contract_verified": False,
+              "call_normal_return_proved": False, "API_success_verified": False,
+              "query_output_effects_verified": False, "runtime_linkage_verified": False,
+              "source_program_checked": False, "deployable": False,
+              "assumptions": [],
+              "limitations": ["only the selected invocation's return value, not a subsequent query call",
+                              "does not prove API success, output writes, reachability or normal return",
+                              "conversion protocol and linked implementation remain external premises"]}
+    try:
+        if not isinstance(payload, dict):
+            raise ValueError("native_payload_required")
+        call = check_call(payload.get("ast"), call_id, max_ast_nodes=max_ast_nodes)
+        result["call_check"] = call
+        if call["status"] != "checked" or call["query_result_preserved_to_parameter"] is not True:
+            raise ValueError("fresh_query_call_not_checked")
+        equality = check_enum_equality(payload, call["wrapper_id"], conversion_contract,
+                                       max_ast_nodes=max_ast_nodes)
+        result["enum_equality_check"] = equality
+        if (equality["status"] != "checked" or
+                equality["conditional_enum_equality_under_external_lowering_assumption"] is not True):
+            raise ValueError("fresh_enum_equality_not_checked")
+        binding = equality["enum_binding_check"]
+        if (binding["guard_check"]["input_sha256"]["root"] != call["input_sha256"]["root"] or
+                any(binding[key] != call[key] for key in
+                    ("parameter_id", "constant_id", "converted_operand_ids"))):
+            raise ValueError("call_enum_binding_mismatch")
+        selection = {key: call[key] for key in
+                     ("call_id", "wrapper_id", "query_call_id", "query_declaration_id")}
+        result.update(status="checked", **selection,
+                      conditional_query_enum_equality_under_external_lowering_assumption=True,
+                      parameter_id=call["parameter_id"], constant_id=call["constant_id"],
+                      assumptions=list(dict.fromkeys(call["assumptions"] + equality["assumptions"])),
+                      input_sha256={**equality["input_sha256"], "selection": _hash(selection)})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def check_enum_binding(payload, function_id, *, max_ast_nodes=1_000_000):
     """Bind compiler enum observations to a freshly checked guard.
 
