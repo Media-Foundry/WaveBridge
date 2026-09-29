@@ -744,6 +744,10 @@ checked 仅在这些条件下表示复制实参的 lvalue 指向对应的同一�
 只支持普通内建整数字段、整数值参数、空函数体，以及逐字段恰好一次的参数或
 字面量初始化；允许列明的整数隐式转换，但不据此证明数值保持。引用、指针、
 volatile、bitfield、base、union、虚函数、调用及不支持的 AST 效果保持 unknown。
+record属性仅额外接受JSON明确记录的`VisibilityAttr`且visibility为default、
+无子表达式；implicit/inherited若存在必须为bool。缺值的旧Clang JSON不猜测。
+属性原记录保存在record_attribute_observations，动态链接解析/interposition
+仍未建立。该支持只针对选定源码构造体，不证明运行时解析到同一实现。
 
 `constructor-effects-check/v1` 的 checked 仅说明该构造器成员初始化式和函数体
 没有观测到目标地址读取/发布或其他存储写入；允许的写入是目标直接字段初始化。

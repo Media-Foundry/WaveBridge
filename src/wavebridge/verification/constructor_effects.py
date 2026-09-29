@@ -82,6 +82,8 @@ def check(root: object, constructor_id: object, integer_types: object,
         "constructor_declaration_id": constructor_id,
         "record_declaration_id": None,
         "field_initializers": [],
+        "record_attribute_observations": [],
+        "linker_resolution_and_interposition": "not_established",
         "permitted_writes": "not_established",
         "target_address_read": "not_established",
         "target_address_published": "not_established",
@@ -170,8 +172,21 @@ def check(root: object, constructor_id: object, integer_types: object,
         result["record_declaration_id"] = record_id
 
         record_children = _children(record)
-        if any(str(child.get("kind", "")).endswith("Attr") for child in record_children):
-            raise _Unknown("record_attribute_unsupported")
+        for attribute in record_children:
+            if not str(attribute.get("kind", "")).endswith("Attr"):
+                continue
+            # This checks the selected AST constructor body, not which linked
+            # implementation executes. Default symbol visibility adds no
+            # constructor expression or field write within this narrow scope.
+            if (attribute.get("kind") != "VisibilityAttr" or
+                    attribute.get("visibility") != "default" or _children(attribute) or
+                    any(key in attribute and type(attribute[key]) is not bool
+                        for key in ("implicit", "inherited"))):
+                raise _Unknown("record_attribute_unsupported")
+            result["record_attribute_observations"].append({
+                "attribute": attribute,
+                "scope": "default_symbol_visibility_only_not_linker_resolution",
+            })
         fields = [child for child in record_children if child.get("kind") == "FieldDecl"]
         if not fields or len(fields) > MAX_FIELDS:
             raise _Unknown("record_field_count_unsupported")

@@ -22,3 +22,12 @@ void effects_entry() {
   LiteralField literal;
   ConvertedField converted(257);
 }
+struct __attribute__((visibility("default"))) VisibleValue {
+    unsigned int x;
+    VisibleValue(unsigned int value) : x(value) {}
+};
+
+struct __attribute__((visibility("default"))) VisibleBodyWrite {
+    unsigned int x;
+    VisibleBodyWrite(unsigned int value) : x(value) { x = 7; }
+};

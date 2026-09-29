@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 默认可见性属性支持已解除 HIP 构造器阻点
+
+constructor_effects仅接受明确default且无子表达式的VisibilityAttr，保留
+原属性观察；其它record属性、缺值或不支持形态仍unknown，链接解析未建立。
+真实HIP重放中构造器效果checked、字段关系recovered；整体对象仍unknown，
+当前原因推进为selection_domain_missing，未手填host尺寸域。
+SDK23真实正例及旧Clang缺字段保守拒绝均通过，构造主体额外写入负例不退化。
+见[重放实录](../experiments/hip-visibility-evidence-20260930.md)。无GPU执行。
+1279项CPU测试96.867秒通过、无跳过，demo/diff通过，Sol只读复核无阻断。
+
 ## HIP 配置对象检查已连接，初始化仍未知
 
 HIP threads-object模式从fresh绑定的第二配置槽位提取直接构造来源变量，

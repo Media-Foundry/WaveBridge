@@ -1,5 +1,6 @@
 """Constructor implementation effects, not whole call-expression effects."""
 import copy
+import os
 from pathlib import Path
 import shutil
 import unittest
@@ -16,7 +17,7 @@ class ConstructorEffectsClangTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         report = collect(Path(__file__).parent / "fixtures/constructor_effects.cpp",
-                         shutil.which("clang++"), ["-std=c++17"], "effects_entry",
+                         os.environ.get("WB_VISIBILITY_COMPILER", shutil.which("clang++")), ["-std=c++17"], "effects_entry",
                          full_translation_unit=True, dependency_binding="required")
         if report["status"] != "collected":
             raise AssertionError(report)
@@ -42,6 +43,46 @@ class ConstructorEffectsClangTests(unittest.TestCase):
             with self.subTest(name=name):
                 report = check(self.root, self.constructor(name)["id"], ABI)
                 self.assertEqual(report["status"], "unknown", report)
+
+    def test_default_visibility_does_not_hide_body_effects(self):
+        report = check(self.root, self.constructor("VisibleValue")["id"], ABI)
+        record = next(n for n in _walk(self.root) if n.get("kind") == "CXXRecordDecl"
+                      and n.get("name") == "VisibleValue" and n.get("completeDefinition"))
+        attribute = next(n for n in record["inner"] if n.get("kind") == "VisibilityAttr")
+        if "visibility" not in attribute:
+            # Older JSON producers omit the value: do not infer it from source.
+            self.assertEqual(report["status"], "unknown", report)
+            self.assertEqual(report["reason"], "record_attribute_unsupported")
+            return
+        self.assertEqual(report["status"], "checked", report)
+        self.assertEqual(len(report["record_attribute_observations"]), 1)
+        self.assertEqual(report["linker_resolution_and_interposition"], "not_established")
+        self.assertFalse(report["deployable"])
+        bad = check(self.root, self.constructor("VisibleBodyWrite")["id"], ABI)
+        self.assertEqual(bad["status"], "unknown", bad)
+        self.assertEqual(bad["reason"], "constructor_body_not_unique_and_empty")
+
+    def test_visibility_mutations_fail_closed(self):
+        for mutation in ("missing", "hidden", "protected", "child", "implicit", "other_attribute"):
+            root = copy.deepcopy(self.root)
+            constructor = self.constructor("VisibleValue", root)
+            record = next(n for n in _walk(root) if n.get("kind") == "CXXRecordDecl"
+                          and any(c is constructor for c in n.get("inner", [])))
+            attribute = next(n for n in record["inner"] if n.get("kind") == "VisibilityAttr")
+            if mutation == "missing":
+                attribute.pop("visibility", None)
+            elif mutation in {"hidden", "protected"}:
+                attribute["visibility"] = mutation
+            elif mutation == "child":
+                attribute["inner"] = [{"kind": "CallExpr"}]
+            elif mutation == "implicit":
+                attribute["implicit"] = "true"
+            else:
+                record["inner"].append({"kind": "PackedAttr"})
+            with self.subTest(mutation=mutation):
+                report = check(root, constructor["id"], ABI)
+                self.assertEqual(report["status"], "unknown", report)
+                self.assertEqual(report["reason"], "record_attribute_unsupported")
 
     def test_complex_record_and_parameter_types_are_unknown(self):
         for name in ("PointerField", "ReferenceField", "VolatileField", "BitField", "BaseField",
