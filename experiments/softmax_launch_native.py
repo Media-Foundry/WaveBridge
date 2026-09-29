@@ -142,7 +142,7 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                         if len(shift_parts) != 2:
                             raise ValueError("shift_origin_shape_unsupported")
                         exponent_id = reference(shift_parts[1])
-                        exponent_declaration, _, _ = unique(exponent_id)
+                        exponent_declaration, exponent_owner, exponent_statement = unique(exponent_id)
                         expressions = exponent_declaration.get("inner", [])
                         if len(expressions) != 1 or expressions[0].get("kind") != "CallExpr":
                             raise ValueError("exponent_initializer_not_call")
@@ -165,10 +165,15 @@ def check_host_dimensions(root, binding, *, power_input_domain=None):
                         if argument_reference.get("kind") != "DeclRefExpr":
                             raise ValueError("power_argument_not_declaration_read")
                         argument_id = argument_reference.get("referencedDecl", {}).get("id")
+                        from wavebridge.verification.parameter_entry import check as check_parameter_entry
                         result["power_loop_checks"].append({"call_ast": call,
                             "exponent_declaration_id": exponent_id,
                             "domain_policy": "explicit diagnostic assumption; not established at this call",
                             "call_domain_established": False,
+                            "entry_domain_policy": "same interval separately assumed at host function entry; not runtime verified",
+                            "parameter_entry_check": check_parameter_entry(
+                                root, exponent_owner["id"], argument_id, exponent_statement["id"],
+                                *power_input_domain),
                             "initialized_shift_check": check_initialized_shift(
                                 root, exponent_id, identifier, argument_id, *power_input_domain),
                             "check": check_power(root, ref.get("id"), *power_input_domain)})
