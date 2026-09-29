@@ -478,16 +478,18 @@ def check_header_connection(root, loop_id, int_bits, *, max_ast_nodes=None):
 
 
 def check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_ast_nodes=None,
-                            use_static_branches=False, use_nested_loops=False):
+                            use_static_branches=False, use_nested_loops=False,
+                            allow_unary_float=False, allow_using_shadows=False):
     """Check all selected work statements, not just successfully checked calls."""
     return _check_work_preservation(payload, loop_id, int_bits, call_protocols,
                                    max_ast_nodes=max_ast_nodes, use_static_branches=use_static_branches,
-                                   use_nested_loops=use_nested_loops)
+                                   use_nested_loops=use_nested_loops,
+                                   allow_unary_float=allow_unary_float, allow_using_shadows=allow_using_shadows)
 
 
 def _check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_ast_nodes=None,
                              use_static_branches=False, use_nested_loops=False,
-                             extra_protected_ids=()):
+                             extra_protected_ids=(), allow_unary_float=False, allow_using_shadows=False):
     """Internal worker; extra storage has no initializer-domain claim by itself."""
     from wavebridge.analysis.column_loops import _check_body, _static_bool_value, _Unknown as BodyUnknown
     from wavebridge.verification.builtin_calls import check_call_no_memory_write
@@ -504,7 +506,11 @@ def _check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_
                               "nested loops are not accepted by this work checker",
                               "external leaf effects remain unverified; all consumed call premises apply"],
               "budget": {"max_call_protocols": 64}}
+    result["builtin_call_policy"] = {"schema_version": "builtin-callsite-policy/v1",
+                                    "allow_unary_float": allow_unary_float,
+                                    "allow_using_shadows": allow_using_shadows}
     if (type(use_static_branches) is not bool or type(use_nested_loops) is not bool or
+            type(allow_unary_float) is not bool or type(allow_using_shadows) is not bool or
             not isinstance(extra_protected_ids, tuple) or len(extra_protected_ids) > 64 or
             any(not isinstance(i, str) or not i for i in extra_protected_ids) or
             len(set(extra_protected_ids)) != len(extra_protected_ids) or
@@ -597,7 +603,10 @@ def _check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_
                 if protocol.get("schema_version") == "scalar-leaf-effect-assumption/v1":
                     reports[identifier] = check_scalar_call(root, identifier, protocol, max_ast_nodes=max_ast_nodes)
                 else:
-                    reports[identifier] = check_call_no_memory_write(payload, identifier, protocol, max_ast_nodes=max_ast_nodes)
+                    reports[identifier] = check_call_no_memory_write(payload, identifier, protocol,
+                        max_ast_nodes=max_ast_nodes, allow_unary_float=allow_unary_float,
+                        allow_using_shadows=allow_using_shadows)
+                result["assumptions"].extend(reports[identifier].get("assumptions", []))
             return reports[identifier]["status"] == "checked"
 
         def bound_statement(loop, binding):
@@ -672,7 +681,8 @@ def _check_work_preservation(payload, loop_id, int_bits, call_protocols, *, max_
         if unused:
             raise _Unknown("unused_call_protocols")
         result.update(status="checked", work_preserves_protected="conditional",
-                      input_sha256={**connection["input_sha256"], "call_protocols": _hash(call_protocols)})
+                      input_sha256={**connection["input_sha256"], "call_protocols": _hash(call_protocols),
+                                    "builtin_call_policy": _hash(result["builtin_call_policy"])})
         if extra_protected_ids:
             result["input_sha256"]["extra_protected_ids"] = _hash(extra_protected_ids)
         result["assumptions"].extend(connection["assumptions"])

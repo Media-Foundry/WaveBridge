@@ -2,6 +2,12 @@
 
 ## 一元 native 调用的条件效果组合
 
+`loop_exit_guards.check_work_preservation`也可显式接收一元/using选项。
+只在精确call回调中启用；其余work、guard、prefix及启用的nested结构仍逐项
+检查。父报告继承实际消费的子调用前提，输入hash绑定builtin call策略；
+一个call checked不能隐藏另一个无协议call或受保护存储写入。未使用协议
+继续导致unknown。默认高层domain/initializer入口不自动开启新模式。
+
 `builtin_calls.check_call_no_memory_write(..., allow_unary_float=True,
 allow_using_shadows=True)`可显式选择一元wrapper路径：fresh检查完整外层调用
 结构与实参，再fresh检查精确native leaf及现有

@@ -2,6 +2,19 @@
 
 更新日期：2026-09-30。
 
+## 真实输出循环已消费一元条件效果
+
+guarded-work入口可显式启用一元/using检查并向上传递子调用前提，策略绑定
+hash；其它写入、未知调用、unused协议仍阻止父报告通过。真实HIP外层输出
+循环默认unknown，启用后在未验证leaf前提下条件checked，同时检查log、nan
+及一个嵌套循环；没有静态裁剪分支。见
+[实际重放](../experiments/hip-unary-work-evidence-20260930.md)。输入/src/driver
+哈希稳定并复核；不是整个kernel、完整迭代域、浮点等价或部署保证。
+1263项CPU回归通过（106.134秒，无跳过），demo/diff通过；真实native正负例
+覆盖partial call成功不能遮蔽另一未知call、保护变量写入和nested假设传播。
+GPT-5.6 Sol复核未发现阻断。无GPU执行，设备库效果仍需独立语义依据；4处exp
+在非guarded计算循环，未通过此入口建立保持性，下一步应处理其实际剩余义务。
+
 ## 一元 native 调用已接入条件效果协议
 
 现有builtin callsite入口增加显式一元/using模式：fresh组合外层实参、参数链

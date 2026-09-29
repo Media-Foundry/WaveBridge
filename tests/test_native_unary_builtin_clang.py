@@ -13,6 +13,7 @@ from wavebridge.verification.scalar_forwarding import inspect_builtin_structure
 from wavebridge.verification.scalar_call_effects import inspect_native_call
 from wavebridge.verification.builtin_calls import check_call_no_memory_write
 from wavebridge.analysis.column_loops import recover_with_call_effects
+from wavebridge.verification.loop_exit_guards import check_work_preservation
 
 PLUGIN = os.environ.get("WB_UNARY_BUILTIN_PLUGIN", os.environ.get("WB_NATIVE_CAPTURE_PLUGIN"))
 COMPILER = os.environ.get("WB_UNARY_BUILTIN_COMPILER", os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++"))
@@ -55,6 +56,40 @@ void loop_induction_write(int tid, int n, float x, float* out) {
 }
 float zero_leaf() { return __builtin_huge_valf(); }
 float zero_outer() { return zero_leaf(); }
+constexpr int guarded_bound = 8;
+void guarded_read(int limit, float x, float* out) {
+  for (int i = 0; i < guarded_bound; i += 1) {
+    if (i >= limit) break;
+    out[i] = routed(x);
+  }
+}
+void guarded_write(int limit, float x, float* out) {
+  for (int i = 0; i < guarded_bound; i += 1) {
+    if (i >= limit) break;
+    out[i] = routed(x); limit = 0;
+  }
+}
+void guarded_argument(int limit, float x, float* out) {
+  for (int i = 0; i < guarded_bound; i += 1) {
+    if (i >= limit) break;
+    out[i] = routed(x++);
+  }
+}
+void guarded_partial(int limit, float x, float* out) {
+  for (int i = 0; i < guarded_bound; i += 1) {
+    if (i >= limit) break;
+    out[i] = routed(x); out[i] = external(x);
+  }
+}
+void guarded_nested(int limit, float x, float* out) {
+  for (int i = 0; i < guarded_bound; i += 1) {
+    if (i >= limit) break;
+    for (int j = 0; j < guarded_bound; j += 1) {
+      if (j >= limit) break;
+      out[i + j] = routed(x);
+    }
+  }
+}
 """
 
 
@@ -294,6 +329,48 @@ class NativeUnaryBuiltinClangTests(unittest.TestCase):
         for options in ({"allow_unary_float": 1}, {"allow_using_shadows": 1}):
             self.assertEqual(recover_with_call_effects(self.payload, function["id"], 32, protocols,
                                                        **options)["status"], "unknown")
+
+    def guarded(self, name="guarded_read", protocols=None, **options):
+        function = next(n for n in self.payload["ast"]["inner"] if n.get("name") == name)
+        loop = next(n for n in _walk(function) if n.get("kind") == "ForStmt")
+        if protocols is None:
+            protocols = {self.call(name)["id"]: self.protocol("exp_read")}
+        return check_work_preservation(self.payload, loop["id"], 32, protocols, **options)
+
+    def test_guarded_work_requires_opt_in_and_carries_child_assumptions(self):
+        self.assertEqual(self.guarded()["status"], "unknown")
+        result = self.guarded(allow_unary_float=True, allow_using_shadows=True)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["work_preserves_protected"], "conditional")
+        self.assertFalse(result["full_iteration_domain_established"])
+        self.assertFalse(result["external_call_effects_verified"])
+        self.assertFalse(result["deployable"])
+        for child in result["call_effect_checks"].values():
+            self.assertTrue(set(child["assumptions"]).issubset(result["assumptions"]))
+        self.assertEqual(result["input_sha256"]["builtin_call_policy"], _hash(result["builtin_call_policy"]))
+
+    def test_guarded_work_does_not_hide_other_writes_or_unused_protocols(self):
+        for name in ("guarded_write", "guarded_argument", "guarded_partial"):
+            result = self.guarded(name, allow_unary_float=True, allow_using_shadows=True)
+            self.assertEqual(result["status"], "unknown", result)
+            if name != "guarded_argument":
+                self.assertEqual(result["call_effect_checks"][self.call(name)["id"]]["status"], "checked")
+        protocols = {self.call("guarded_read")["id"]: self.protocol("exp_read"),
+                     "unconsumed": self.protocol("log_read")}
+        result = self.guarded(protocols=protocols, allow_unary_float=True, allow_using_shadows=True)
+        self.assertEqual(result["status"], "unknown", result)
+        self.assertEqual(result["reason"], "unused_call_protocols")
+        for options in ({"allow_unary_float": 1}, {"allow_using_shadows": 1}):
+            self.assertEqual(self.guarded(**options)["status"], "unknown")
+
+    def test_nested_guarded_work_propagates_native_policy_and_assumptions(self):
+        result = self.guarded("guarded_nested", use_nested_loops=True,
+                              allow_unary_float=True, allow_using_shadows=True)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertTrue(result["nested_loop_checks"])
+        for child in result["call_effect_checks"].values():
+            self.assertTrue(set(child["assumptions"]).issubset(result["assumptions"]))
+            self.assertEqual(child["input_sha256"]["call_policy"], result["input_sha256"]["builtin_call_policy"])
 
     def test_writing_and_unsupported_argument_shapes_remain_unknown(self):
         for name in ("increment", "assignment", "nested", "arithmetic", "reference",

@@ -2,6 +2,10 @@
 
 ## 条件一元 native 效果
 
+guarded-work入口`loop_exit_guards.check_work_preservation`显式提供相同选项，
+包括已启用nested循环内部的call消费。全部受保护依赖与其它work仍需通过，
+子调用假设向上传递；不自动建立完整迭代域或源程序正确性。
+
 现有`builtin_calls.check_call_no_memory_write`增加显式
 `allow_unary_float=True, allow_using_shadows=True`，把fresh外层调用结构与
 fresh builtin叶效果协议组合成条件无写入。不新增自动推断的效果前提。
