@@ -1,5 +1,17 @@
 # 编译器关系检查
 
+## wrapper 到 native 一元 builtin 的参数转发
+
+`scalar_forwarding.inspect_builtin_structure(payload, start_declaration_id,
+leaf_call_id, allow_using_shadows=True)`先fresh检查精确native leaf，再在同一
+原AST上重走单return、单float形参wrapper链。终端必须是所选call ID，读取
+的必须是当前wrapper的形参；另一个同名builtin调用不能关闭这条链。
+返回完整子报告及输入/身份策略哈希，不接受调用者提供的成功子报告。
+
+这是函数内部参数转发结构，不是外层调用实参求值、builtin效果、浮点值
+或循环保证。outer_argument_effects_checked、source_program_checked及
+deployable均false。旧外部标量leaf入口保持原支持边界；两者共享受限链检查。
+
 ## native 一元 float builtin
 
 `builtin_calls.inspect_structure(payload, call_id, allow_unary_float=True,

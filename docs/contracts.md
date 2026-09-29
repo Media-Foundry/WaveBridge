@@ -1,5 +1,18 @@
 # 模型、检查与证据协议
 
+## native 参数转发结构
+
+`scalar_forwarding.inspect_builtin_structure`只接受同一native envelope与
+精确start declaration/leaf call ID，不消费预先签发的子结论。先检查
+native builtin身份及形参读取，再检查wrapper每一级形参转发；终端call与
+当前wrapper形参必须精确对应。成功报告绑定root、native envelope、所选
+调用、声明及两层检查策略哈希。
+
+该入口不需要效果假设，因而也不签发无写入结论。报告明确排除外层实参、
+运行时定义/输入历史、浮点值和正常返回语义；读取其它函数的同类型形参
+不能仅因leaf结构独立通过就拼接为成功转发。后续效果组合必须重新检查
+外层实参并消费精确外部前提。
+
 ## builtin程序可访问存储协议
 
 `builtin-accessible-storage-assumption/v1`与no_memory_write协议不同：允许

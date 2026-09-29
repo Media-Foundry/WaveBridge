@@ -120,12 +120,14 @@ def run(ast_path, previous_path, output_dir):
     return report
 
 
-def run_native(native_path, output_dir, *, using_shadows=False, unary_float=False):
+def run_native(native_path, output_dir, *, using_shadows=False, unary_float=False, unary_forwarding=False):
     """Observe HIP call paths without deduplicating or modifying checker input."""
     from wavebridge.verification.builtin_calls import inspect_structure
     from wavebridge.verification.using_shadow_identity import UsingShadowIndex, IdentityUnknown
     from wavebridge.verification.getter_returns import _hash
-    if type(using_shadows) is not bool or type(unary_float) is not bool:
+    from wavebridge.verification.scalar_forwarding import inspect_builtin_structure
+    if (any(type(option) is not bool for option in (using_shadows, unary_float, unary_forwarding)) or
+            unary_forwarding and not (using_shadows and unary_float)):
         raise ValueError("invalid_using_shadows_option")
     native_path = Path(native_path).resolve()
     if sha(native_path) != HIP_NATIVE_SHA:
@@ -177,6 +179,50 @@ def run_native(native_path, output_dir, *, using_shadows=False, unary_float=Fals
             except IdentityUnknown as error:
                 item["reason"] = str(error)
             identity_checks.append(item)
+    forwarding_checks = []
+    if unary_forwarding:
+        # Select syntactic routes only; the checker rebuilds every body and
+        # parameter edge. No function name is a relation template or oracle.
+        native_ids = {record["call_expression_id"] for record in leaves}
+        routes = {}
+        for outer in (node for node in walk(entry) if node.get("kind") == "CallExpr"):
+            current, first, seen = outer, None, set()
+            for _ in range(32):
+                if current.get("id") in native_ids:
+                    if first is not None:
+                        routes.setdefault((first, current["id"]), []).append(outer["id"])
+                    break
+                parts = current.get("inner", [])
+                if not parts:
+                    break
+                reference = parts[0]
+                while reference.get("kind") in {"ImplicitCastExpr", "ParenExpr"} and len(reference.get("inner", [])) == 1:
+                    reference = reference["inner"][0]
+                target = reference.get("referencedDecl", {})
+                if reference.get("kind") != "DeclRefExpr" or target.get("kind") != "FunctionDecl":
+                    break
+                identifier = target.get("id")
+                if identifier in seen:
+                    break
+                seen.add(identifier)
+                try:
+                    declaration = identities.unique(identifier)
+                except IdentityUnknown:
+                    break
+                first = identifier if first is None else first
+                body = _body(declaration)
+                statements = body.get("inner", []) if body else []
+                if (len(statements) != 1 or statements[0].get("kind") != "ReturnStmt" or
+                        len(statements[0].get("inner", [])) != 1 or
+                        statements[0]["inner"][0].get("kind") != "CallExpr"):
+                    break
+                current = statements[0]["inner"][0]
+        for (start, terminal), outer_ids in sorted(routes.items()):
+            checked = inspect_builtin_structure(payload, start, terminal, allow_using_shadows=True)
+            forwarding_checks.append({"start_declaration_id": start, "native_leaf_call_id": terminal,
+                "syntactic_outer_call_ids": outer_ids, "check": checked})
+            print(json.dumps({"phase": "native_forwarding", "start": start,
+                              "status": checked["status"], "reason": checked["reason"]}), flush=True)
     report = {"schema_version": "softmax-native-call-audit/v1",
               "command": sys.argv, "native_sha256": HIP_NATIVE_SHA,
               "entry_id": entry["id"], "inventory": observed,
@@ -185,6 +231,8 @@ def run_native(native_path, output_dir, *, using_shadows=False, unary_float=Fals
               "math_builtin_checks": checks, "implementation_before": before,
               "using_shadows_enabled": using_shadows,
               "unary_float_enabled": unary_float,
+              "unary_forwarding_enabled": unary_forwarding,
+              "unary_forwarding_checks": forwarding_checks,
               "using_shadow_identity_checks": identity_checks,
               "using_shadow_observations": identities.observations if identities else [],
               "driver_dependencies_before": helpers,
@@ -210,17 +258,18 @@ def main():
     parser.add_argument("--previous-report", type=Path)
     parser.add_argument("--using-shadows", action="store_true")
     parser.add_argument("--unary-float", action="store_true")
+    parser.add_argument("--unary-forwarding", action="store_true")
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     if args.native:
         if args.previous_report:
             parser.error("--previous-report is not used with --native")
         result = run_native(args.native, args.output_dir, using_shadows=args.using_shadows,
-                            unary_float=args.unary_float)
+                            unary_float=args.unary_float, unary_forwarding=args.unary_forwarding)
     else:
         if not args.previous_report:
             parser.error("--ast requires --previous-report")
-        if args.using_shadows or args.unary_float:
+        if args.using_shadows or args.unary_float or args.unary_forwarding:
             parser.error("--using-shadows and --unary-float require --native")
         result = run(args.ast, args.previous_report, args.output_dir)
     return 0 if result["inputs_unchanged"] else 2

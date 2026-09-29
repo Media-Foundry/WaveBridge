@@ -2,6 +2,18 @@
 
 更新日期：2026-09-30。
 
+## wrapper 到 native leaf 的参数结构连接
+
+新增独立native转发入口，fresh检查leaf并重走原AST wrapper链，终端call
+和当前形参精确绑定。真实Clang回归覆盖正常两层链、同builtin不同call、
+其它函数形参错绑、wrapper写入和改变实参。外层调用实参、效果、浮点值及
+完整循环仍未建立，不把两个局部成功报告直接拼成整调用保证。
+真实HIP的exp→expf和log→logf两条路径均已完成到精确native leaf的结构检查；
+输入/实现哈希稳定，child终端模式和绑定已补齐，见
+[重放实录](../experiments/hip-native-forwarding-evidence-20260930.md)。未运行GPU。
+最终1249项CPU回归通过（98.512秒，无跳过），demo/diff通过。新增native
+相关11项亦在匹配AOCC17插件上通过；不声称全量SDK23或远端CI通过。
+
 ## native 一元 builtin 的受限结构检查
 
 builtin入口新增显式一元float模式：仅支持expf/logf和普通float形参直接

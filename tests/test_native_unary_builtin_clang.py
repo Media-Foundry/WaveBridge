@@ -9,6 +9,7 @@ from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.verification.builtin_calls import inspect_structure, check_no_memory_write
 from wavebridge.verification.getter_returns import _hash
+from wavebridge.verification.scalar_forwarding import inspect_builtin_structure
 
 PLUGIN = os.environ.get("WB_UNARY_BUILTIN_PLUGIN", os.environ.get("WB_NATIVE_CAPTURE_PLUGIN"))
 COMPILER = os.environ.get("WB_UNARY_BUILTIN_COMPILER", os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++"))
@@ -18,6 +19,9 @@ float exp_read(float x) { return __builtin_expf(x); }
 float log_read(float renamed) { return __builtin_logf(renamed); }
 namespace imported { using ::exp_read; }
 float routed(float x) { return imported::exp_read(x); }
+float alternate(float x) { return __builtin_expf(x); }
+float writing_wrapper(float x) { x += 1.0f; return exp_read(x); }
+float changed_argument(float x) { return exp_read(x + 1.0f); }
 float increment(float x) { return __builtin_expf(x++); }
 float assignment(float x) { return __builtin_expf(x = 1.0f); }
 float nested(float x) { return __builtin_expf(external(x)); }
@@ -55,6 +59,65 @@ class NativeUnaryBuiltinClangTests(unittest.TestCase):
     def inspect(self, name, payload=None, **kwargs):
         payload = self.payload if payload is None else payload
         return inspect_structure(payload, self.call(name, payload)["id"], **kwargs)
+
+    def forward(self, start="routed", leaf="exp_read", payload=None, **kwargs):
+        payload = self.payload if payload is None else payload
+        declaration = next(n for n in payload["ast"]["inner"]
+                           if n.get("kind") == "FunctionDecl" and n.get("name") == start)
+        return inspect_builtin_structure(payload, declaration["id"], self.call(leaf, payload)["id"],
+                                         allow_using_shadows=True, **kwargs)
+
+    def test_wrapper_chain_freshly_binds_native_terminal_and_parameter_flow(self):
+        before = _hash(self.payload)
+        result = self.forward()
+        self.assertEqual(result["status"], "checked", result)
+        edges = result["forwarding_check"]["call_edges"]
+        self.assertEqual(len(edges), 2)
+        self.assertEqual(edges[-1]["call_expression_id"], self.call("exp_read")["id"])
+        self.assertEqual(edges[-1]["source_parameter_id"],
+                         result["native_leaf_structure"]["argument_read_declaration_id"])
+        self.assertFalse(result["outer_argument_effects_checked"])
+        self.assertFalse(result["deployable"])
+        self.assertEqual(result["effect_semantics"], "not_established")
+        child = result["forwarding_check"]
+        self.assertEqual(child["terminal_mode"], "native_builtin")
+        self.assertEqual(child["schema_version"], "scalar-native-forwarding-chain/v1")
+        for key in ("native_envelope", "native_leaf_call", "builtin_structure_policy"):
+            self.assertEqual(child["input_sha256"][key], result["input_sha256"][key])
+        self.assertTrue(result["assumptions"])
+        self.assertTrue(result["limitations"])
+        self.assertEqual(before, _hash(self.payload))
+
+    def test_other_native_call_with_same_builtin_cannot_close_chain(self):
+        result = self.forward(leaf="alternate")
+        self.assertEqual(result["native_leaf_structure"]["status"], "checked")
+        self.assertEqual(result["status"], "unknown", result)
+        self.assertEqual(self.forward(leaf="log_read")["status"], "unknown")
+
+    def test_wrapper_mutation_or_changed_forwarded_expression_stays_unknown(self):
+        for start in ("writing_wrapper", "changed_argument"):
+            with self.subTest(start=start):
+                self.assertEqual(self.forward(start=start)["status"], "unknown")
+
+    def test_native_read_of_another_parameter_cannot_be_spliced_into_wrapper(self):
+        payload = deepcopy(self.payload)
+        other = self.call("log_read", payload)["inner"][1]["inner"][0]["referencedDecl"]
+        call_id = self.call("exp_read", payload)["id"]
+        # Mutate all repeated representations consistently: identity matching is
+        # not the property under test; current-wrapper parameter binding is.
+        for node in _walk(payload["ast"]):
+            if node.get("id") == call_id:
+                node["inner"][1]["inner"][0]["referencedDecl"] = deepcopy(other)
+        result = self.forward(payload=payload)
+        self.assertEqual(result["native_leaf_structure"]["status"], "checked", result)
+        self.assertEqual(result["status"], "unknown")
+        self.assertEqual(result["reason"], "native_argument_not_current_parameter")
+
+    def test_native_forwarding_rejects_bad_budget_and_missing_id(self):
+        self.assertEqual(self.forward(max_ast_nodes=1)["status"], "unknown")
+        result = inspect_builtin_structure(self.payload, "missing", self.call("exp_read")["id"],
+                                           allow_using_shadows=True)
+        self.assertEqual(result["status"], "unknown")
 
     def protocol(self, name, payload=None):
         payload = self.payload if payload is None else payload
