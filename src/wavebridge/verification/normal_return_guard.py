@@ -203,6 +203,63 @@ def check_enum_binding(payload, function_id, *, max_ast_nodes=1_000_000):
     return result
 
 
+def check_enum_equality(payload, function_id, conversion_contract, *, max_ast_nodes=1_000_000):
+    """Conditional inverse of the guard casts under an explicit lowering contract.
+
+    No compiler-name heuristic or named-constant range discharges this contract.
+    It is deliberately distinct from check_enum_binding's compiler observations.
+    """
+    from wavebridge.verification.integer_conversion import check_bitpattern_equality
+
+    result = {"schema_version": "normal-return-enum-equality/v1", "status": "unknown",
+              "reason": None, "enum_binding_check": None, "conversion_check": None,
+              "scope": "normal_return_implies_parameter_equals_constant_under_explicit_bitpattern_contract",
+              "conditional_enum_equality_under_external_lowering_assumption": False,
+              "conversion_contract_verified": False, "actual_lowering_verified": False,
+              "API_success_verified": False, "source_program_checked": False, "deployable": False,
+              "assumptions": [],
+              "limitations": ["lowering contract is an external assumption, not verified compiler or machine code",
+                              "no API success, output effect, reachability or normal-return proof"]}
+    try:
+        binding = check_enum_binding(payload, function_id, max_ast_nodes=max_ast_nodes)
+        result["enum_binding_check"] = binding
+        if binding["status"] != "checked":
+            raise ValueError("fresh_enum_binding_not_checked")
+        bits = binding["enum_observation"]["underlying_bits"]
+        required = {
+            "schema_version": "enum-bitpattern-contract/v1",
+            "payload_sha256": binding["input_sha256"]["payload"],
+            "function_id": function_id,
+            "parameter_id": binding["parameter_id"],
+            "constant_id": binding["constant_id"],
+            "enum_declaration_id": binding["enum_declaration_id"],
+            "converted_operand_ids": binding["converted_operand_ids"],
+            "bits": bits,
+            "semantics": "both_casts_preserve_all_bits_of_determinate_full_underlying_representation",
+            "equality": "enum_and_int_equality_compare_all_representation_bits",
+            "representation": "padding_free_trap_free_unique_bitvectors_twos_complement_signed_decode",
+        }
+        if (not isinstance(conversion_contract, dict) or
+                type(conversion_contract.get("bits")) is not int or conversion_contract != required):
+            raise ValueError("exact_external_conversion_contract_required")
+        conversion = check_bitpattern_equality(bits)
+        result["conversion_check"] = conversion
+        if conversion["status"] != "checked":
+            raise ValueError("bitpattern_equality_not_checked")
+        result.update(status="checked", conditional_enum_equality_under_external_lowering_assumption=True,
+                      function_id=function_id, parameter_id=binding["parameter_id"],
+                      constant_id=binding["constant_id"],
+                      equality_condition="only_if_the_explicit_conversion_contract_holds",
+                      external_conversion_contract=dict(conversion_contract),
+                      assumptions=binding["assumptions"] + conversion["assumptions"],
+                      input_sha256={**binding["input_sha256"],
+                                    "conversion_contract": _hash(conversion_contract),
+                                    "identity_policy": _hash(IDENTITY_POLICY)})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def check_call(root, call_id, *, max_ast_nodes=1_000_000):
     """Freshly compose a direct nested query result with its guard definition.
 

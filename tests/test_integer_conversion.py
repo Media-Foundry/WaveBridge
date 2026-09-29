@@ -1,9 +1,24 @@
 import unittest
 
-from wavebridge.verification.integer_conversion import check_interval
+from wavebridge.verification.integer_conversion import check_interval, check_bitpattern_equality
 
 
 class IntegerConversionTests(unittest.TestCase):
+    def test_full_bitpattern_model_is_injective_not_value_preserving(self):
+        for bits in range(2, 11):
+            patterns = range(1 << bits)
+            signed = [p if p < (1 << (bits - 1)) else p - (1 << bits) for p in patterns]
+            self.assertEqual(len(set(signed)), len(patterns))
+            self.assertEqual([v % (1 << bits) for v in signed], list(patterns))
+            report = check_bitpattern_equality(bits)
+            self.assertEqual(report["status"], "checked")
+            self.assertFalse(report["numeric_value_preservation_established"])
+        self.assertEqual(check_bitpattern_equality(32)["domain"]["upper"], 2**32 - 1)
+
+    def test_bitpattern_width_is_strict_and_bounded(self):
+        for bits in (True, False, None, "32", 1, 129, 32.0):
+            self.assertEqual(check_bitpattern_equality(bits)["status"], "unknown")
+
     def test_launch_constants_fit_explicit_int_to_unsigned_widths(self):
         for value in (1, 256):
             result = check_interval(value, value, 32, True, 32, False)

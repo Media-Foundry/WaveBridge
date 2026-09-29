@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
-from wavebridge.verification.normal_return_guard import check_enum_binding
+from wavebridge.verification.normal_return_guard import check_enum_binding, check_enum_equality
 
 PLUGIN = os.environ.get("WB_ENUM_CAPTURE_PLUGIN") or os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_ENUM_CAPTURE_COMPILER") or os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -69,6 +69,48 @@ class NativeGuardEnumBindingTests(unittest.TestCase):
         cls.payload = report["payload"]
         cls.function = next(n["id"] for n in _walk(cls.payload["ast"])
                             if n.get("kind") == "FunctionDecl" and n.get("name") == "good")
+
+    def contract(self):
+        # Test-only external assumption. Binding IDs does not verify lowering.
+        binding = check_enum_binding(self.payload, self.function)
+        return {
+            "schema_version": "enum-bitpattern-contract/v1",
+            "payload_sha256": binding["input_sha256"]["payload"],
+            "function_id": self.function, "parameter_id": binding["parameter_id"],
+            "constant_id": binding["constant_id"],
+            "enum_declaration_id": binding["enum_declaration_id"],
+            "converted_operand_ids": binding["converted_operand_ids"],
+            "bits": binding["enum_observation"]["underlying_bits"],
+            "semantics": "both_casts_preserve_all_bits_of_determinate_full_underlying_representation",
+            "equality": "enum_and_int_equality_compare_all_representation_bits",
+            "representation": "padding_free_trap_free_unique_bitvectors_twos_complement_signed_decode",
+        }
+
+    def test_equality_is_conditional_on_exact_external_contract(self):
+        report = check_enum_equality(self.payload, self.function, self.contract())
+        self.assertEqual(report["status"], "checked", report)
+        self.assertTrue(report["conditional_enum_equality_under_external_lowering_assumption"])
+        for key in ("conversion_contract_verified", "actual_lowering_verified", "API_success_verified",
+                    "source_program_checked", "deployable"):
+            self.assertFalse(report[key])
+        self.assertFalse(report["conversion_check"]["numeric_value_preservation_established"])
+
+    def test_equality_rejects_unbound_partial_or_conclusion_contracts(self):
+        for key in self.contract():
+            contract = self.contract()
+            contract.pop(key)
+            self.assertEqual(check_enum_equality(self.payload, self.function, contract)["status"], "unknown", key)
+        for key, value in (("payload_sha256", "wrong"), ("bits", True), ("bits", 16),
+                           ("converted_operand_ids", list(reversed(self.contract()["converted_operand_ids"]))),
+                           ("semantics", "uint_max_probe_passed"), ("semantics", "truncate"),
+                           ("representation", "may_have_padding"), ("API_success_verified", True)):
+            contract = self.contract()
+            contract[key] = value
+            self.assertEqual(check_enum_equality(self.payload, self.function, contract)["status"], "unknown", key)
+        payload = copy.deepcopy(self.payload)
+        next(n for n in _walk(payload["ast"]) if n.get("kind") == "BinaryOperator")["opcode"] = "=="
+        self.assertEqual(check_enum_equality(payload, self.function, self.contract())["status"], "unknown")
+        self.assertEqual(check_enum_equality(self.payload, self.function, None)["status"], "unknown")
 
     def test_fresh_binding_and_limits(self):
         before = copy.deepcopy(self.payload)

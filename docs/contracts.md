@@ -20,6 +20,21 @@ signed int提升观测和非scoped枚举，不扩展任意类型别名或转换�
 payload与选点hash；元数据属于可信前端前提，不是独立类型验证。常量列表
 不用于推导runtime域，未反推enum相等，API成功/source/deploy均保持false。
 
+## 显式转换协议下的守卫相等关系
+
+`normal_return_guard.check_enum_equality`重新执行上述绑定，不接受成功报告。
+调用者必须提供`enum-bitpattern-contract/v1`：精确payload哈希、function/
+parameter/constant/enum ID、有序两个转换ID、相同位宽，以及全域保位、
+enum/int按全部位比较、无padding/trap且唯一two's-complement解释的明确前提。
+字段必须精确匹配，额外成功结论、单点探针、截断模型均不能替代协议。
+
+独立`integer_conversion.check_bitpattern_equality`在完整W-bit域上检查身份映射
+的相等反射，不把signed解释前后的数值保持作为结论，不枚举2^32个值。
+组合仅得到：正常返回时，在外部表示/转换前提成立的条件下，参数与常量的
+enum值相等。字段`conditional_enum_equality_under_external_lowering_assumption`
+显式保留条件，`actual_lowering_verified`和`conversion_contract_verified`仍false。
+没有默认协议或按编译器名称自动启用；API成功/输出效果/source/deploy仍false。
+
 ## 一元 native 调用的条件效果组合
 
 `loop_exit_guards.check_iteration_bounds`显式接收相同一元/using选项，向其

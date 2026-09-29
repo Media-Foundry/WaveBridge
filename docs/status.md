@@ -2,6 +2,15 @@
 
 更新日期：2026-09-30。
 
+## 外部全域保位协议下的枚举相等
+
+新增独立位模式相等反射检查及fresh守卫组合，显式绑定payload/声明/两侧转换
+ID与全域保位、唯一无padding/trap表示协议；无协议不通过。原HIP AST条件
+重放checked，但实际lowering/协议真实性/API成功未验证，部署仍false。
+不使用named constants范围或单点探针替代全域前提。1337项CPU回归99.428秒
+无跳过；Clang17/23各8项专项、整数6项、demo/diff通过，Sol复核无阻断。
+没有新GPU或程序运行。见[实录](../experiments/hip-enum-equality-20260930.md)。
+
 ## 原 HIP 守卫与枚举观测的精确绑定
 
 `normal_return_guard.check_enum_binding` fresh检查同payload guard，并连接精确
