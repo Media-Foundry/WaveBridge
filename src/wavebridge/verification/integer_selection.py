@@ -281,7 +281,7 @@ def check_minimum_to_statement(root, assignment_id, statement_id, integer_types,
 
 
 def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *, initialized_local=False,
-                           const_local_no_escape=False):
+                           const_local_no_escape=False, stop_at_target_entry=False):
     """Internal composition only: callers must freshly establish the start value."""
     from wavebridge.analysis.column_loops import _check_body, _Unknown as BodyUnknown
 
@@ -302,6 +302,9 @@ def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *,
         result["schema_version"] = "initialized-local-to-statement-history/v1"
         result["scope"] = "initialized_local_value_at_first_entry_to_later_same_block_statement"
     try:
+        if (type(stop_at_target_entry) is not bool or
+                (stop_at_target_entry and (not initialized_local or const_local_no_escape))):
+            raise _Unknown("entry_history_mode_requires_nonconst_local_initialization")
         if type(const_local_no_escape) is not bool or (const_local_no_escape and not initialized_local):
             raise _Unknown("const_history_mode_requires_local_initialization")
         if not isinstance(statement_id, str) or not statement_id:
@@ -365,6 +368,7 @@ def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *,
             update_nodes.add(id(node))
             pending.extend(_children(node))
         references, pending = [], [function]
+        excluded_references = []
         forbidden = {"LambdaExpr", "BlockExpr", "GotoStmt", "IndirectGotoStmt", "LabelStmt", "AddrLabelExpr",
                      "GCCAsmStmt", "MSAsmStmt", "CoroutineBodyStmt", "CXXTryStmt", "CXXThrowExpr"}
         while pending:
@@ -374,6 +378,14 @@ def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *,
             if node.get("kind") == "DeclRefExpr" and node.get("referencedDecl", {}).get("id") == protected:
                 if unique(node.get("id")) is not node or _children(node):
                     raise _Unknown("history_reference_not_unique_plain_leaf")
+                if stop_at_target_entry:
+                    ancestor = node
+                    while parents.get(id(ancestor)) is not None and parents[id(ancestor)] is not block:
+                        ancestor = parents[id(ancestor)]
+                    if parents.get(id(ancestor)) is block and statements.index(ancestor) >= end:
+                        excluded_references.append(node["id"])
+                        pending.extend(_children(node))
+                        continue
                 current, depth = node, 0
                 parent = parents[id(current)]
                 while parent is not None and (parent.get("kind") == "ParenExpr" or
@@ -423,6 +435,10 @@ def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *,
                       block_id=block.get("id"), assignment_child_index=begin, target_child_index=end,
                       reference_classifications=references,
                       input_sha256={"update": update["input_sha256"], "statement_id": _hash(statement_id)})
+        if stop_at_target_entry:
+            result["reference_audit_scope"] = "before_first_target_entry_only"
+            result["excluded_target_and_later_reference_ids"] = excluded_references
+            result["input_sha256"]["reference_audit_scope"] = _hash(result["reference_audit_scope"])
     except BodyUnknown as error:
         result["reason"], result["unknown_range"] = error.reason, error.range
     except _Unknown as error:

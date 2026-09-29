@@ -79,6 +79,18 @@ referencedDecl完全一致；callee decay、调用、变量、声明语句、own
 输出记录policy和共享出现次数；后续历史、数值域、纯度、动态链接、source/
 deploy仍未证明。两次getter调用的结果不被当作同一个值。
 
+`field_snapshot.check_query_initializer_to_statement`从fresh初始化关系构造内部
+seed，复用`integer_selection._preserve_to_statement`的私有first-entry模式。
+仅用于initialized local，不能与const快捷模式混用；公共调用者不能提交
+成功seed。起点声明和目标必须为同块有序直接语句。
+
+新模式仅排除target及之后同块兄弟子树中的protected reference分类；它
+仍遍历全函数拒绝goto/label/lambda/asm/异常等，仍核引用唯一性。target前
+地址/引用逃逸、array_filler引用及所有中间语句效果继续审计。
+默认历史入口不启用该模式；新policy绑定报告hash，明确列出排除的引用ID。
+结论严格止于该对象生命周期内目标首次入口、尚未求值任何target子表达式；
+target自身计算、之后的写入、数值域、可达性/部署均未验证。
+
 ## 一元 native 调用的条件效果组合
 
 `loop_exit_guards.check_iteration_bounds`显式接收相同一元/using选项，向其

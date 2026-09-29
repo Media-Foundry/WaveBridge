@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## Getter 初值到 minimum 首次入口
+
+`field_snapshot.check_query_initializer_to_statement`从fresh初值生成内部seed，
+复用已有历史checker的新私有first-entry模式。target前引用/效果完整审计，
+target及以后仅排除protected引用分类，全函数跳转/捕获禁项仍扫描。
+原HIP同块索引2→3条件checked；只保持初值到入口，target求值未检查。
+1349项CPU回归104.673秒通过、无跳过；Clang17/23各9项、demo/diff通过，
+Sol复核无阻断。无GPU/程序执行，数值域/API/部署仍未验证，见
+[实录](../experiments/hip-query-history-20260930.md)。
+
 ## Host 初始化到同次 getter 查询字段
 
 `field_snapshot.check_query_initializer`连接唯一automatic plain int初始声明、

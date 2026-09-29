@@ -6,7 +6,7 @@ import unittest
 
 from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
-from wavebridge.verification.field_snapshot import check_query_object, check_query_output, check_query_initializer, FIELD_READ_PREMISE
+from wavebridge.verification.field_snapshot import check_query_object, check_query_output, check_query_initializer, check_query_initializer_to_statement, FIELD_READ_PREMISE
 from wavebridge.verification.normal_return_guard import check_enum_binding
 
 PLUGIN = os.environ.get("WB_ENUM_CAPTURE_PLUGIN") or os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
@@ -23,6 +23,40 @@ class QueryOutputTests(unittest.TestCase):
         cls.payload = report["payload"]
         cls.ids = {n["name"]: n["id"] for n in _walk(cls.payload["ast"]) if n.get("kind") == "FunctionDecl"}
         cls.variables = {n["name"]: n["id"] for n in _walk(cls.payload["ast"]) if n.get("kind") == "VarDecl"}
+        cls.targets = {n["name"]: next(c["id"] for body in n["inner"] if body.get("kind") == "CompoundStmt"
+                                      for c in body["inner"] if c.get("kind") == "BinaryOperator" and c.get("opcode") == "=")
+                       for n in _walk(cls.payload["ast"]) if n.get("kind") == "FunctionDecl" and n.get("name", "").startswith("history_")}
+
+    def test_history_stops_before_target_evaluation(self):
+        contracts = self.contracts("guarded_snapshot")
+        result = check_query_initializer_to_statement(self.payload, self.variables["history_value"],
+                                                       self.targets["history_good"], *contracts)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertTrue(result["value_preserved_to_target_entry"])
+        self.assertFalse(result["target_statement_checked"])
+        self.assertIsNone(result["runtime_return_interval"])
+        self.assertTrue(result["preservation_check"]["excluded_target_and_later_reference_ids"])
+        self.assertEqual(result["preservation_check"]["reference_audit_scope"], "before_first_target_entry_only")
+        self.assertEqual(result["value_origin"], result["initializer_check"]["initial_value_origin"])
+
+    def test_history_rejects_earlier_writes_escape_and_later_control(self):
+        contracts = self.contracts("guarded_snapshot")
+        for variable, function in (("history_written", "history_write"), ("history_escaped", "history_escape"),
+                                   ("history_jumped", "history_jump"), ("history_captured", "history_lambda")):
+            result = check_query_initializer_to_statement(self.payload, self.variables[variable], self.targets[function], *contracts)
+            self.assertEqual(result["status"], "unknown", (function, result))
+            self.assertFalse(result["value_preserved_to_target_entry"])
+        self.assertEqual(check_query_initializer_to_statement(self.payload, self.variables["history_value"],
+                         self.targets["history_write"], *contracts)["status"], "unknown")
+
+    def test_history_identity_budget_and_immutable_input(self):
+        contracts = self.contracts("guarded_snapshot")
+        before = copy.deepcopy(self.payload)
+        args = (self.variables["history_value"], self.targets["history_good"], *contracts)
+        check_query_initializer_to_statement(self.payload, *args)
+        self.assertEqual(before, self.payload)
+        self.assertEqual(check_query_initializer_to_statement(self.payload, *args, max_ast_nodes=1)["status"], "unknown")
+        self.assertEqual(check_query_initializer_to_statement(self.payload, args[0], "missing", *contracts)["status"], "unknown")
 
     def test_initializer_relation_stops_before_later_writes(self):
         for name, getter in (("local_good", "guarded_snapshot"), ("local_other", "reordered_snapshot"),

@@ -372,3 +372,37 @@ def check_query_initializer(payload, initializer_id, conversion_contract, output
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
         result["reason"] = str(error)
     return result
+
+
+def check_query_initializer_to_statement(payload, initializer_id, statement_id, conversion_contract,
+                                         output_contract, *, max_ast_nodes=1_000_000):
+    """Carry a fresh symbolic query-origin value to the first target entry."""
+    from wavebridge.verification.integer_selection import _preserve_to_statement
+
+    initialized = check_query_initializer(payload, initializer_id, conversion_contract, output_contract,
+                                          max_ast_nodes=max_ast_nodes)
+    result = {"schema_version": "query-initializer-to-statement/v1", "status": "unknown", "reason": None,
+              "scope": "query_origin_initial_value_at_first_entry_to_later_same_block_statement",
+              "initializer_check": initialized, "preservation_check": None,
+              "value_preserved_to_target_entry": False, "target_statement_checked": False,
+              "runtime_return_interval": None, "source_program_checked": False, "deployable": False,
+              "assumptions": initialized["assumptions"],
+              "limitations": ["target expression evaluation and all later history are outside this check",
+                              "external API/conversion protocols and actual linkage remain unverified"]}
+    if initialized["status"] != "checked":
+        result["reason"] = "fresh_query_initializer_not_checked"
+        return result
+    seed = {"status": "checked", "target_declaration_id": initializer_id,
+            "function_id": initialized["owner_id"], "state_relation": initialized["initial_value_origin"],
+            "input_sha256": initialized["input_sha256"], "assumptions": initialized["assumptions"]}
+    history = _preserve_to_statement(payload["ast"], seed, initialized["declaration_statement_id"],
+                                     statement_id, max_ast_nodes, initialized_local=True, stop_at_target_entry=True)
+    result["preservation_check"] = history
+    result["assumptions"] = history["assumptions"]
+    if history["status"] != "checked" or history.get("history_preserved_to_use") is not True:
+        result["reason"] = "fresh_initializer_history_not_checked"
+        return result
+    result.update(status="checked", initializer_id=initializer_id, statement_id=statement_id,
+                  value_preserved_to_target_entry=True, value_origin=history["state_relation"],
+                  input_sha256=history["input_sha256"])
+    return result
