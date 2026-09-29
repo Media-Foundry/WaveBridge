@@ -1,0 +1,27 @@
+{
+  "schema_version": "query-value-domain/v1",
+  "payload_sha256": "461c7f546c218aeec14d8c7333297599cd9899ed547f0d9ed6a095a257410f00",
+  "output_contract_sha256": "955625a600f6f12befd090578aef9a58218863902f7222cb45acd9ac459657f6",
+  "query_origin": {
+    "query_call_id": "0x3b52e348",
+    "object_declaration_id": "0x3b52cf00",
+    "field_declaration_id": "0x3a803830",
+    "time": "selected_query_normal_return",
+    "getter_call_id": "0x703be3d5a820",
+    "invocation": "the_same_dynamic_invocation_used_by_this_initializer"
+  },
+  "power_selection": {
+    "caller_id": "0x3b97a548",
+    "local_id": "0x3b97ac08",
+    "guard_id": "0x3b97fea8",
+    "call_id": "0x3b9f40e8",
+    "callee_id": "0x3b9f3e00",
+    "argument_position": 2,
+    "exponent_id": "0x703be3d5a580",
+    "power_id": "0x703be3d5a680"
+  },
+  "scope": "this_query_invocation_in_selected_guarded_call",
+  "basis": "explicit_external_assumption_not_inferred_from_measurements",
+  "lower": 32,
+  "upper": 32
+}

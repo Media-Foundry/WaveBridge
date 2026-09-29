@@ -448,6 +448,47 @@ def _preserve_to_statement(root, update, assignment_id, statement_id, budget, *,
     return result
 
 
+def check_minimum_quotient_domain(numerator, lower, upper, powers, *, int_bits=32):
+    """Overapproximate N/min(q,p) under explicitly supplied integer domains.
+
+    This is arithmetic only: the query interval and discrete powers are not
+    inferred here. Each power retains its own denominator/quotient interval.
+    """
+    result = {"schema_version": "minimum-quotient-domain/v1", "status": "unknown", "reason": None,
+              "division_safe_under_domains": False, "cases": [], "quotient_interval": None,
+              "source_domains_verified": False, "deployable": False}
+    if (any(type(v) is not int for v in (numerator, lower, upper, int_bits)) or
+            not 2 <= int_bits <= 64 or not isinstance(powers, list) or not 1 <= len(powers) <= 64 or
+            any(type(p) is not int for p in powers)):
+        result["reason"] = "invalid_domain_inputs"
+        return result
+    lo, hi = -(1 << (int_bits - 1)), (1 << (int_bits - 1)) - 1
+    if (not 0 <= numerator <= hi or not lo <= lower <= upper <= hi or
+            any(not 1 <= p <= hi for p in powers) or len(set(powers)) != len(powers)):
+        result["reason"] = "unsupported_or_unrepresentable_domain"
+        return result
+    result["input_sha256"] = _hash([numerator, lower, upper, powers, int_bits])
+    if lower <= 0 <= upper:
+        result.update(status="rejected", reason="query_domain_permits_zero_denominator",
+                      counterexample={"query": 0, "power": powers[0], "denominator": 0})
+        return result
+
+    def divide(denominator):
+        value = numerator // abs(denominator)
+        return value if denominator > 0 else -value
+
+    for power in powers:
+        a, b = min(lower, power), min(upper, power)
+        endpoints = [divide(a), divide(b)]
+        result["cases"].append({"power": power, "denominator_interval": {"lower": a, "upper": b},
+                                "quotient_interval": {"lower": min(endpoints), "upper": max(endpoints)}})
+    result.update(status="checked", division_safe_under_domains=True,
+                  quotient_interval={"lower": min(c["quotient_interval"]["lower"] for c in result["cases"]),
+                                     "upper": max(c["quotient_interval"]["upper"] for c in result["cases"])},
+                  scope="interval_hull_under_supplied_domains_not_exact_attainable_value_set")
+    return result
+
+
 def check_minimum_quotient(root, assignment_id, quotient_declaration_id, integer_types, *, max_ast_nodes=None):
     """Connect a nonnegative int constant divided by a freshly preserved minimum.
 

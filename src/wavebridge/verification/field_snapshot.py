@@ -120,11 +120,11 @@ def check(root, function_id, *, max_ast_nodes=1_000_000):
 
 def check_query_power_quotient(payload, initializer_id, assignment_id, quotient_id, power_selection,
                                conversion_contract, output_contract, *, int_bits=32,
-                               max_ast_nodes=1_000_000):
+                               max_ast_nodes=1_000_000, query_domain_contract=None):
     """Connect query provenance to a source quotient, preserving nonzero debt.
 
-    No query domain is supplied or guessed. A checked relation is conditional
-    on defined division and must not be consumed as a safe launch dimension.
+    Query domains are optional explicit assumptions, never inferred from runs.
+    A checked relation must not be consumed as a safe launch dimension.
     """
     from wavebridge.verification.integer_selection import check_minimum_quotient
 
@@ -135,6 +135,8 @@ def check_query_power_quotient(payload, initializer_id, assignment_id, quotient_
               "query_numeric_domain": None, "quotient_numeric_domain": None,
               "launch_dimension_usable": False, "later_history_checked": False,
               "source_program_checked": False, "deployable": False, "assumptions": [],
+              "numeric_domain_check": {"status": "unknown", "reason": "query_domain_contract_missing"},
+              "query_domain_contract_verified": False, "division_safe_under_domain_assumption": False,
               "limitations": ["nonzero denominator remains an explicit unproved premise",
                               "no runtime API domain, launch or deployment guarantee"]}
     minimum = check_query_power_minimum(payload, initializer_id, assignment_id, power_selection,
@@ -170,6 +172,40 @@ def check_query_power_quotient(payload, initializer_id, assignment_id, quotient_
                       "time": "completion_of_selected_quotient_initialization"},
                   input_sha256={"origins": minimum["input_sha256"],
                                 "quotient": quotient["input_sha256"]})
+    if query_domain_contract is not None:
+        from wavebridge.verification.integer_selection import check_minimum_quotient_domain
+        origin = minimum["state_relation"]["query_operand_origin"]
+        required = {"schema_version": "query-value-domain/v1",
+                    "payload_sha256": minimum["input_sha256"]["payload"],
+                    "output_contract_sha256": minimum["input_sha256"]["output_contract"],
+                    "query_origin": origin, "power_selection": power_selection,
+                    "scope": "this_query_invocation_in_selected_guarded_call",
+                    "basis": "explicit_external_assumption_not_inferred_from_measurements"}
+        contract = query_domain_contract
+        if (not isinstance(contract, dict) or set(contract) != set(required) | {"lower", "upper"} or
+                any(contract.get(k) != v for k, v in required.items()) or
+                not isinstance(contract.get("power_selection"), dict) or
+                type(contract["power_selection"].get("argument_position")) is not int or
+                any(type(contract.get(k)) is not int for k in ("lower", "upper"))):
+            result.update(status="unknown", reason="exact_external_query_domain_contract_required",
+                          numeric_domain_check={"status": "unknown", "reason": "domain_contract_mismatch"})
+            return result
+        numeric = check_minimum_quotient_domain(quotient["quotient_relation"]["numerator"],
+                    contract["lower"], contract["upper"], minimum["state_relation"]["power_operand"]["value_set"],
+                    int_bits=int_bits)
+        result["numeric_domain_check"] = numeric
+        result["input_sha256"]["query_domain_contract"] = _hash(contract)
+        if numeric["status"] != "checked":
+            result.update(status=numeric["status"], reason=numeric["reason"])
+            return result
+        result["division_safe_under_domain_assumption"] = True
+        result["conditional_quotient_interval"] = numeric["quotient_interval"]
+        result["external_query_domain_contract"] = dict(contract)
+        result["assumptions"].append("selected dynamic query value lies in the externally declared closed interval")
+        # Keep the original debt: the protocol itself has not been established.
+        result["conditional_obligation_discharge"] = {
+            "property": "denominator_nonzero_at_division", "declaration_id": initializer_id,
+            "by": "arithmetic_under_unverified_external_query_domain"}
     return result
 
 

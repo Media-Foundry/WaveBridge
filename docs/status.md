@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 查询数值域协议与条件除法安全
+
+新增独立minimum/quotient区间检查，并由fresh源码组合消费精确query-origin
+外部域协议；含零域rejected、非法域unknown，缺协议保留符号结果但数值unknown。
+原HIP在明确未验证的[32,32]假设示例下导出商[4,4]；协议真实性、实际安全、
+launch/deploy均未建立，原非零义务保留。历史W7900测量未被升级成静态域。
+1359项CPU测试122.075秒通过无跳过，Clang17/23各16项、数学3项、demo/diff
+通过，Sol复核无阻断。无新GPU/程序执行，见
+[实录](../experiments/hip-query-domain-20260930.md)。
+
 ## 查询来源连接到 quotient 初始化
 
 `field_snapshot.check_query_power_quotient`fresh组合来源minimum与既有除法/

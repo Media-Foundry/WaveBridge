@@ -81,6 +81,34 @@ class QueryOutputTests(unittest.TestCase):
             self.assertEqual(result["checks"]["origins"]["status"], "checked", result)
             self.assertFalse(result["conditional_quotient_relation"])
 
+    def test_quotient_domain_is_an_explicit_invocation_bound_assumption(self):
+        args = (*self.quotient_selection(), *self.contracts("guarded_snapshot"))
+        symbolic = check_query_power_quotient(self.payload, *args)
+        origins = symbolic["checks"]["origins"]
+        contract = {"schema_version": "query-value-domain/v1",
+                    "payload_sha256": origins["input_sha256"]["payload"],
+                    "output_contract_sha256": origins["input_sha256"]["output_contract"],
+                    "query_origin": origins["state_relation"]["query_operand_origin"],
+                    "power_selection": args[3], "scope": "this_query_invocation_in_selected_guarded_call",
+                    "basis": "explicit_external_assumption_not_inferred_from_measurements", "lower": 32, "upper": 32}
+        result = check_query_power_quotient(self.payload, *args, query_domain_contract=contract)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertEqual(result["conditional_quotient_interval"], {"lower": 4, "upper": 4})
+        self.assertTrue(result["division_safe_under_domain_assumption"])
+        self.assertFalse(result["division_safety_established"])
+        self.assertFalse(result["query_domain_contract_verified"])
+        self.assertFalse(result["launch_dimension_usable"])
+        self.assertEqual(result["unresolved_obligations"], symbolic["unresolved_obligations"])
+        for key, value in (("lower", 0), ("payload_sha256", "wrong"), ("basis", "observed_once"),
+                           ("lower", True), ("scope", "all_calls")):
+            bad = {**contract, key: value}
+            result = check_query_power_quotient(self.payload, *args, query_domain_contract=bad)
+            self.assertNotEqual(result["status"], "checked", (key, result))
+            self.assertFalse(result["division_safe_under_domain_assumption"])
+        bad = copy.deepcopy(contract)
+        bad["query_origin"]["getter_call_id"] = "other_dynamic_call"
+        self.assertEqual(check_query_power_quotient(self.payload, *args, query_domain_contract=bad)["status"], "unknown")
+
     def test_quotient_wrong_identity_budget_contract_and_input_immutability(self):
         contracts = self.contracts("guarded_snapshot")
         initial, assignment, quotient, selection = self.quotient_selection()

@@ -88,6 +88,19 @@ state_relation及minimum输入哈希。符号代入后的分母来自同次query
 此处`checked`仅描述有非零前提的初始化关系，不是合法launch值。
 最终hash嵌套绑定fresh origins与quotient，包含payload、外部协议和全部选点。
 
+可选`query_domain_contract`使用严格`query-value-domain/v1`键集，绑定payload、
+output协议hash、query动态origin和完整guarded-call选点。lower/upper为signed-int
+闭区间；basis必须明确是外部假设，不能填“历史观测”。协议不证明目标设备身份
+或所有执行返回域，`query_domain_contract_verified`始终false。
+独立`integer_selection.check_minimum_quotient_domain`对正power集合逐项计算
+分母区间，再按C++向零截断得到商的interval hull（不是精确可达集合）。
+含零query域直接rejected；不支持/越界域unknown。非负numerator排除了
+INT_MIN/-1溢出，但本检查不验证输入域来自真实执行。
+只有父status=checked且`division_safe_under_domain_assumption=true`才能消费
+`conditional_quotient_interval`。域失败时独立符号relation仍可保留，不能误用。
+缺域时旧符号结果不变、numeric check unknown；旧非零债务和实际division safety、
+launch/source/deploy false标记均保留，条件解除另列，不能冒充无条件证明。
+
 `field_snapshot.check_query_power_minimum`进一步fresh组合上述查询初值保持、
 minimum赋值检查及源码guard→power初始化/保持。power选点只包含精确身份，
 不接受数值域或旧成功报告；核对同root、同callee/owner、target和两个operand。
