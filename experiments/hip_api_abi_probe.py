@@ -50,22 +50,33 @@ def observations(collection):
     return result
 
 
-def run(compiler, include, output):
+def run(compiler, include, output, *, hip_context_source=None):
     output = Path(output).resolve()
     if output.exists():
         raise ValueError("output_exists")
     source = Path(__file__).with_suffix(".cpp")
     source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
     driver_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    collection = collect(source, compiler, ["-std=c++17", "-D__HIP_PLATFORM_AMD__=1", "-I", str(Path(include).resolve())],
+    context = Path(hip_context_source).resolve(strict=True) if hip_context_source is not None else None
+    context_hash = hashlib.sha256(context.read_bytes()).hexdigest() if context is not None else None
+    arguments = ["-std=c++17", "-D__HIP_PLATFORM_AMD__=1", "-I", str(Path(include).resolve())]
+    if context is not None:
+        # Explicit recorded pilot recipe, never execute a command read from an artifact.
+        arguments = ["-std=c++17", "-O2", "--offload-device-only", "-DWB_COMPILED_COOP_WIDTH=32",
+                     "-I" + str(context.parent), "-x", "hip", "-include", str(context)]
+    collection = collect(source, compiler, arguments,
                          "WaveBridgeHipAbiProbe", timeout=120, dependency_binding="required", toolchain_trace=True)
     report = {"schema_version": "hip-api-abi-observation/v1", "status": "unknown", "reason": None,
               "collection": collection, "observations": {}, "source_sha256": source_hash,
               "driver_sha256": driver_hash, "GPU_executed": False, "program_executed": False,
+              "mode": "augmented_hip_device_context" if context is not None else "standalone_host",
+              "context_source": str(context) if context is not None else None,
+              "context_source_sha256": context_hash,
               "original_kernel_TU_ABI_binding": False, "runtime_enum_domain_established": False,
               "API_success_verified": False, "runtime_linkage_verified": False,
               "source_program_checked": False, "deployable": False,
-              "limitations": ["separate host translation unit, not original kernel compilation",
+              "limitations": ["probe translation unit, not identical to the original kernel translation unit",
+                              "forced inclusion changes include level and base file; no context equivalence proof",
                               "compiler constant observations, not general conversion or API proofs",
                               "last named enumerator is not asserted to bound runtime expressions"]}
     try:
@@ -75,6 +86,13 @@ def run(compiler, include, output):
         if (source_hash != hashlib.sha256(source.read_bytes()).hexdigest() or
                 driver_hash != hashlib.sha256(Path(__file__).read_bytes()).hexdigest()):
             raise ValueError("probe_implementation_changed")
+        if context is not None:
+            if context_hash != hashlib.sha256(context.read_bytes()).hexdigest():
+                raise ValueError("context_source_changed")
+            files = collection.get("dependency_binding", {}).get("files", [])
+            matches = [entry for entry in files if entry.get("resolved_path") == str(context)]
+            if len(matches) != 1 or matches[0].get("sha256") != context_hash:
+                raise ValueError("context_source_dependency_binding_missing")
         report["status"] = "observed"
     except (ValueError, TypeError, KeyError) as error:
         report["reason"] = str(error)
@@ -90,8 +108,9 @@ def run(compiler, include, output):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", required=True)
-    parser.add_argument("--include", required=True)
+    parser.add_argument("--include", required=True, help="SDK include path for standalone host mode; context mode uses hipcc's SDK")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--hip-context-source", help="Use the recorded device-only pilot recipe with this source force-included")
     args = parser.parse_args()
-    result = run(args.compiler, args.include, args.output)
+    result = run(args.compiler, args.include, args.output, hip_context_source=args.hip_context_source)
     raise SystemExit(0 if result["status"] == "observed" else 2)

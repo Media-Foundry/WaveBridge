@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## 原 HIP device-only 上下文的 ABI 探针
+
+核实原native实际使用hipcc/device-only，而前轮探针为普通x86_64 host编译。
+新增force-include原harness的device-only模式，前后核对context源码哈希及
+同次唯一依赖项。真实计划目标amdgcn-amd-amdhsa/gfx1100；旧334个依赖内容
+全部同hash，仅新增探针cpp；八项类型/常量观察与host相同。
+forceinclude改变includelevel/basefile，仍不是原封不动TU，不签发原TU ABI
+绑定或API成功。1327项CPU回归98.606秒通过、无跳过；定向6项fixture、demo/diff
+通过，Sol复核无阻断，无GPU/程序执行。见
+[实录](../experiments/hip-api-device-context-evidence-20260930.md)。
+
 ## API 状态类型的独立 host ABI 观测
 
 新增compile-only HIP API探针，无程序/GPU执行。真实SDK Clang观测int与
