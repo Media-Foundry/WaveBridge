@@ -33,6 +33,18 @@ FP环境、纯度或机器码。实参初始化/存活/边界等子检查前提�
 
 ## builtin 无写入条件协议
 
+`builtin_calls.inspect_structure`与`check_no_memory_write`新增显式
+`allow_unary_float=True`：仅支持native绑定的`__builtin_expf`/`__builtin_logf`
+和普通按值float形参的直接LValueToRValue读取。未开启时保持旧子集。
+`allow_using_shadows=True`可另启用受限引用展开身份规则；两项模式及策略版本
+绑定structure_policy哈希，不修改AST。声明类型、引用类型、native实参ID必须
+一致；引用/volatile/写入/调用/窄化实参均不支持。
+
+一元模式的结构checked不认证builtin实现效果、返回值或FP环境。组合无写入
+仍需要下述精确外部协议，并保留形参已初始化、存活且可读的前提；不能根据
+ConstAttr或函数名字自动签发效果协议。wrapper链入口和循环恢复并未自动
+启用此模式；leaf通过不等于外层exp wrapper及kernel调用已检查。
+
 `builtin-leaf-effect-assumption/v1` 不提供返回值或浮点等价保证，只向独立结构
 检查后的精确 callee 提供外部“实现不写内存”与有效/正常返回前提。结构检查
 必须重新执行；零参或仅空字符串 literal decay 的参数求值另行确认，不能让

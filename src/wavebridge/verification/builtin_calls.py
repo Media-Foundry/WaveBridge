@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from wavebridge.verification.getter_returns import _hash
+from wavebridge.verification.using_shadow_identity import UsingShadowIndex, IdentityUnknown, IDENTITY_POLICY
 
 MAX_AST_NODES = 1_000_000
 HARD_MAX_AST_NODES = 10_000_000
@@ -60,7 +61,8 @@ def _direct_wrapper_target(call, unique):
     return ref["id"]
 
 
-def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
+def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None,
+                      allow_unary_float=False, allow_using_shadows=False):
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     report = {
         "schema_version": "builtin-call-structure/v1", "status": "unknown", "reason": None,
@@ -73,8 +75,14 @@ def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
                                   "source validity and normal return", "enclosing expression effects"],
         "budget": {"max_ast_nodes": budget},
     }
+    report["structure_policy"] = {"schema_version": "builtin-structure-policy/v1",
+                                  "allow_unary_float": allow_unary_float,
+                                  "allow_using_shadows": allow_using_shadows,
+                                  "identity_policy": IDENTITY_POLICY if allow_using_shadows else "strict-single-occurrence/v1"}
+    report["using_shadow_references"] = []
     try:
-        if type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES:
+        if (type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES or
+                type(allow_unary_float) is not bool or type(allow_using_shadows) is not bool):
             raise _Unknown("invalid_ast_budget")
         if (not isinstance(payload, dict) or not isinstance(call_expression_id, str) or
                 not call_expression_id):
@@ -98,12 +106,17 @@ def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
         if type(observed.get("builtin_id")) is not int or observed["builtin_id"] <= 0:
             raise _Unknown("native_builtin_id_invalid")
         name = observed.get("builtin_name")
-        if name not in {"__builtin_huge_valf", "__builtin_nanf"}:
+        unary_float = allow_unary_float and name in {"__builtin_expf", "__builtin_logf"}
+        if name not in {"__builtin_huge_valf", "__builtin_nanf"} and not unary_float:
             raise _Unknown("builtin_structure_not_supported")
         declaration_id = observed.get("callee_declaration_id")
         if not isinstance(declaration_id, str) or not declaration_id:
             raise _Unknown("native_callee_id_missing")
         nodes, pending, count = {}, [root], 0
+        identities = UsingShadowIndex(root, budget) if allow_using_shadows else None
+        if identities is not None:
+            report["using_shadow_references"] = identities.observations
+            pending = []
         while pending:
             node = pending.pop()
             count += 1
@@ -120,6 +133,8 @@ def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
             pending.extend(children)
 
         def unique(identifier):
+            if identities is not None:
+                return identities.unique(identifier)
             matches = nodes.get(identifier, [])
             if len(matches) != 1:
                 raise _Unknown("selected_ast_identity_not_unique")
@@ -127,7 +142,7 @@ def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
 
         call, declaration = unique(call_expression_id), unique(declaration_id)
         _typed(call, "CallExpr", "float", "prvalue")
-        arguments = "const char *" if name == "__builtin_nanf" else ""
+        arguments = "float" if unary_float else "const char *" if name == "__builtin_nanf" else ""
         signature = f"float ({arguments})"
         declaration_type = declaration.get("type")
         if declaration_type == {"qualType": signature + " noexcept"}:
@@ -147,7 +162,7 @@ def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
         parameters = [c for c in declaration_children if c.get("kind") == "ParmVarDecl"]
         expected_count = 1 if arguments else 0
         if (len(parameters) != expected_count or
-                any(p.get("type") != {"qualType": "const char *"} for p in parameters)):
+                any(p.get("type") != {"qualType": arguments} for p in parameters)):
             raise _Unknown("builtin_parameters_mismatch")
         parts = _children(call)
         if len(parts) != expected_count + 1:
@@ -170,6 +185,25 @@ def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
         for identifier, arg in zip(ids, parts[1:]):
             if unique(identifier) is not arg:
                 raise _Unknown("argument_identity_mismatch")
+            if unary_float:
+                _typed(arg, "ImplicitCastExpr", "float", "prvalue")
+                if arg.get("castKind") != "LValueToRValue" or len(_children(arg)) != 1:
+                    raise _Unknown("argument_not_plain_float_parameter_read")
+                value = _children(arg)[0]
+                _typed(value, "DeclRefExpr", "float", "lvalue")
+                reference = value.get("referencedDecl")
+                if (_children(value) or unique(value.get("id")) is not value or
+                        not isinstance(reference, dict) or reference.get("kind") != "ParmVarDecl"):
+                    raise _Unknown("argument_not_plain_float_parameter_read")
+                parameter = unique(reference.get("id"))
+                if (parameter.get("kind") != "ParmVarDecl" or
+                        parameter.get("type") != {"qualType": "float"} or _children(parameter) or
+                        reference.get("type") != parameter.get("type") or
+                        reference.get("name") != parameter.get("name")):
+                    raise _Unknown("argument_parameter_declaration_mismatch")
+                report["argument_read_declaration_id"] = parameter["id"]
+                report["assumptions"].append("the float parameter is initialized, alive and valid to read")
+                continue
             _typed(arg, "ImplicitCastExpr", "const char *", "prvalue")
             if arg.get("castKind") != "ArrayToPointerDecay" or len(_children(arg)) != 1:
                 raise _Unknown("argument_not_literal_decay")
@@ -177,23 +211,27 @@ def inspect_structure(payload, call_expression_id, *, max_ast_nodes=None):
             _typed(literal, "StringLiteral", "const char[1]", "lvalue")
             if _children(literal) or literal.get("value") != '""':
                 raise _Unknown("argument_not_empty_string")
-        report["input_sha256"] = {"native_envelope": _hash(payload), "call_expression_id": _hash(call_expression_id)}
+        report["input_sha256"] = {"native_envelope": _hash(payload), "call_expression_id": _hash(call_expression_id),
+                                  "structure_policy": _hash(report["structure_policy"])}
         report.update(status="checked", observation=dict(observed),
-                      argument_structure="empty_string_literal" if arguments else "no_arguments")
-    except _Unknown as error:
+                      argument_structure="plain_float_parameter_read" if unary_float else
+                      "empty_string_literal" if arguments else "no_arguments")
+    except (_Unknown, IdentityUnknown) as error:
         report["reason"] = str(error)
     except (TypeError, ValueError, RecursionError):
         report["reason"] = "unsupported_input_representation"
     return report
 
 
-def check_no_memory_write(payload, call_expression_id, effect_protocol, *, max_ast_nodes=None):
+def check_no_memory_write(payload, call_expression_id, effect_protocol, *, max_ast_nodes=None,
+                          allow_unary_float=False, allow_using_shadows=False):
     """Compose restricted argument evaluation with an explicit external leaf effect.
 
     The protocol is an assumption, not a certificate. No return value, FP
     environment, purity, enclosing expression or invocation history is proved.
     """
-    structure = inspect_structure(payload, call_expression_id, max_ast_nodes=max_ast_nodes)
+    structure = inspect_structure(payload, call_expression_id, max_ast_nodes=max_ast_nodes,
+                                  allow_unary_float=allow_unary_float, allow_using_shadows=allow_using_shadows)
     result = {
         "schema_version": "builtin-call-no-memory-write/v1", "status": "unknown", "reason": None,
         "scope": "exact_builtin_call_expression_under_explicit_external_leaf_effect",
@@ -212,6 +250,7 @@ def check_no_memory_write(payload, call_expression_id, effect_protocol, *, max_a
     if structure.get("status") != "checked":
         result["reason"] = "fresh_builtin_structure_not_checked"
         return result
+    result["assumptions"].extend(structure["assumptions"])
     if not isinstance(effect_protocol, dict):
         result["reason"] = "invalid_effect_protocol"
         return result
@@ -230,7 +269,8 @@ def check_no_memory_write(payload, call_expression_id, effect_protocol, *, max_a
             result["reason"] = "effect_protocol_not_applicable"
             return result
         # Fresh structure admits only a direct builtin decay plus either no
-        # operands or a literal array-to-pointer decay. No hidden argument
+        # operands, a literal array-to-pointer decay, or a plain float parameter
+        # read (only in explicit unary mode). No hidden argument
         # evaluation is removed by trusting the leaf's effect assumption.
         result.update(status="checked", effect_evidence={
             "reference": evidence, "verification_status": "unverified"},

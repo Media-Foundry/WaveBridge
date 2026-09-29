@@ -1,6 +1,18 @@
 # 当前状态
 
-更新日期：2026-09-27。
+更新日期：2026-09-30。
+
+## native 一元 builtin 的受限结构检查
+
+builtin入口新增显式一元float模式：仅支持expf/logf和普通float形参直接
+读取，可组合已验证的using引用身份。默认子集保持不变；引用、volatile、
+递增、赋值、嵌套调用与窄化实参不放行。检查模式/版本绑定报告哈希。
+结构成功仍不认证builtin效果或值；外层wrapper链与完整循环尚未接通。
+真实HIP expf/logf两处leaf结构检查已通过，输入/实现/driver哈希稳定；见
+[实录](../experiments/hip-unary-builtin-evidence-20260930.md)。该重放无外部
+效果协议、无GPU执行，不宣称整个exp/log wrapper或循环通过。
+最终1244项CPU测试通过（95.525秒，无跳过），demo/diff通过。新增6项native
+专项在SDK23与AOCC17匹配插件上分别通过；不是全量SDK23或远端CI验收。
 
 ## 受限 using 引用展开身份已实现
 

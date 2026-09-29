@@ -1,5 +1,15 @@
 # 编译器关系检查
 
+## native 一元 float builtin
+
+`builtin_calls.inspect_structure(payload, call_id, allow_unary_float=True,
+allow_using_shadows=True)`重新绑定实际builtin记录、声明及实参ID，接受
+`__builtin_expf`/`__builtin_logf`的直接float形参读取。只解除受支持结构的
+身份/实参形状义务，不证明builtin无写入、正常返回或数值等价。
+`check_no_memory_write`提供相同显式选项，但仍要求精确绑定的未验证外部
+效果协议。旧默认入口与wrapper链支持范围不变；副作用实参不会被leaf
+协议遮蔽。模式/版本被纳入input_sha256中的structure_policy。
+
 ## using 引用展开的受限身份解析
 
 `scalar_forwarding.inspect_structure(..., allow_using_shadows=True)`和
