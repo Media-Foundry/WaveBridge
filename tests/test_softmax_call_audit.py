@@ -47,6 +47,12 @@ class SoftmaxCallAuditTests(unittest.TestCase):
         with patch("experiments.softmax_call_audit.sha", return_value="wrong"), \
                 self.assertRaisesRegex(ValueError, "sealed_native_input_hash_mismatch"):
             run_native("missing-native", "missing-output")
+        # Opt-in modes have dependencies; invalid combinations must fail before
+        # reading an artifact, creating output or beginning an expensive replay.
+        for options in ({"outer_calls": True}, {"outer_calls": 1},
+                        {"outer_calls": True, "unary_forwarding": True}):
+            with self.subTest(options=options), self.assertRaisesRegex(ValueError, "invalid_using_shadows_option"):
+                run_native("missing-native", "missing-output", **options)
 
     def test_mock_native_run_retains_conflicts_without_claiming_a_path(self):
         entry = function("entry", call("wrapper"))
@@ -73,6 +79,8 @@ class SoftmaxCallAuditTests(unittest.TestCase):
         self.assertFalse(report["source_program_checked"])
         self.assertFalse(report["deployable"])
         self.assertEqual(report["external_effect_protocols"], {})
+        self.assertFalse(report["outer_calls_enabled"])
+        self.assertEqual(report["outer_call_checks"], [])
 
     def test_method_reference_observation_does_not_override_resolver(self):
         root = {"inner": [function("entry", call("method", "CXXMethodDecl")),

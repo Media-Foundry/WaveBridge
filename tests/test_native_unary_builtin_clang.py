@@ -10,6 +10,7 @@ from wavebridge.frontend.clang_ast import _walk
 from wavebridge.verification.builtin_calls import inspect_structure, check_no_memory_write
 from wavebridge.verification.getter_returns import _hash
 from wavebridge.verification.scalar_forwarding import inspect_builtin_structure
+from wavebridge.verification.scalar_call_effects import inspect_native_call
 
 PLUGIN = os.environ.get("WB_UNARY_BUILTIN_PLUGIN", os.environ.get("WB_NATIVE_CAPTURE_PLUGIN"))
 COMPILER = os.environ.get("WB_UNARY_BUILTIN_COMPILER", os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++"))
@@ -31,6 +32,16 @@ float volatile_parameter(volatile float x) { return __builtin_expf(x); }
 float narrowing(double x) { return __builtin_expf(x); }
 float literal() { return __builtin_expf(1.0f); }
 float unsupported(float x) { return __builtin_sinf(x); }
+float outer_read(float x) { return routed(x); }
+float outer_array(int i, float x) { float a[4] = {}; return routed(a[i] - x); }
+float outer_pointer_array(float* a, int i) { return routed(a[i]); }
+float outer_log(float x) { return log_read(x); }
+float outer_increment(float x) { return routed(x++); }
+float outer_assignment(float x) { return routed(x = 1.0f); }
+float outer_nested(float x) { return routed(external(x)); }
+float outer_comma(float x) { return (x++, routed)(x); }
+float outer_pointer(float x, float (*p)(float)) { return p(x); }
+float outer_writing(float x) { return writing_wrapper(x); }
 """
 
 
@@ -129,6 +140,70 @@ class NativeUnaryBuiltinClangTests(unittest.TestCase):
                 "builtin_no_memory_write_assumed": True,
                 "valid_call_and_normal_return_assumed": True,
                 "evidence_reference": "test assumption; not compiler or runtime certification"}
+
+    def outer(self, name="outer_read", leaf="exp_read", payload=None, **kwargs):
+        payload = self.payload if payload is None else payload
+        return inspect_native_call(payload, self.call(name, payload)["id"],
+                                   self.call(leaf, payload)["id"], **kwargs)
+
+    def test_outer_argument_and_native_chain_are_freshly_bound_not_callee_effects(self):
+        before = _hash(self.payload)
+        for name in ("outer_read", "outer_array"):
+            result = self.outer(name, allow_using_shadows=True)
+            self.assertEqual(result["status"], "checked", result)
+            self.assertTrue(result["argument_evaluation_no_memory_write_checked"])
+            self.assertEqual(result["argument_check"]["status"], "checked")
+            self.assertEqual(result["forwarding_check"]["status"], "checked")
+            self.assertEqual(result["call_binding"]["call_expression_id"], self.call(name)["id"])
+            for flag in ("callee_effects_checked", "whole_call_no_memory_write_checked",
+                         "numeric_contract_checked", "source_program_checked", "deployable"):
+                self.assertFalse(result[flag])
+            self.assertEqual(result["value_semantics"], "not_established")
+            self.assertEqual(result["input_sha256"]["outer_call_expression_id"],
+                             _hash(self.call(name)["id"]))
+            self.assertEqual(result["input_sha256"]["outer_argument_expression_id"],
+                             _hash(self.call(name)["inner"][1]["id"]))
+            for key, value in result["forwarding_check"]["input_sha256"].items():
+                self.assertEqual(result["input_sha256"][key], value)
+        self.assertEqual(before, _hash(self.payload))
+
+    def test_outer_side_effects_and_unsupported_callees_are_unknown(self):
+        for name in ("outer_increment", "outer_assignment", "outer_nested",
+                     "outer_comma", "outer_pointer", "outer_pointer_array"):
+            with self.subTest(name=name):
+                result = self.outer(name, allow_using_shadows=True)
+                self.assertEqual(result["status"], "unknown", result)
+                self.assertFalse(result["argument_evaluation_no_memory_write_checked"])
+
+    def test_outer_safe_argument_does_not_certify_bad_wrapper_or_wrong_native_leaf(self):
+        for options in ({"name": "outer_writing"}, {"leaf": "alternate"}, {"leaf": "log_read"}):
+            result = self.outer(**options, allow_using_shadows=True)
+            self.assertEqual(result["status"], "unknown", result)
+            self.assertTrue(result["argument_evaluation_no_memory_write_checked"])
+            self.assertFalse(result["whole_call_no_memory_write_checked"])
+
+    def test_outer_duplicate_or_missing_identity_and_bad_options_stay_unknown(self):
+        payload = deepcopy(self.payload)
+        payload["ast"]["inner"].append(deepcopy(self.call("outer_read", payload)))
+        self.assertEqual(self.outer(payload=payload, allow_using_shadows=True)["status"], "unknown")
+        for options in ({"max_ast_nodes": 1}, {"max_ast_nodes": True}, {"allow_using_shadows": 1}):
+            self.assertEqual(self.outer(**options)["status"], "unknown")
+        self.assertEqual(inspect_native_call(self.payload, "missing", "missing")["status"], "unknown")
+
+    def test_outer_rechecks_native_record_and_binds_identity_policy(self):
+        payload = deepcopy(self.payload)
+        record = next(r for r in payload["builtin_calls"]
+                      if r["call_expression_id"] == self.call("exp_read")["id"])
+        record["callee_declaration_id"] = "wrong"
+        self.assertEqual(self.outer(payload=payload, allow_using_shadows=True)["status"], "unknown")
+        # log_read has no using declaration, so both policies can check it.
+        strict = self.outer("outer_log", leaf="log_read")
+        enabled = self.outer("outer_log", leaf="log_read", allow_using_shadows=True)
+        self.assertEqual(strict["status"], "checked", strict)
+        self.assertEqual(enabled["status"], "checked", enabled)
+        self.assertNotEqual(strict["input_sha256"]["outer_identity_policy"],
+                            enabled["input_sha256"]["outer_identity_policy"])
+        self.assertEqual(strict["input_sha256"]["outer_identity_policy"], _hash(strict["identity_policy"]))
 
     def test_exact_native_identity_and_plain_parameter_read_are_opt_in(self):
         before = _hash(self.payload)

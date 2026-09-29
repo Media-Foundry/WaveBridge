@@ -1,5 +1,17 @@
 # 编译器关系检查
 
+## native 外层调用结构组合
+
+`scalar_call_effects.inspect_native_call(payload, call_expression_id, leaf_call_id,
+allow_using_shadows=True)`重新绑定外层直接调用，检查实参求值，并重走native
+wrapper参数链。入口不消费外部效果协议；`checked`不意味着整个函数调用
+无写入。`argument_evaluation_no_memory_write_checked`与始终为false的
+`callee_effects_checked`、`whole_call_no_memory_write_checked`明确分开。
+子结论前提完整保留；未知表达式、错误终端、冲突身份和预算不足不通过。
+`experiments.softmax_call_audit --outer-calls`仅检查语法路径选择器找到的
+调用（最多32层、单return路径），不是entry全部调用清单或动态覆盖证明。
+空列表或所选条目全部checked均不能作为全kernel调用验收。
+
 ## wrapper 到 native 一元 builtin 的参数转发
 
 `scalar_forwarding.inspect_builtin_structure(payload, start_declaration_id,

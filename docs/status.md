@@ -2,6 +2,19 @@
 
 更新日期：2026-09-30。
 
+## native 外层调用已连接实参求值
+
+新增精确outer call组合入口，fresh检查callee、受限实参求值及native参数链，
+不消费旧成功报告。真实HIP同一softmax实例的4处exp与1处log语法调用均在
+此限定范围checked；输入/实现/driver哈希稳定且结束后复核一致，见
+[重放实录](../experiments/hip-native-outer-evidence-20260930.md)。选点非穷尽，
+不是entry全部调用覆盖，更不是5个独立kernel。未运行GPU。
+1254项CPU测试通过（106.487秒，无跳过），补充断言后24项定向回归通过；
+make demo/diff通过，GPT-5.6 Sol复核未发现P1。使用SDK23/AOCC17匹配插件
+混合验收，不称全量SDK23或远端CI。实参无显式写与callee/whole-call效果
+分开：后两者、数值/完整循环/部署均未建立。下一步仍需明确leaf效果前提
+及其消费边界，不能默认SDK math调用无写。
+
 ## wrapper 到 native leaf 的参数结构连接
 
 新增独立native转发入口，fresh检查leaf并重走原AST wrapper链，终端call

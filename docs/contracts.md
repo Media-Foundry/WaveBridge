@@ -1,5 +1,19 @@
 # 模型、检查与证据协议
 
+## native 外层调用与实参求值
+
+`scalar_call_effects.inspect_native_call(payload, call_expression_id, leaf_call_id)`
+从同一AST精确绑定直接float调用及其实参，独立检查实参求值，再fresh检查
+wrapper到所选native leaf的参数链。不消费生成器报告或旧成功子结论。
+支持范围沿用受限标量表达式检查器；递增、赋值、未知调用、间接callee等
+保持unknown。局部数组与指针下标不是同一支持类别。
+
+成功只连接调用身份、实参无显式内存写入与参数结构；无leaf效果假设，
+`callee_effects_checked`及`whole_call_no_memory_write_checked`始终false。
+实参初始化、存活、索引有效性与正常求值仍是前提。若实参通过而native链
+失败，整体unknown，但保留实参子结论。成功哈希绑定native envelope、精确
+outer call/argument ID与身份策略；不签发浮点值、循环或部署保证。
+
 ## native 参数转发结构
 
 `scalar_forwarding.inspect_builtin_structure`只接受同一native envelope与

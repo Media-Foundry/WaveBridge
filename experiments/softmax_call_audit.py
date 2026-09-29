@@ -120,14 +120,16 @@ def run(ast_path, previous_path, output_dir):
     return report
 
 
-def run_native(native_path, output_dir, *, using_shadows=False, unary_float=False, unary_forwarding=False):
+def run_native(native_path, output_dir, *, using_shadows=False, unary_float=False, unary_forwarding=False,
+               outer_calls=False):
     """Observe HIP call paths without deduplicating or modifying checker input."""
     from wavebridge.verification.builtin_calls import inspect_structure
     from wavebridge.verification.using_shadow_identity import UsingShadowIndex, IdentityUnknown
     from wavebridge.verification.getter_returns import _hash
     from wavebridge.verification.scalar_forwarding import inspect_builtin_structure
-    if (any(type(option) is not bool for option in (using_shadows, unary_float, unary_forwarding)) or
-            unary_forwarding and not (using_shadows and unary_float)):
+    from wavebridge.verification.scalar_call_effects import inspect_native_call
+    if (any(type(option) is not bool for option in (using_shadows, unary_float, unary_forwarding, outer_calls)) or
+            unary_forwarding and not (using_shadows and unary_float) or outer_calls and not unary_forwarding):
         raise ValueError("invalid_using_shadows_option")
     native_path = Path(native_path).resolve()
     if sha(native_path) != HIP_NATIVE_SHA:
@@ -179,7 +181,7 @@ def run_native(native_path, output_dir, *, using_shadows=False, unary_float=Fals
             except IdentityUnknown as error:
                 item["reason"] = str(error)
             identity_checks.append(item)
-    forwarding_checks = []
+    forwarding_checks, outer_checks = [], []
     if unary_forwarding:
         # Select syntactic routes only; the checker rebuilds every body and
         # parameter edge. No function name is a relation template or oracle.
@@ -223,6 +225,14 @@ def run_native(native_path, output_dir, *, using_shadows=False, unary_float=Fals
                 "syntactic_outer_call_ids": outer_ids, "check": checked})
             print(json.dumps({"phase": "native_forwarding", "start": start,
                               "status": checked["status"], "reason": checked["reason"]}), flush=True)
+            if outer_calls:
+                for outer_id in outer_ids:
+                    print(json.dumps({"phase": "outer_call_start", "call": outer_id}), flush=True)
+                    outer_check = inspect_native_call(payload, outer_id, terminal, allow_using_shadows=True)
+                    outer_checks.append({"call_expression_id": outer_id, "native_leaf_call_id": terminal,
+                                         "check": outer_check})
+                    print(json.dumps({"phase": "outer_call_done", "call": outer_id,
+                                      "status": outer_check["status"], "reason": outer_check["reason"]}), flush=True)
     report = {"schema_version": "softmax-native-call-audit/v1",
               "command": sys.argv, "native_sha256": HIP_NATIVE_SHA,
               "entry_id": entry["id"], "inventory": observed,
@@ -233,6 +243,7 @@ def run_native(native_path, output_dir, *, using_shadows=False, unary_float=Fals
               "unary_float_enabled": unary_float,
               "unary_forwarding_enabled": unary_forwarding,
               "unary_forwarding_checks": forwarding_checks,
+              "outer_calls_enabled": outer_calls, "outer_call_checks": outer_checks,
               "using_shadow_identity_checks": identity_checks,
               "using_shadow_observations": identities.observations if identities else [],
               "driver_dependencies_before": helpers,
@@ -259,17 +270,19 @@ def main():
     parser.add_argument("--using-shadows", action="store_true")
     parser.add_argument("--unary-float", action="store_true")
     parser.add_argument("--unary-forwarding", action="store_true")
+    parser.add_argument("--outer-calls", action="store_true")
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     if args.native:
         if args.previous_report:
             parser.error("--previous-report is not used with --native")
         result = run_native(args.native, args.output_dir, using_shadows=args.using_shadows,
-                            unary_float=args.unary_float, unary_forwarding=args.unary_forwarding)
+                            unary_float=args.unary_float, unary_forwarding=args.unary_forwarding,
+                            outer_calls=args.outer_calls)
     else:
         if not args.previous_report:
             parser.error("--ast requires --previous-report")
-        if args.using_shadows or args.unary_float or args.unary_forwarding:
+        if args.using_shadows or args.unary_float or args.unary_forwarding or args.outer_calls:
             parser.error("--using-shadows and --unary-float require --native")
         result = run(args.ast, args.previous_report, args.output_dir)
     return 0 if result["inputs_unchanged"] else 2
