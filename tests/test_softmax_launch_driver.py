@@ -10,6 +10,39 @@ from experiments import softmax_launch_native as driver
 
 
 class SoftmaxLaunchDriverTests(unittest.TestCase):
+    def test_host_dimensions_select_by_identity_and_keep_child_unknown(self):
+        def ref(identifier):
+            return {"kind": "DeclRefExpr", "referencedDecl": {"kind": "VarDecl", "id": identifier}}
+        constructor = {"kind": "CXXConstructExpr", "id": "ctor", "inner": [ref("a"), ref("b"), {}]}
+        assignment = {"kind": "BinaryOperator", "opcode": "=", "id": "update", "inner": [ref("a"), {}]}
+        owner = {"kind": "FunctionDecl", "id": "owner", "inner": [
+            {"kind": "VarDecl", "id": "a", "name": "not_warp_size"},
+            {"kind": "VarDecl", "id": "b", "name": "not_warps_per_block"}, assignment,
+            {"kind": "DeclStmt", "id": "target", "inner": [
+                {"kind": "VarDecl", "id": "object", "inner": [constructor]}]}]}
+        root = {"kind": "TranslationUnitDecl", "inner": [owner]}
+        binding = {"status": "checked", "configuration_slots": [{"position": 1,
+            "expression_ast": {"kind": "CXXConstructExpr", "inner": [ref("object")]}}]}
+        prefix = "wavebridge.verification.integer_selection."
+        with patch(prefix + "check_local_minimum_update", return_value={"status": "unknown"}) as minimum, \
+                patch(prefix + "check_minimum_to_statement", return_value={"status": "unknown"}) as history, \
+                patch(prefix + "check_minimum_quotient", return_value={"status": "unknown"}) as quotient, \
+                patch(prefix + "check_quotient_to_statement", return_value={"status": "unknown"}) as qhistory:
+            result = driver.check_host_dimensions(root, binding)
+        self.assertEqual(result["status"], "observed")
+        self.assertEqual(minimum.call_args.args[:2], (root, "update"))
+        self.assertEqual(history.call_args.args[:3], (root, "update", "target"))
+        self.assertEqual(quotient.call_args.args[:3], (root, "update", "b"))
+        self.assertEqual(qhistory.call_args.args[:4], (root, "update", "b", "target"))
+        self.assertTrue(all(c["status"] == "unknown" for c in result["checks"].values()))
+        self.assertFalse(result["numeric_domains_established"])
+        duplicate = copy.deepcopy(root)
+        duplicate["inner"][0]["inner"].append(copy.deepcopy(assignment))
+        rejected = driver.check_host_dimensions(duplicate, binding)
+        self.assertEqual(rejected["status"], "unknown")
+        self.assertEqual(rejected["reason"], "host_minimum_assignment_not_unique")
+        self.assertEqual(rejected["checks"], {})
+
     def test_copy_source_selection_preserves_exact_identity(self):
         ref = {"kind": "DeclRefExpr", "referencedDecl": {"kind": "VarDecl", "id": "renamed"}}
         binding = {"status": "checked", "configuration_slots": [{"position": 1,

@@ -34,9 +34,87 @@ def selected_copy_source(binding, position):
     return reference["id"]
 
 
+def check_host_dimensions(root, binding):
+    """Select sources from the bound object initializer, then independently check."""
+    from wavebridge.verification.integer_selection import (
+        check_local_minimum_update, check_minimum_to_statement,
+        check_minimum_quotient, check_quotient_to_statement)
+
+    result = {"status": "unknown", "reason": None, "selection": None, "checks": {},
+              "numeric_domains_established": False, "deployable": False}
+    try:
+        variable = selected_copy_source(binding, 1)
+        index, pending = {}, [(root, None, None)]
+        while pending:
+            node, owner, parent = pending.pop()
+            if node.get("kind") in {"FunctionDecl", "CXXMethodDecl", "LambdaExpr"}:
+                owner = node
+            index.setdefault(node.get("id"), []).append((node, owner, parent))
+            pending.extend((child, owner, node) for child in node.get("inner", []))
+
+        def unique(identifier):
+            matches = index.get(identifier, [])
+            if not isinstance(identifier, str) or len(matches) != 1:
+                raise ValueError("host_selection_identity_not_unique")
+            return matches[0]
+
+        declaration, owner, statement = unique(variable)
+        if (owner is None or owner.get("kind") != "FunctionDecl" or
+                statement is None or statement.get("kind") != "DeclStmt" or
+                declaration.get("kind") != "VarDecl" or len(declaration.get("inner", [])) != 1):
+            raise ValueError("host_object_declaration_unsupported")
+        construct = declaration["inner"][0]
+        if construct.get("kind") != "CXXConstructExpr" or len(construct.get("inner", [])) != 3:
+            raise ValueError("host_object_initializer_unsupported")
+
+        def reference(node):
+            for _ in range(32):
+                if node.get("kind") == "ParenExpr" or (node.get("kind") == "ImplicitCastExpr" and
+                        node.get("castKind") in {"IntegralCast", "LValueToRValue", "NoOp"}):
+                    if len(node.get("inner", [])) != 1:
+                        raise ValueError("host_argument_wrapper_unsupported")
+                    node = node["inner"][0]
+                else:
+                    break
+            ref = node.get("referencedDecl", {})
+            if node.get("kind") != "DeclRefExpr" or ref.get("kind") != "VarDecl" or node.get("inner"):
+                raise ValueError("host_argument_not_variable")
+            _, ref_owner, _ = unique(ref.get("id"))
+            if ref_owner is not owner:
+                raise ValueError("host_argument_owner_mismatch")
+            return ref["id"]
+
+        minimum_variable, quotient = map(reference, construct["inner"][:2])
+        assignments = []
+        for occurrences in index.values():
+            for node, node_owner, _ in occurrences:
+                if (node_owner is owner and node.get("kind") == "BinaryOperator" and
+                        node.get("opcode") == "=" and len(node.get("inner", [])) == 2):
+                    lhs = node["inner"][0]
+                    if lhs.get("kind") == "DeclRefExpr" and lhs.get("referencedDecl", {}).get("id") == minimum_variable:
+                        assignments.append(node)
+        if len(assignments) != 1:
+            raise ValueError("host_minimum_assignment_not_unique")
+        assignment = assignments[0]["id"]
+        result["selection"] = {"object_declaration_id": variable, "constructor_expression_id": construct["id"],
+            "owner_id": owner["id"], "statement_id": statement["id"],
+            "minimum_variable_id": minimum_variable, "assignment_id": assignment, "quotient_id": quotient}
+        abi = {"int": {"bits": 32, "signed": True}}
+        options = {"max_ast_nodes": 10_000_000}
+        result["checks"] = {
+            "minimum": check_local_minimum_update(root, assignment, abi, **options),
+            "minimum_history": check_minimum_to_statement(root, assignment, statement["id"], abi, **options),
+            "quotient": check_minimum_quotient(root, assignment, quotient, abi, **options),
+            "quotient_history": check_quotient_to_statement(root, assignment, quotient, statement["id"], abi, **options)}
+        result["status"] = "observed"
+    except (ValueError, KeyError, TypeError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def run(native, output, *, threads_object=False, host_minimum_update=False, host_minimum_history=False,
         host_minimum_quotient=False, host_quotient_history=False, constructor_argument_effects=False,
-        constructor_field_forwarding=False, profile="cuda"):
+        constructor_field_forwarding=False, profile="cuda", host_dimensions=False):
     native, output = Path(native).resolve(), Path(output).resolve()
     if profile not in {"cuda", "hip"}:
         raise ValueError("unsupported_input_profile")
@@ -72,6 +150,8 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
                      "configuration_expression_ids": [arg["id"] for arg in site["configuration_arguments"]]}
         checked = check(root, selection)
     object_report = None
+    dimensions_report = (check_host_dimensions(root, checked)
+                         if host_dimensions and checked.get("status") == "checked" else None)
     if threads_object and checked.get("status") == "checked":
         from wavebridge.verification.object_use_closure import inspect_structure
 
@@ -162,6 +242,7 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
               "selection": selection, "launch_discovery": facts, "native_sha256": native_sha,
               "input_profile": profile,
               "threads_object_check": object_report,
+              "host_dimensions_diagnostic": dimensions_report,
               "host_minimum_update_check": minimum_report,
               "host_minimum_history_check": history_report,
               "host_minimum_quotient_check": quotient_report,
@@ -187,6 +268,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--profile", choices=("cuda", "hip"), default="cuda")
     parser.add_argument("--threads-object", action="store_true")
+    parser.add_argument("--host-dimensions", action="store_true")
     parser.add_argument("--host-minimum-update", action="store_true")
     parser.add_argument("--host-minimum-history", action="store_true")
     parser.add_argument("--host-minimum-quotient", action="store_true")
@@ -198,4 +280,5 @@ if __name__ == "__main__":
         host_minimum_update=args.host_minimum_update, host_minimum_history=args.host_minimum_history,
         host_minimum_quotient=args.host_minimum_quotient, host_quotient_history=args.host_quotient_history,
         constructor_argument_effects=args.constructor_argument_effects,
-        constructor_field_forwarding=args.constructor_field_forwarding, profile=args.profile)
+        constructor_field_forwarding=args.constructor_field_forwarding, profile=args.profile,
+        host_dimensions=args.host_dimensions)

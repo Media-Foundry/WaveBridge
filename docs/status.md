@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## HIP host 尺寸的条件关系与语句入口保持已连接
+
+host-dimensions诊断从fresh launch对象的构造实参身份选点，不按变量名或旧
+CUDA ID填充。真实HIP四项fresh检查均条件checked：minimum更新、minimum到
+构造声明入口保持、128/minimum的商关系、商值到同一入口保持。
+数值操作数域与分母非零仍未建立，且没有消费构造实参转换/字段映射；不能
+由此声称block=(32,4,1)或lane域成立。见[实录](../experiments/hip-host-dimensions-evidence-20260930.md)。
+1280项CPU测试97.010秒通过、无跳过，demo/diff通过；Sol只读复核无阻断。
+无生产checker修改、无GPU。下一步建立minimum两个操作数的初始化域，再
+通过转换/字段与对象历史检查组合到配置；不是直接手填selection域。
+
 ## 默认可见性属性支持已解除 HIP 构造器阻点
 
 constructor_effects仅接受明确default且无子表达式的VisibilityAttr，保留
