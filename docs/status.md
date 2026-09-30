@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## 条件复制字段绑定到精确 launch 槽
+
+新增fresh组合从launch槽自动选copy，重建守卫构造/全部引用保持，再核对
+同一configuration call/callee/参数位置；不接收独立copy ID或旧通过报告。
+真实HIP工件的position 1绑定到精确block copy，字段条件区间32/4/1，
+内部22copy仍完整覆盖。语法位置不替代API含义，全部配置值、可达性、实际
+provenance与source/deploy仍未验收。
+1386项全测293.843秒无跳过通过，Clang17/23新增专项各4项通过，demo/diff
+通过，Sol复核无阻断；无新GPU运行。见
+[精确槽绑定实录](../experiments/hip-configuration-copy-20260930.md)。
+
 ## 构造字段到复制读取的条件保持
 
 新增fresh组合：守卫数值/构造字段链与全部显式source引用逐次复制检查。

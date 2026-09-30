@@ -781,3 +781,14 @@ do包装：do/source路径的最长共同前缀必须以CompoundStmt结束，do�
 来源、安全执行、launch 或 GPU 已验收。`runtime_object_provenance_verified`
 始终 false，opaque 实参/cleanup 未证明纯，旧栈指针等是明确排除的模型边界。
 参见[决策](decisions/0005-conditional-object-provenance.md)。
+
+## 将条件复制字段绑定到配置槽
+
+`guarded-configuration-copy/v1` 从同一native payload fresh检查选定launch，
+由精确槽位自动选择copy expression，再重新执行守卫构造与全部引用保持检查。
+最后核对copy的按值形参目标与该配置call、callee及参数位置完全相同。
+调用者不输入copy ID、字段值或旧通过报告；非直接constructor槽保持unknown。
+
+configuration_position只是0–3的语法位置，不证明其grid/block/shared/stream
+运行时含义。输出字段区间仍依赖上层对象来源模型和外部API/ABI假设，其他
+配置实参、调用可达性及实际部署没有验收。选点、协议、ABI、预算均绑定hash。

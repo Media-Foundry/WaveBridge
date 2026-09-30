@@ -147,6 +147,7 @@ def check(root, selection, *, max_ast_nodes=1_000_000):
         status="checked", kernel_declaration_id=kernel, launch_id=launch,
         kernel_definition_sha256=_hash(definition),
         configuration_declaration_id=site["configuration_declaration_id"],
+        configuration_call_expression_id=site["configuration_ast"].get("id"),
         configuration_declaration_sha256=_hash(declarations[0]),
         configuration_declaration_occurrences=len(declarations),
         identity_normalization="only_full_node_identical_occurrences_with_same_id",
@@ -156,4 +157,83 @@ def check(root, selection, *, max_ast_nodes=1_000_000):
                              for position, arg in enumerate(arguments)],
         parameter_bindings=site["parameter_bindings"],
     )
+    return result
+
+
+def check_guarded_configuration_copy(payload, selection, initializer_id, assignment_id, quotient_id,
+                                     object_id, power_selection, conversion_contract, output_contract,
+                                     integer_types, *, query_guard_id, configuration_position,
+                                     instantiated_function_id=None, max_ast_nodes=1_000_000):
+    """Bind conditional copy fields to one exact configuration argument.
+
+    Position is syntax, not an assertion about grid/block API semantics. No
+    caller-supplied copy ID, field values, or successful reports are consumed.
+    """
+    from wavebridge.verification.field_snapshot import check_guarded_query_constructor_copy
+
+    result = {"schema_version": "guarded-configuration-copy/v1", "status": "unknown", "reason": None,
+              "scope": "conditional_field_domains_at_one_exact_launch_configuration_argument",
+              "checks": {}, "fields": [], "assumptions": [],
+              "configuration_slot_field_domains_under_model": False,
+              "launch_API_semantics_verified": False, "all_configuration_arguments_checked": False,
+              "launch_execution_proved": False, "runtime_object_provenance_verified": False,
+              "source_program_checked": False, "deployable": False}
+    try:
+        if (not isinstance(payload, dict) or type(configuration_position) is not int or
+                not 0 <= configuration_position < 4):
+            raise ValueError("payload_and_exact_configuration_position_required")
+        launch = check(payload.get("ast"), selection, max_ast_nodes=max_ast_nodes)
+        result["checks"]["launch"] = launch
+        if launch["status"] != "checked":
+            raise ValueError("fresh_launch_binding_not_checked")
+        slot = launch["configuration_slots"][configuration_position]
+        expression = slot["expression_ast"]
+        if (slot["position"] != configuration_position or expression.get("kind") != "CXXConstructExpr" or
+                expression.get("id") != slot["expression_id"] or _hash(expression) != slot["expression_sha256"]):
+            raise ValueError("selected_slot_not_direct_constructor")
+        copied = check_guarded_query_constructor_copy(payload, initializer_id, assignment_id, quotient_id,
+                    object_id, power_selection, conversion_contract, output_contract, integer_types,
+                    query_guard_id=query_guard_id, copy_expression_id=slot["expression_id"],
+                    instantiated_function_id=instantiated_function_id, max_ast_nodes=max_ast_nodes)
+        result["checks"]["copy"] = copied
+        result["assumptions"] = list(dict.fromkeys(launch["assumptions"] + copied["assumptions"]))
+        if (copied["status"] != "checked" or copied["copy_field_domains_under_model"] is not True or
+                copied["input_sha256"]["root"] != launch["input_sha256"]["root"] or
+                copied["copy_expression_id"] != slot["expression_id"]):
+            raise ValueError("fresh_conditional_copy_not_bound_to_slot")
+        matches = [c for c in copied["checks"]["uses"]["copy_structures"]
+                   if c["expression_id"] == slot["expression_id"]]
+        if len(matches) != 1:
+            raise ValueError("selected_copy_structure_not_unique")
+        target = matches[0]["parameter_target"]
+        call_id = launch["configuration_call_expression_id"]
+        if (not isinstance(call_id, str) or not call_id or target["status"] != "checked" or
+                target["call_expression_id"] != call_id or
+                target["callee_declaration_id"] != launch["configuration_declaration_id"] or
+                type(target["argument_position"]) is not int or
+                target["argument_position"] != configuration_position):
+            raise ValueError("copy_parameter_target_not_exact_configuration_call_slot")
+        result.update(status="checked", configuration_slot_field_domains_under_model=True,
+                      kernel_declaration_id=launch["kernel_declaration_id"], launch_id=launch["launch_id"],
+                      configuration_call_expression_id=call_id,
+                      configuration_declaration_id=target["callee_declaration_id"],
+                      configuration_parameter_id=target["parameter_declaration_id"],
+                      configuration_position=configuration_position, copy_expression_id=slot["expression_id"],
+                      source_object_id=object_id, fields=copied["fields"],
+                      semantic_model=copied["semantic_model"],
+                      restricted_object_provenance_assumed=copied["restricted_object_provenance_assumed"],
+                      input_sha256={"root": launch["input_sha256"]["root"], "payload": _hash(payload),
+                                    "launch_selection": _hash(selection), "configuration_position": _hash(configuration_position),
+                                    "source_selection": _hash({"initializer_id": initializer_id,
+                                        "assignment_id": assignment_id, "quotient_id": quotient_id,
+                                        "object_id": object_id, "power_selection": power_selection,
+                                        "query_guard_id": query_guard_id,
+                                        "instantiated_function_id": instantiated_function_id}),
+                                    "conversion_contract": _hash(conversion_contract),
+                                    "output_contract": _hash(output_contract), "integer_types": _hash(integer_types),
+                                    "max_ast_nodes": _hash(max_ast_nodes),
+                                    "copy_inputs": _hash(copied["input_sha256"]),
+                                    "configuration_expression": slot["expression_sha256"]})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
     return result

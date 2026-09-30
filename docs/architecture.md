@@ -50,6 +50,11 @@
 精确选点的状态与全TU launch发现状态分开：其他不同非空ID的未解析位置完整
 保留，不默认污染已选位置的绑定；同ID冲突与无法区分身份的情况仍拒绝。
 
+`launch_binding.check_guarded_configuration_copy`从该精确槽表达式选择复制，
+fresh重建守卫构造及完整引用保持，再核对按值目标确为同一配置call/callee/
+position。它连接条件字段区间与实际语法槽，而非由调用者任意指定一个copy；
+仍不建立位置的运行时API含义、全部配置值、launch执行或部署安全。
+
 `device_evidence.collect`将该配对、行/线程/列整数关系与共享索引/容量检查放在
 同一次调用中；共享支路只接收本次fresh生成的thread报告，根/ABI/选点哈希
 核对一致。结果是带完整条件和未解除义务的证据包，不是源程序、目标改写或
