@@ -121,6 +121,20 @@ seed，复用`integer_selection._preserve_to_statement`的私有first-entry模�
 结论严格止于该对象生命周期内目标首次入口、尚未求值任何target子表达式；
 target自身计算、之后的写入、数值域、可达性/部署均未验证。
 
+可选`guard_id`先fresh保持初值到该guard首次入口，再由
+`normal_return_guard.check_local_equality`检查同块紧邻target的
+`if (local != nonnegative_int_literal) direct_zero_argument_noreturn_call()`。
+无else/init/constexpr；失败分支可有单层compound，但不能有其它操作。
+只得到正常fallthrough必要值，不证明目标可达；noreturn实际链接、有效AST与
+无非局部/异步转移仍为前提。先前全函数控制/逃逸审计不跳过。
+guard/condition/local/call/designator唯一；模板共享literal与最终callee叶
+只在同ID所有出现全字段一致且childless时接受，身份策略进入hash。
+
+minimum/quotient通过`query_guard_id`消费此fresh结果，与外部数值协议互斥。
+算术通过后仅标记`division_safe_under_source_guard`；不构造或伪造外部域协议，
+不把此局部结论扩展为API对所有调用返回该值。非零条件解除单列并保留原债务；
+机器码、实际运行、launch/source/deploy仍不获保证。
+
 ## 一元 native 调用的条件效果组合
 
 `loop_exit_guards.check_iteration_bounds`显式接收相同一元/using选项，向其

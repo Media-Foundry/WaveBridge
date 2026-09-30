@@ -120,7 +120,7 @@ def check(root, function_id, *, max_ast_nodes=1_000_000):
 
 def check_query_power_quotient(payload, initializer_id, assignment_id, quotient_id, power_selection,
                                conversion_contract, output_contract, *, int_bits=32,
-                               max_ast_nodes=1_000_000, query_domain_contract=None):
+                               max_ast_nodes=1_000_000, query_domain_contract=None, query_guard_id=None):
     """Connect query provenance to a source quotient, preserving nonzero debt.
 
     Query domains are optional explicit assumptions, never inferred from runs.
@@ -137,10 +137,15 @@ def check_query_power_quotient(payload, initializer_id, assignment_id, quotient_
               "source_program_checked": False, "deployable": False, "assumptions": [],
               "numeric_domain_check": {"status": "unknown", "reason": "query_domain_contract_missing"},
               "query_domain_contract_verified": False, "division_safe_under_domain_assumption": False,
+              "division_safe_under_source_guard": False,
               "limitations": ["nonzero denominator remains an explicit unproved premise",
                               "no runtime API domain, launch or deployment guarantee"]}
+    if query_domain_contract is not None and query_guard_id is not None:
+        result["reason"] = "external_domain_and_source_guard_are_mutually_exclusive"
+        return result
     minimum = check_query_power_minimum(payload, initializer_id, assignment_id, power_selection,
-                conversion_contract, output_contract, int_bits=int_bits, max_ast_nodes=max_ast_nodes)
+                conversion_contract, output_contract, int_bits=int_bits, max_ast_nodes=max_ast_nodes,
+                query_guard_id=query_guard_id)
     result["checks"]["origins"] = minimum
     result["assumptions"] = list(minimum["assumptions"])
     if minimum["status"] != "checked" or minimum.get("conditional_assignment_relation") is not True:
@@ -172,6 +177,21 @@ def check_query_power_quotient(payload, initializer_id, assignment_id, quotient_
                       "time": "completion_of_selected_quotient_initialization"},
                   input_sha256={"origins": minimum["input_sha256"],
                                 "quotient": quotient["input_sha256"]})
+    if query_guard_id is not None:
+        from wavebridge.verification.integer_selection import check_minimum_quotient_domain
+        domain = minimum["checks"]["query"]["source_guard_interval"]
+        numeric = check_minimum_quotient_domain(quotient["quotient_relation"]["numerator"],
+                    domain["lower"], domain["upper"], minimum["state_relation"]["power_operand"]["value_set"],
+                    int_bits=int_bits)
+        result["numeric_domain_check"] = numeric
+        if numeric["status"] != "checked":
+            result.update(status=numeric["status"], reason=numeric["reason"])
+            return result
+        result["division_safe_under_source_guard"] = True
+        result["conditional_quotient_interval"] = numeric["quotient_interval"]
+        result["conditional_obligation_discharge"] = {
+            "property": "denominator_nonzero_at_division", "declaration_id": initializer_id,
+            "by": "fresh_source_guard_fallthrough_and_arithmetic_under_recorded_AST_linkage_and_execution_premises"}
     if query_domain_contract is not None:
         from wavebridge.verification.integer_selection import check_minimum_quotient_domain
         origin = minimum["state_relation"]["query_operand_origin"]
@@ -211,7 +231,7 @@ def check_query_power_quotient(payload, initializer_id, assignment_id, quotient_
 
 def check_query_power_minimum(payload, initializer_id, assignment_id, power_selection,
                               conversion_contract, output_contract, *, int_bits=32,
-                              max_ast_nodes=1_000_000):
+                              max_ast_nodes=1_000_000, query_guard_id=None):
     """Freshly bind both minimum operands; the query value remains symbolic.
 
     power_selection contains identities, never a numeric domain or prior report.
@@ -241,7 +261,7 @@ def check_query_power_minimum(payload, initializer_id, assignment_id, power_sele
         result["reason"] = "invalid_selection_or_integer_ABI_binding"
         return result
     query = check_query_initializer_to_statement(payload, initializer_id, assignment_id,
-                conversion_contract, output_contract, max_ast_nodes=max_ast_nodes)
+                conversion_contract, output_contract, max_ast_nodes=max_ast_nodes, guard_id=query_guard_id)
     result["checks"]["query"] = query
     result["assumptions"] = list(query["assumptions"])
     if query["status"] != "checked" or query.get("value_preserved_to_target_entry") is not True:
@@ -280,7 +300,7 @@ def check_query_power_minimum(payload, initializer_id, assignment_id, power_sele
                                         "value_set": power["result_values"]},
                       "time": "immediately_after_first_selected_assignment"},
                   input_sha256={"root": roots[0], "payload": _hash(payload),
-                      "selection": _hash([initializer_id, assignment_id, power_selection, int_bits]),
+                      "selection": _hash([initializer_id, assignment_id, power_selection, int_bits, query_guard_id]),
                       "conversion_contract": _hash(conversion_contract),
                       "output_contract": _hash(output_contract)})
     return result
@@ -543,9 +563,31 @@ def check_query_initializer(payload, initializer_id, conversion_contract, output
 
 
 def check_query_initializer_to_statement(payload, initializer_id, statement_id, conversion_contract,
-                                         output_contract, *, max_ast_nodes=1_000_000):
+                                         output_contract, *, max_ast_nodes=1_000_000, guard_id=None):
     """Carry a fresh symbolic query-origin value to the first target entry."""
     from wavebridge.verification.integer_selection import _preserve_to_statement
+
+    if guard_id is not None:
+        from wavebridge.verification.normal_return_guard import check_local_equality
+        prior = check_query_initializer_to_statement(payload, initializer_id, guard_id,
+                    conversion_contract, output_contract, max_ast_nodes=max_ast_nodes)
+        if prior["status"] != "checked":
+            return prior
+        guard = check_local_equality(payload["ast"], initializer_id, guard_id, statement_id,
+                    int_bits=payload.get("ast_int_bits"), max_ast_nodes=max_ast_nodes)
+        prior["guard_check"] = guard
+        prior["assumptions"] = list(dict.fromkeys(prior["assumptions"] + guard["assumptions"]))
+        if (guard["status"] != "checked" or
+                guard["input_sha256"]["root"] != prior["initializer_check"]["getter_output_check"]["object_check"]["input_sha256"]["root"] or
+                guard["block_id"] != prior["preservation_check"]["block_id"]):
+            prior.update(status="unknown", reason="fresh_adjacent_query_guard_not_checked",
+                         value_preserved_to_target_entry=False)
+            return prior
+        prior.update(statement_id=statement_id,
+                     scope="query_origin_value_at_first_target_entry_after_checked_adjacent_runtime_guard",
+                     source_guard_interval={"lower": guard["fallthrough_value"], "upper": guard["fallthrough_value"]},
+                     input_sha256={"prior": prior["input_sha256"], "guard": guard["input_sha256"]})
+        return prior
 
     initialized = check_query_initializer(payload, initializer_id, conversion_contract, output_contract,
                                           max_ast_nodes=max_ast_nodes)

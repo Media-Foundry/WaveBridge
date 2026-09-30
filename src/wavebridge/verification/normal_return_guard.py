@@ -4,6 +4,105 @@ from wavebridge.verification.launch_binding import _direct_callee
 from wavebridge.verification.using_shadow_identity import UsingShadowIndex, IDENTITY_POLICY
 
 
+def check_local_equality(root, local_id, guard_id, target_id, *, int_bits=32, max_ast_nodes=1_000_000):
+    """A plain local != literal / noreturn guard immediately before a target.
+
+    Only normal fallthrough through this guard is checked. A caller must prove
+    the initialized value reaches the guard and exclude bypass/nonlocal control.
+    """
+    result = {"schema_version": "local-equality-fallthrough/v1", "status": "unknown", "reason": None,
+              "fallthrough_value": None, "guard_dominance_proved": False,
+              "runtime_linkage_verified": False, "source_program_checked": False, "deployable": False,
+              "assumptions": ["faithful valid C++ AST and matching signed-int ABI",
+                  "normal execution reaches the target by fallthrough from this guard",
+                  "noreturn declaration contract is respected by the linked implementation",
+                  "selected initialized local remains live with no asynchronous changes or nonlocal transfers"]}
+    try:
+        if (not isinstance(root, dict) or root.get("kind") != "TranslationUnitDecl" or
+                any(not isinstance(v, str) or not v for v in (local_id, guard_id, target_id)) or
+                type(int_bits) is not int or not 2 <= int_bits <= 64 or
+                type(max_ast_nodes) is not int or not 1 <= max_ast_nodes <= 10_000_000):
+            raise ValueError("invalid_input_or_budget")
+        index = UsingShadowIndex(root, max_ast_nodes)
+
+        def children(node, kind, size):
+            if (node.get("kind") != kind or index.unique(node.get("id")) is not node or
+                    len(node.get("inner", [])) != size):
+                raise ValueError("guard_shape_or_identity_unsupported")
+            return node.get("inner", [])
+
+        local, guard, target = (index.unique(i) for i in (local_id, guard_id, target_id))
+        if (local.get("kind") != "VarDecl" or local.get("type") != {"qualType": "int"} or
+                local.get("storageClass") not in (None, "auto", "register") or
+                any(local.get(k) is not None for k in ("tls", "tlsKind", "thread_local", "threadLocal"))):
+            raise ValueError("plain_automatic_int_local_required")
+        blocks = []
+        for occurrences in index.nodes.values():
+            for node, group in occurrences:
+                if group is None and node.get("kind") == "CompoundStmt":
+                    parts = node.get("inner", [])
+                    for i, child in enumerate(parts[:-1]):
+                        if child is guard and parts[i + 1] is target:
+                            blocks.append(node)
+        if len(blocks) != 1 or index.unique(blocks[0].get("id")) is not blocks[0]:
+            raise ValueError("guard_and_target_must_be_adjacent_direct_statements")
+        condition, failed = children(guard, "IfStmt", 2)
+        if any(k in guard and guard[k] is not False for k in ("hasElse", "hasInit", "hasVar", "isConstexpr", "isConsteval")):
+            raise ValueError("plain_runtime_guard_required")
+        left, literal = children(condition, "BinaryOperator", 2)
+        if (condition.get("opcode") != "!=" or condition.get("type") != {"qualType": "bool"} or
+                condition.get("valueCategory") != "prvalue"):
+            raise ValueError("literal_inequality_required")
+        leaf, = children(left, "ImplicitCastExpr", 1)
+        if (left.get("castKind") != "LValueToRValue" or left.get("type") != local["type"] or
+                left.get("valueCategory") != "prvalue"):
+            raise ValueError("plain_local_load_required")
+        children(leaf, "DeclRefExpr", 0)
+        ref = leaf.get("referencedDecl", {})
+        if (leaf.get("type") != local["type"] or leaf.get("valueCategory") != "lvalue" or
+                ref.get("id") != local_id or ref.get("kind") != "VarDecl" or ref.get("type") != local["type"]):
+            raise ValueError("guard_local_identity_mismatch")
+        # Clang template patterns and instantiations may share an identical literal.
+        occurrences = index.nodes.get(literal.get("id"), [])
+        if (literal.get("kind") != "IntegerLiteral" or literal.get("inner") or
+                literal.get("type") != {"qualType": "int"} or literal.get("valueCategory") != "prvalue" or
+                not occurrences or any(n != literal for n, _ in occurrences)):
+            raise ValueError("plain_consistent_int_literal_required")
+        spelling = literal.get("value")
+        if not isinstance(spelling, str) or len(spelling) > 20:
+            raise ValueError("invalid_literal")
+        value = int(spelling)
+        if spelling != str(value) or not 0 <= value < 1 << (int_bits - 1):
+            raise ValueError("literal_not_representable_nonnegative_int")
+        if failed.get("kind") == "CompoundStmt":
+            failed, = children(failed, "CompoundStmt", 1)
+        designator, = children(failed, "CallExpr", 1)
+        if failed.get("type") != {"qualType": "void"} or failed.get("valueCategory") != "prvalue":
+            raise ValueError("void_terminal_call_required")
+        terminal_leaf = designator
+        while terminal_leaf.get("kind") in {"ImplicitCastExpr", "ParenExpr"}:
+            terminal_leaf, = children(terminal_leaf, terminal_leaf["kind"], 1)
+        # The call and designator are unique; only their final closed function
+        # reference leaf may be shared between template and instantiation.
+        references = index.nodes.get(terminal_leaf.get("id"), [])
+        if (terminal_leaf.get("kind") != "DeclRefExpr" or terminal_leaf.get("inner") or
+                not references or any(n != terminal_leaf for n, _ in references)):
+            raise ValueError("terminal_reference_not_consistent_shared_leaf")
+        declaration = index.unique(terminal_leaf.get("referencedDecl", {}).get("id"))
+        if (declaration.get("kind") != "FunctionDecl" or not _direct_callee(designator, declaration) or
+                "__attribute__((noreturn))" not in declaration.get("type", {}).get("qualType", "")):
+            raise ValueError("direct_noreturn_declaration_required")
+        result.update(status="checked", fallthrough_value=value, local_id=local_id,
+                      guard_id=guard_id, target_id=target_id, block_id=blocks[0]["id"],
+                      noreturn_declaration_id=declaration["id"],
+                      terminal_reference_occurrences=len(references),
+                      input_sha256={"root": _hash(root), "selection": _hash([local_id, guard_id, target_id, int_bits]),
+                                    "identity_policy": _hash("unique_guard_call_designator_identical_shared_literal_and_terminal_leaf/v1")})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def check(root, function_id, *, max_ast_nodes=1_000_000):
     result = {
         "schema_version": "normal-return-guard/v1", "status": "unknown", "reason": None,

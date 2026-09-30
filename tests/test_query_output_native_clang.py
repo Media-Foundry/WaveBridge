@@ -7,7 +7,7 @@ import unittest
 from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.verification.field_snapshot import check_query_object, check_query_output, check_query_initializer, check_query_initializer_to_statement, FIELD_READ_PREMISE
-from wavebridge.verification.normal_return_guard import check_enum_binding
+from wavebridge.verification.normal_return_guard import check_enum_binding, check_local_equality
 from wavebridge.verification.field_snapshot import check_query_power_minimum, check_query_power_quotient
 
 PLUGIN = os.environ.get("WB_ENUM_CAPTURE_PLUGIN") or os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
@@ -80,6 +80,72 @@ class QueryOutputTests(unittest.TestCase):
             self.assertEqual(result["status"], "unknown", (name, result))
             self.assertEqual(result["checks"]["origins"]["status"], "checked", result)
             self.assertFalse(result["conditional_quotient_relation"])
+
+    def source_guard_selection(self, name):
+        args = self.quotient_selection(name, name + "_caller")
+        function = next(n for n in _walk(self.payload["ast"]) if n.get("id") == args[3]["callee_id"])
+        guard = next(n["id"] for n in _walk(function) if n.get("kind") == "IfStmt")
+        return args, guard
+
+    def test_source_guard_supplies_domain_without_external_numeric_protocol(self):
+        args, guard = self.source_guard_selection("source_gate")
+        contracts = self.contracts("guarded_snapshot")
+        result = check_query_power_quotient(self.payload, *args, *contracts, query_guard_id=guard)
+        self.assertEqual(result["status"], "checked", result)
+        self.assertTrue(result["division_safe_under_source_guard"])
+        self.assertFalse(result["division_safe_under_domain_assumption"])
+        self.assertEqual(result["conditional_quotient_interval"], {"lower": 4, "upper": 4})
+        self.assertNotIn("external_query_domain_contract", result)
+        self.assertFalse(result["deployable"])
+        self.assertTrue(any("noreturn" in a for a in result["assumptions"]))
+        self.assertEqual(check_query_power_quotient(self.payload, *args, *contracts)["status"], "unknown")
+        self.assertEqual(check_query_power_quotient(self.payload, *args, *contracts,
+                         query_guard_id=guard, query_domain_contract={})["status"], "unknown")
+
+    def test_source_guard_zero_or_invalid_control_is_not_accepted(self):
+        contracts = self.contracts("guarded_snapshot")
+        for name in ("source_gate_zero", "source_gate_wrong", "source_gate_returns", "source_gate_write",
+                     "source_gate_changed_condition"):
+            args, guard = self.source_guard_selection(name)
+            result = check_query_power_quotient(self.payload, *args, *contracts, query_guard_id=guard)
+            self.assertEqual(result["status"], "rejected" if name == "source_gate_zero" else "unknown", (name, result))
+            self.assertFalse(result["division_safe_under_source_guard"])
+
+    def test_source_guard_identity_budget_and_input_immutability(self):
+        args, guard = self.source_guard_selection("source_gate")
+        contracts = self.contracts("guarded_snapshot")
+        before = copy.deepcopy(self.payload)
+        check_query_power_quotient(self.payload, *args, *contracts, query_guard_id=guard)
+        self.assertEqual(before, self.payload)
+        for selected in ("missing", self.source_guard_selection("source_gate_wrong")[1]):
+            self.assertEqual(check_query_power_quotient(self.payload, *args, *contracts, query_guard_id=selected)["status"], "unknown")
+        self.assertEqual(check_query_power_quotient(self.payload, *args, *contracts,
+                         query_guard_id=guard, max_ast_nodes=1)["status"], "unknown")
+
+    def test_guard_shared_literals_conflicts_and_strict_flags(self):
+        functions = [n for n in _walk(self.payload["ast"]) if n.get("kind") == "FunctionDecl" and n.get("name") == "shared_literal_guard"]
+        self.assertEqual(len(functions), 2)
+        for function in functions:
+            local = next(n["id"] for n in _walk(function) if n.get("kind") == "VarDecl")
+            guard = next(n for n in _walk(function) if n.get("kind") == "IfStmt")
+            target = next(n["id"] for n in _walk(function) if n.get("kind") == "BinaryOperator" and n.get("opcode") == "=")
+            result = check_local_equality(self.payload["ast"], local, guard["id"], target)
+            self.assertEqual(result["status"], "checked", result)
+            self.assertEqual(result["terminal_reference_occurrences"], 2)
+            literal_id = guard["inner"][0]["inner"][1]["id"]
+            bad = copy.deepcopy(self.payload["ast"])
+            occurrences = [n for n in _walk(bad) if n.get("id") == literal_id]
+            self.assertEqual(len(occurrences), 2)
+            occurrences[0]["value"] = "33"
+            self.assertEqual(check_local_equality(bad, local, guard["id"], target)["status"], "unknown")
+            bad = copy.deepcopy(self.payload["ast"])
+            terminal_id = guard["inner"][1]["inner"][0]["inner"][0]["id"]
+            next(n for n in _walk(bad) if n.get("id") == terminal_id)["referencedDecl"]["id"] = "conflicting-callee"
+            self.assertEqual(check_local_equality(bad, local, guard["id"], target)["status"], "unknown")
+            for flag in (0, "", True):
+                bad = copy.deepcopy(self.payload["ast"])
+                next(n for n in _walk(bad) if n.get("id") == guard["id"])["hasElse"] = flag
+                self.assertEqual(check_local_equality(bad, local, guard["id"], target)["status"], "unknown")
 
     def test_quotient_domain_is_an_explicit_invocation_bound_assumption(self):
         args = (*self.quotient_selection(), *self.contracts("guarded_snapshot"))

@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 源码运行时守卫供应查询值域
+
+生成隔离、固定来源的HIP候选，仅在forward查询后插入fail-stop guard；
+重新采集完整native AST并fresh连接初值→guard→minimum→quotient。
+正常通过guard给出query32，商4，不再依赖query数值域外部假设；原API/
+转换/noreturn链接等前提继续保留。候选非fallback、非native64优化，deploy false。
+1366项CPU测试141.901秒通过无跳过，Clang17/23各20项、生成器3项、demo/diff
+通过，Sol两轮复核无阻断。原历史输入未改，没有GPU/程序执行，见
+[实录](../experiments/hip-source-guard-20260930.md)。
+
 ## 查询数值域协议与条件除法安全
 
 新增独立minimum/quotient区间检查，并由fresh源码组合消费精确query-origin

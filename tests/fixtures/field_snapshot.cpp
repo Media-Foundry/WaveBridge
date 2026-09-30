@@ -200,3 +200,37 @@ int NAME##_caller(int input) { \
 QUOTIENT_VARIANT(quotient_changed, ++composed_width, composed_width)
 QUOTIENT_VARIANT(quotient_wrong, (void)0, input)
 QUOTIENT_VARIANT(quotient_escaped, int* aliases[] = {&composed_width}, composed_width)
+
+void stop_now() __attribute__((noreturn));
+void can_return();
+#define SOURCE_GUARD(NAME, CONDITION, FAILURE, BETWEEN) \
+int NAME(int input) { \
+    int composed_log = composed_exponent(input); \
+    const int composed_power = 1 << composed_log; \
+    int composed_width = guarded_snapshot(); \
+    if (CONDITION) FAILURE; \
+    BETWEEN \
+    composed_width = composed_power < composed_width ? composed_power : composed_width; \
+    const int composed_threads = 128; \
+    int composed_quotient = composed_threads / composed_width; \
+    return composed_quotient; \
+} \
+int NAME##_caller(int input) { \
+    const int composed_input = input; \
+    if (composed_input != 65 && composed_input != 128) return 3; \
+    NAME(composed_input); \
+    return 0; \
+}
+SOURCE_GUARD(source_gate, composed_width != 32, stop_now(), )
+SOURCE_GUARD(source_gate_zero, composed_width != 0, stop_now(), )
+SOURCE_GUARD(source_gate_wrong, input != 32, stop_now(), )
+SOURCE_GUARD(source_gate_returns, composed_width != 32, can_return(), )
+SOURCE_GUARD(source_gate_write, composed_width != 32, stop_now(), ++composed_width;)
+SOURCE_GUARD(source_gate_changed_condition, ++composed_width != 32, stop_now(), )
+
+template<class T> void shared_literal_guard(int input) {
+    int shared_guard_local = input;
+    if (shared_guard_local != 32) stop_now();
+    shared_guard_local = 1;
+}
+template void shared_literal_guard<int>(int);
