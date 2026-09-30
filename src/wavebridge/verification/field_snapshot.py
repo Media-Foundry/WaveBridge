@@ -259,6 +259,124 @@ def check_guarded_query_constructor(payload, initializer_id, assignment_id, quot
     return result
 
 
+def check_guarded_query_constructor_copy(payload, initializer_id, assignment_id, quotient_id, object_id,
+                                        power_selection, conversion_contract, output_contract, integer_types,
+                                        *, query_guard_id, copy_expression_id, max_ast_nodes=1_000_000,
+                                        instantiated_function_id=None):
+    """Conditional copy-entry domains in a restricted object-provenance model.
+
+    No cached reports or caller-provided alias/preservation booleans are accepted.
+    Opaque code is not declared pure: the model excludes access to an unexposed
+    fresh automatic object through forged, stale, or introspected addresses.
+    This is not a verification of that model against a platform or machine code.
+    """
+    from wavebridge.verification.object_use_closure import inspect_uses
+
+    model = [
+        "faithful complete AST and valid ordinary sequential C++ execution under the declared integer ABI",
+        "fresh automatic object storage cannot be accessed through forged pointers, stale stack addresses, stack introspection or implementation extensions",
+        "no asynchronous interference, nonlocal jumps or external lifetime replacement",
+        "the selected copy is evaluated after normal completion of the selected source construction",
+    ]
+    result = {"schema_version": "guarded-constructor-copy/v1", "status": "unknown", "reason": None,
+              "scope": "selected_copy_field_domains_under_restricted_object_provenance_model",
+              "semantic_model": "unexposed-fresh-automatic-object/v1", "semantic_model_verified_on_target": False,
+              "restricted_object_provenance_assumed": True, "runtime_object_provenance_verified": False,
+              "selected_source_address_publication_not_observed_in_supported_ast_subset": False,
+              "field_values_preserved_to_selected_copy_evaluation": "not_established",
+              "other_argument_and_cleanup_purity_checked": False,
+              "checks": {}, "fields": [], "assumptions": model,
+              "copy_field_domains_under_model": False, "selected_copy_reachability_proved": False,
+              "launch_binding_checked": False, "source_program_checked": False, "deployable": False}
+    try:
+        if not isinstance(copy_expression_id, str) or not copy_expression_id:
+            raise ValueError("copy_selection_required")
+        initial = check_guarded_query_constructor(payload, initializer_id, assignment_id, quotient_id,
+                    object_id, power_selection, conversion_contract, output_contract, integer_types,
+                    query_guard_id=query_guard_id, max_ast_nodes=max_ast_nodes)
+        result["checks"]["construction"] = initial
+        result["assumptions"] = list(dict.fromkeys(model + initial["assumptions"]))
+        if initial["status"] != "checked" or initial["field_domains_under_source_guard"] is not True:
+            raise ValueError("fresh_construction_domains_not_checked")
+        forwarding = initial["checks"]["forwarding"]
+        root_hash = forwarding["input_sha256"]["root"]
+        record_id = forwarding["record_declaration_id"]
+        effects = forwarding["constructor_effects"]
+        if (effects["status"] != "checked" or effects["record_declaration_id"] != record_id or
+                effects.get("target_address_published") !=
+                "not_observed_in_selected_constructor_member_initializers_or_body"):
+            raise ValueError("constructor_nonpublication_not_checked")
+        domains = {field["field_id"]: field["interval"] for field in initial["fields"]}
+        field_ids = set(domains)
+        if (not field_ids or len(field_ids) != len(initial["fields"]) or
+                len(effects["field_initializers"]) != len(field_ids) or
+                field_ids != {f["field_id"] for f in effects["field_initializers"]}):
+            raise ValueError("construction_field_set_mismatch")
+        uses = inspect_uses(payload, object_id, integer_types, max_ast_nodes=max_ast_nodes,
+                            instantiated_function_id=instantiated_function_id)
+        result["checks"]["uses"] = uses
+        result["assumptions"] = list(dict.fromkeys(result["assumptions"] + uses["assumptions"]))
+        if (uses["status"] != "checked" or uses["input_sha256"]["root"] != root_hash or
+                uses["input_sha256"]["integer_types"] != _hash(integer_types) or
+                uses["variable_id"] != object_id or uses["function_id"] != power_selection["callee_id"]):
+            raise ValueError("fresh_use_closure_binding_not_checked")
+        if (uses["capture_count"] or uses["lambda_count"] or uses["captured_copy_expression_ids"] or
+                uses["capture_structures"] or uses["capture_initializers"]):
+            raise ValueError("captured_source_outside_preservation_subset")
+        for key in ("source_order", "source_reference_use_effects", "copy_cleanup_observations",
+                    "local_record_cleanup_scopes", "preceding_expression_cleanups"):
+            if uses[key]["status"] != "checked":
+                raise ValueError("fresh_" + key + "_not_checked")
+        copies = uses["copy_structures"]
+        ids = [c["expression_id"] for c in copies]
+        references = uses["explicit_source_references"]
+        if (copy_expression_id not in ids or len(ids) != len(set(ids)) or
+                set(ids) != set(uses["direct_copy_expression_ids"]) or
+                sorted(ids) != sorted(r["copy_expression_id"] for r in references) or
+                any(r["role"] != "direct_record_copy_argument" or r["lambda_path"] for r in references)):
+            raise ValueError("complete_direct_copy_reference_set_required")
+        order = uses["source_order"]["copies"]
+        if (sorted(ids) != sorted(c["copy_expression_id"] for c in order) or
+                any(c["source_declaration_statement_id"] != initial["statement_id"] for c in order)):
+            raise ValueError("copy_order_source_binding_mismatch")
+        for copied in copies:
+            boundary, local = copied["object_boundary"], copied["local_copy_effects"]
+            if (copied["status"] != "checked" or copied["input_sha256"]["root"] != root_hash or
+                    copied["source_declaration_id"] != object_id or copied["record_declaration_id"] != record_id or
+                    local["status"] != "checked" or set(local["field_ids"]) != field_ids or
+                    local["source_parameter_accesses"] != "direct_integer_field_reads_only" or
+                    local["destination_accesses"] != "direct_field_initializations_only" or
+                    local["additional_address_publication"] != "not_observed_beyond_selected_const_reference_binding" or
+                    boundary["status"] != "checked" or boundary["abstract_object_relation"] !=
+                    "distinct_complete_destination_from_evaluated_source_if_valid_copy_executes" or
+                    boundary["record_destruction"]["status"] != "checked" or
+                    boundary["record_destruction"]["record_declaration_id"] != record_id):
+                raise ValueError("copy_nonpublication_or_distinct_object_boundary_not_checked")
+            mappings = copied["field_mappings"]
+            if (len(mappings) != len(field_ids) or {m["target_field_id"] for m in mappings} != field_ids or
+                    any(m["source_field_id"] != m["target_field_id"] or
+                        m["relation"] != "direct_same_field_read_initializer" for m in mappings)):
+                raise ValueError("copy_not_full_same_field_bijection")
+        result.update(status="checked", copy_field_domains_under_model=True,
+                      selected_source_address_publication_not_observed_in_supported_ast_subset=True,
+                      field_values_preserved_to_selected_copy_evaluation="conditional",
+                      source_object_id=object_id, copy_expression_id=copy_expression_id,
+                      instantiated_function_id=instantiated_function_id,
+                      record_declaration_id=record_id,
+                      fields=[{"field_id": f["field_id"], "interval": dict(f["interval"])} for f in initial["fields"]],
+                      invariant={"base": "selected_automatic_constructor_initializes_fields_without_publication_in_supported_AST_subset",
+                                 "step": "every_source_reference_is_a_nonpublishing_same_field_copy_to_a_distinct_object",
+                                 "frame": "unexposed_source_inaccessible_to_other_operations_under_model",
+                                 "conclusion": "source_fields_preserved_until_selected_copy_reads_if_evaluated",
+                                 "static_copy_count": len(ids)},
+                      input_sha256={"root": root_hash, "payload": _hash(payload),
+                                    "instantiated_function_id": _hash(instantiated_function_id),
+                                    "integer_types": _hash(integer_types), "copy_expression_id": _hash(copy_expression_id)})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def check_query_power_quotient(payload, initializer_id, assignment_id, quotient_id, power_selection,
                                conversion_contract, output_contract, *, int_bits=32,
                                max_ast_nodes=1_000_000, query_domain_contract=None, query_guard_id=None):

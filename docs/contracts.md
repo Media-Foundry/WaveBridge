@@ -772,3 +772,12 @@ do包装：do/source路径的最长共同前缀必须以CompoundStmt结束，do�
 `preceding_false_do_wrappers`只描述词法前置关系；do body并非死代码，前置
 效果、可达性、正常完成与对象值保持仍未建立。全函数跳转和break/case归属
 检查不因前置关系放宽。source被do包围、后置/动态条件do仍不在新增子集内。
+
+## 构造到复制的条件模型
+
+新增 `guarded-constructor-copy/v1` 只消费同次 fresh 构造和完整用途检查。
+`copy_field_domains_under_model=true` 表示所选复制若执行，在
+`unexposed-fresh-automatic-object/v1` 前提下字段区间保持；不表示实际地址
+来源、安全执行、launch 或 GPU 已验收。`runtime_object_provenance_verified`
+始终 false，opaque 实参/cleanup 未证明纯，旧栈指针等是明确排除的模型边界。
+参见[决策](decisions/0005-conditional-object-provenance.md)。

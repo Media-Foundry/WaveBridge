@@ -9,6 +9,7 @@ from wavebridge.frontend.clang_ast import _walk
 from wavebridge.verification.field_snapshot import check_query_object, check_query_output, check_query_initializer, check_query_initializer_to_statement, FIELD_READ_PREMISE
 from wavebridge.verification.normal_return_guard import check_enum_binding, check_local_equality
 from wavebridge.verification.field_snapshot import check_query_power_minimum, check_query_power_quotient, check_guarded_query_constructor
+from wavebridge.verification.field_snapshot import check_guarded_query_constructor_copy
 
 PLUGIN = os.environ.get("WB_ENUM_CAPTURE_PLUGIN") or os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_ENUM_CAPTURE_COMPILER") or os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -139,6 +140,62 @@ class QueryOutputTests(unittest.TestCase):
             self.assertFalse(report["post_construction_history_checked"])
             self.assertFalse(report["launch_binding_checked"])
             self.assertFalse(report["deployable"])
+
+    def copy_args(self, name):
+        args, guard = self.constructor_args(name)
+        function = next(n for n in _walk(self.payload["ast"]) if n.get("id") == args[4]["callee_id"])
+        copies = [n["id"] for n in _walk(function) if n.get("kind") == "CXXConstructExpr"
+                  and "const " in n.get("ctorType", {}).get("qualType", "")]
+        return args, guard, copies
+
+    def test_copy_domains_are_conditional_and_cover_all_switch_references(self):
+        args, guard, copies = self.copy_args("copied_guard")
+        self.assertEqual(len(copies), 2)
+        before = copy.deepcopy(self.payload)
+        for selected in copies:
+            report = check_guarded_query_constructor_copy(self.payload, *args,
+                         query_guard_id=guard, copy_expression_id=selected)
+            self.assertEqual(report["status"], "checked", report)
+            self.assertEqual([f["interval"]["lower"] for f in report["fields"]], [32, 4, 1])
+            self.assertEqual(report["invariant"]["static_copy_count"], 2)
+            self.assertIsNone(report["instantiated_function_id"])
+            self.assertEqual(report["input_sha256"]["instantiated_function_id"],
+                             report["checks"]["uses"]["input_sha256"]["instantiated_function_id"])
+            self.assertTrue(report["selected_source_address_publication_not_observed_in_supported_ast_subset"])
+            self.assertEqual(report["field_values_preserved_to_selected_copy_evaluation"], "conditional")
+            for key in ("deployable", "source_program_checked", "launch_binding_checked",
+                        "runtime_object_provenance_verified", "selected_copy_reachability_proved",
+                        "other_argument_and_cleanup_purity_checked"):
+                self.assertFalse(report[key])
+        self.assertEqual(self.payload, before)
+
+    def test_copy_rejects_explicit_alias_writes_lifetime_asm_and_publication(self):
+        for name in ("copied_write", "copied_alias", "copied_destroy", "copied_asm",
+                     "copied_capture", "copied_ctor_escape", "copied_copy_escape"):
+            args, guard, copies = self.copy_args(name)
+            report = check_guarded_query_constructor_copy(self.payload, *args,
+                         query_guard_id=guard, copy_expression_id=copies[0])
+            self.assertEqual(report["status"], "unknown", (name, report))
+            self.assertFalse(report["copy_field_domains_under_model"])
+
+    def test_retained_pointer_effect_is_excluded_by_model_not_proved_absent(self):
+        args, guard, copies = self.copy_args("copied_retained")
+        report = check_guarded_query_constructor_copy(self.payload, *args,
+                     query_guard_id=guard, copy_expression_id=copies[0])
+        self.assertEqual(report["status"], "checked", report)
+        self.assertTrue(report["restricted_object_provenance_assumed"])
+        self.assertFalse(report["runtime_object_provenance_verified"])
+        self.assertNotIn("syntactic_no_alias_generation_established", report)
+        self.assertTrue(any("stale stack addresses" in a for a in report["assumptions"]))
+        self.assertFalse(report["source_program_checked"])
+
+    def test_copy_selection_and_budget_fail_closed(self):
+        args, guard, copies = self.copy_args("copied_guard")
+        for selected, budget in (("missing", 1000000), (copies[0], 1),
+                                  (self.copy_args("copied_retained")[2][0], 1000000)):
+            report = check_guarded_query_constructor_copy(self.payload, *args,
+                         query_guard_id=guard, copy_expression_id=selected, max_ast_nodes=budget)
+            self.assertEqual(report["status"], "unknown", report)
 
     def test_constructor_rejects_history_escape_wrong_source_and_body_effects(self):
         for name in ("constructed_write", "constructed_alias", "constructed_wrong", "constructed_body"):

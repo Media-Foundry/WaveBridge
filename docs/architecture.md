@@ -114,6 +114,11 @@ native标志绑定逻辑。源初始化和copy祖先的排除项有显式记录�
 
 ## 依赖规则
 
+`field_snapshot.check_guarded_query_constructor_copy` fresh连接守卫构造字段与
+全部直接复制引用，在显式对象来源模型下归纳字段保持。它不读取旧报告或
+手填no-alias，不提升原结构报告的范围；运行时对象来源真实性仍未验证，
+launch/source/deploy保持false。详见[条件对象模型](decisions/0005-conditional-object-provenance.md)。
+
 函数using引用展开的身份解析是局部opt-in：`UsingShadowIndex`检查完整原AST
 中的普通节点与UsingShadowDecl副本，再返回原节点，不生成全局去重AST。
 当前仅scalar_forwarding/scalar_call_effects使用，策略及版本单独绑定输入

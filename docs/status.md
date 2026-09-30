@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## 构造字段到复制读取的条件保持
+
+新增fresh组合：守卫数值/构造字段链与全部显式source引用逐次复制检查。
+真实冻结HIP AST的22copy闭合，所选block copy得到32/4/1条件区间；不再
+只并列两份结构报告。该结论明确依赖restricted object-provenance模型，
+旧栈/保留指针等未被源码闭合排除，runtime provenance与launch/source/deploy
+仍false。不能记作真实运行时别名证明或WB-03完整验收。
+1382项冻结全测259.326秒无跳过通过；Clang17专项28项通过，最后哈希绑定
+断言另重跑通过，demo/diff通过，Sol复核无语义阻断。无新GPU执行。
+见[实录与模型边界](../experiments/hip-copy-model-20260930.md)。
+
 ## 前置 do-while(false) 的结构顺序
 
 已定位真实外层前置do与内层source scope的关系，新增严格共同Compound分叉

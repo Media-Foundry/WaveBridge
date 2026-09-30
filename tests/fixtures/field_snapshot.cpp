@@ -235,9 +235,9 @@ template<class T> void shared_literal_guard(int input) {
 }
 template void shared_literal_guard<int>(int);
 
-typedef struct GuardDims {
+typedef struct GuardDimsAlias {
     unsigned x, y, z;
-    GuardDims(unsigned a, unsigned b, unsigned c) : x(a), y(b), z(c) {}
+    GuardDimsAlias(unsigned a, unsigned b, unsigned c) : x(a), y(b), z(c) {}
 } GuardDimsAlias;
 typedef struct GuardSwapped {
     unsigned x, y, z;
@@ -247,7 +247,7 @@ typedef struct GuardOverwritten {
     unsigned x, y, z;
     GuardOverwritten(unsigned a, unsigned b, unsigned c) : x(a), y(b), z(c) { x = 0; }
 } GuardOverwrittenAlias;
-#define GUARDED_CONSTRUCT(NAME, RECORD, BETWEEN, FIRST) \
+#define GUARDED_CONSTRUCT(NAME, RECORD, BETWEEN, FIRST, ...) \
 int NAME(int input) { \
     int composed_log = composed_exponent(input); \
     const int composed_power = 1 << composed_log; \
@@ -258,6 +258,7 @@ int NAME(int input) { \
     int composed_quotient = composed_threads / composed_width; \
     BETWEEN \
     RECORD composed_dims(FIRST, composed_quotient, 1); \
+    __VA_ARGS__ \
     return 0; \
 } \
 int NAME##_caller(int input) { \
@@ -272,3 +273,45 @@ GUARDED_CONSTRUCT(constructed_write, GuardDimsAlias, ++composed_quotient;, compo
 GUARDED_CONSTRUCT(constructed_alias, GuardDimsAlias, int* aliases[] = {&composed_quotient};, composed_width)
 GUARDED_CONSTRUCT(constructed_wrong, GuardDimsAlias, , input)
 GUARDED_CONSTRUCT(constructed_body, GuardOverwrittenAlias, , composed_width)
+
+void consume_dims(GuardDimsAlias value, int other);
+GuardDimsAlias* retained_dims;
+int opaque_argument();
+GUARDED_CONSTRUCT(copied_guard, GuardDimsAlias, , composed_width,
+    switch (input) {
+        case 65: consume_dims(composed_dims, opaque_argument()); break;
+        default: consume_dims(composed_dims, 0); break;
+    })
+GUARDED_CONSTRUCT(copied_write, GuardDimsAlias, , composed_width,
+    composed_dims.x = 0; consume_dims(composed_dims, 0);)
+GUARDED_CONSTRUCT(copied_alias, GuardDimsAlias, , composed_width,
+    retained_dims = &composed_dims; consume_dims(composed_dims, opaque_argument());)
+GUARDED_CONSTRUCT(copied_destroy, GuardDimsAlias, , composed_width,
+    composed_dims.~GuardDimsAlias(); consume_dims(composed_dims, 0);)
+GUARDED_CONSTRUCT(copied_asm, GuardDimsAlias, , composed_width,
+    asm volatile("" : : : "memory"); consume_dims(composed_dims, 0);)
+GUARDED_CONSTRUCT(copied_capture, GuardDimsAlias, , composed_width,
+    [&]() { consume_dims(composed_dims, 0); }();)
+// A retained pointer from another activation is NOT disproved by DeclRef closure.
+// It is explicitly excluded by the parent checker's provenance model.
+int write_retained() { retained_dims->x = 0; return 0; }
+GUARDED_CONSTRUCT(copied_retained, GuardDimsAlias, , composed_width,
+    consume_dims(composed_dims, write_retained());)
+void* published_object;
+typedef struct PublishingAlias {
+    unsigned x, y, z;
+    PublishingAlias(unsigned a, unsigned b, unsigned c) : x(a), y(b), z(c) { published_object = this; }
+} PublishingAlias;
+void consume_publishing(PublishingAlias value);
+GUARDED_CONSTRUCT(copied_ctor_escape, PublishingAlias, , composed_width,
+    consume_publishing(composed_dims);)
+typedef struct PublishingCopyAlias {
+    unsigned x, y, z;
+    PublishingCopyAlias(unsigned a, unsigned b, unsigned c) : x(a), y(b), z(c) {}
+    PublishingCopyAlias(const PublishingCopyAlias& other) : x(other.x), y(other.y), z(other.z) {
+        published_object = const_cast<PublishingCopyAlias*>(&other);
+    }
+} PublishingCopyAlias;
+void consume_copy_escape(PublishingCopyAlias value);
+GUARDED_CONSTRUCT(copied_copy_escape, PublishingCopyAlias, , composed_width,
+    consume_copy_escape(composed_dims);)
