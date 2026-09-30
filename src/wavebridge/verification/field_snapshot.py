@@ -118,6 +118,147 @@ def check(root, function_id, *, max_ast_nodes=1_000_000):
     return result
 
 
+def check_guarded_query_constructor(payload, initializer_id, assignment_id, quotient_id, object_id,
+                                    power_selection, conversion_contract, output_contract, integer_types,
+                                    *, query_guard_id, max_ast_nodes=1_000_000):
+    """Carry guarded scalar domains into direct constructor field values.
+
+    Fields are identified by declarations, never by x/y/z spelling. This stops
+    at normal construction completion, not a later launch or object copy.
+    """
+    from wavebridge.verification.integer_selection import _preserve_to_statement
+    from wavebridge.verification.constructor_argument_effects import check_scalar_field_forwarding
+    from wavebridge.verification.constructor_values import _abi_type, _Unknown as ABIUnknown
+    from wavebridge.verification.integer_conversion import check_interval
+
+    result = {"schema_version": "guarded-query-constructor/v1", "status": "unknown", "reason": None,
+              "checks": {}, "fields": [], "argument_domains": [],
+              "field_domains_under_source_guard": False, "post_construction_history_checked": False,
+              "launch_binding_checked": False, "source_program_checked": False, "deployable": False,
+              "assumptions": [], "scope": "conditional_field_domains_at_normal_direct_construction_completion"}
+    try:
+        if not isinstance(integer_types, dict) or query_guard_id is None:
+            raise ValueError("explicit_ABI_and_source_guard_required")
+        _, bits, signed = _abi_type({"qualType": "int"}, integer_types)
+        if signed is not True:
+            raise ValueError("signed_int_ABI_required")
+        numeric = check_query_power_quotient(payload, initializer_id, assignment_id, quotient_id,
+                    power_selection, conversion_contract, output_contract, int_bits=bits,
+                    query_guard_id=query_guard_id, max_ast_nodes=max_ast_nodes)
+        result["checks"]["numeric"] = numeric
+        result["assumptions"] = list(numeric["assumptions"])
+        if numeric["status"] != "checked" or numeric.get("division_safe_under_source_guard") is not True:
+            raise ValueError("fresh_guarded_numeric_relation_not_checked")
+        root = payload["ast"]
+        index, parents, pending, count = {}, {}, [(root, None)], 0
+        while pending:
+            node, parent = pending.pop(); count += 1
+            if count > max_ast_nodes or not isinstance(node, dict):
+                raise ValueError("AST_budget_or_shape_invalid")
+            parents[id(node)] = parent
+            index.setdefault(node.get("id"), []).append(node)
+            for key in ("inner", "array_filler"):
+                children = node.get(key, [])
+                if not isinstance(children, list) or any(not isinstance(child, dict) for child in children):
+                    raise ValueError("AST_semantic_children_invalid")
+                pending.extend((child, node) for child in children if child)
+
+        def unique(identifier):
+            found = index.get(identifier, [])
+            if not isinstance(identifier, str) or len(found) != 1:
+                raise ValueError("constructor_selection_not_unique")
+            return found[0]
+
+        variable = unique(object_id)
+        statement = parents[id(variable)]
+        if (variable.get("kind") != "VarDecl" or variable.get("storageClass") not in (None, "auto", "register") or
+                any(variable.get(k) is not None for k in ("tls", "tlsKind", "thread_local", "threadLocal")) or
+                len(variable.get("inner", [])) != 1 or statement is None or
+                statement.get("kind") != "DeclStmt" or statement.get("inner") != [variable]):
+            raise ValueError("single_automatic_direct_object_required")
+        construct = variable["inner"][0]
+        if construct.get("kind") != "CXXConstructExpr" or unique(construct.get("id")) is not construct:
+            raise ValueError("direct_constructor_required")
+        source_quotient = numeric["checks"]["quotient"]
+        update = source_quotient["history_check"]["update_check"]
+        minimum_history = _preserve_to_statement(root, update, assignment_id, statement["id"], max_ast_nodes)
+        seed = {"status": "checked", "target_declaration_id": quotient_id, "function_id": update["function_id"],
+                "state_relation": source_quotient["quotient_relation"],
+                "input_sha256": source_quotient["input_sha256"], "assumptions": source_quotient["assumptions"]}
+        quotient_history = _preserve_to_statement(root, seed, source_quotient["quotient_statement_id"],
+                            statement["id"], max_ast_nodes, initialized_local=True)
+        for name, history in (("minimum_history", minimum_history), ("quotient_history", quotient_history)):
+            result["checks"][name] = history
+            result["assumptions"] = list(dict.fromkeys(result["assumptions"] + history["assumptions"]))
+            if history["status"] != "checked" or history.get("history_preserved_to_use") is not True:
+                raise ValueError("fresh_scalar_history_not_checked")
+        forwarding = check_scalar_field_forwarding(root, construct["id"], integer_types, max_ast_nodes=max_ast_nodes)
+        result["checks"]["forwarding"] = forwarding
+        if forwarding["status"] != "checked" or forwarding["input_sha256"]["root"] != update["input_sha256"]["root"]:
+            raise ValueError("fresh_constructor_forwarding_not_checked")
+        result["assumptions"] = list(dict.fromkeys(result["assumptions"] + forwarding["assumptions"]))
+        cases = numeric["numeric_domain_check"]["cases"]
+        domains = {initializer_id: {"lower": min(c["denominator_interval"]["lower"] for c in cases),
+                                    "upper": max(c["denominator_interval"]["upper"] for c in cases)},
+                   quotient_id: numeric["conditional_quotient_interval"]}
+        actuals = construct.get("inner", [])
+        if len(actuals) != 3:
+            raise ValueError("three_scalar_arguments_required")
+        used, literal_count = [], 0
+        for position, actual in enumerate(actuals):
+            node, casts = actual, []
+            while node.get("kind") == "ImplicitCastExpr" and node.get("castKind") == "IntegralCast":
+                if unique(node.get("id")) is not node or len(node.get("inner", [])) != 1:
+                    raise ValueError("argument_conversion_not_unique_unary")
+                casts.append(node); node = node["inner"][0]
+                if len(casts) > 16: raise ValueError("conversion_depth_exceeded")
+            if node.get("kind") == "ImplicitCastExpr" and node.get("castKind") == "LValueToRValue":
+                if unique(node.get("id")) is not node or len(node.get("inner", [])) != 1:
+                    raise ValueError("argument_read_unsupported")
+                leaf = node["inner"][0]
+                identifier = leaf.get("referencedDecl", {}).get("id")
+                if (identifier not in domains or leaf.get("kind") != "DeclRefExpr" or leaf.get("inner") or
+                        unique(leaf.get("id")) is not leaf or unique(identifier).get("type") != {"qualType": "int"} or
+                        leaf.get("type") != {"qualType": "int"} or node.get("type") != {"qualType": "int"}):
+                    raise ValueError("argument_not_preserved_scalar")
+                domain = domains[identifier]; used.append(identifier)
+            elif node.get("kind") == "IntegerLiteral" and node.get("type") == {"qualType": "int"}:
+                occurrences = index.get(node.get("id"), [])
+                if not occurrences or any(n != node for n in occurrences) or node.get("inner"):
+                    raise ValueError("literal_identity_conflict")
+                spelling = node.get("value")
+                if not isinstance(spelling, str) or len(spelling) > 20: raise ValueError("invalid_literal")
+                value = int(spelling)
+                if spelling != str(value) or not 0 <= value < 1 << (bits - 1): raise ValueError("invalid_literal")
+                domain = {"lower": value, "upper": value}; literal_count += 1
+            else:
+                raise ValueError("unsupported_constructor_argument")
+            current = ("int", bits, True)
+            conversions = []
+            for cast in reversed(casts):
+                target = _abi_type(cast.get("type"), integer_types)
+                checked = check_interval(domain["lower"], domain["upper"], current[1], current[2], target[1], target[2])
+                conversions.append(checked)
+                if checked["status"] != "checked": raise ValueError("argument_conversion_not_value_preserving")
+                current = target
+            result["argument_domains"].append({"position": position, "expression_id": actual["id"],
+                                               "interval": dict(domain), "conversion_checks": conversions})
+        if sorted(used) != sorted([initializer_id, quotient_id]) or literal_count != 1:
+            raise ValueError("constructor_arguments_do_not_use_both_preserved_scalars_once")
+        for relation in forwarding["field_relations"]:
+            domain = result["argument_domains"][relation["parameter_position"]]
+            if domain["expression_id"] != relation["argument_expression_id"]:
+                raise ValueError("field_argument_identity_mismatch")
+            result["fields"].append({**relation, "interval": domain["interval"]})
+        result.update(status="checked", field_domains_under_source_guard=True,
+                      object_id=object_id, statement_id=statement["id"], constructor_expression_id=construct["id"],
+                      input_sha256={"numeric": numeric["input_sha256"], "forwarding": forwarding["input_sha256"],
+                                    "object": _hash(object_id)})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError, ABIUnknown) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def check_query_power_quotient(payload, initializer_id, assignment_id, quotient_id, power_selection,
                                conversion_contract, output_contract, *, int_bits=32,
                                max_ast_nodes=1_000_000, query_domain_contract=None, query_guard_id=None):

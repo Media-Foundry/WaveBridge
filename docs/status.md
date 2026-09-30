@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## 守卫值域连接真实构造字段
+
+fresh源码数值链、两个标量历史检查、实参效果、转换保值与精确constructor
+字段映射已组合；冻结HIP候选AST重放条件checked，三个字段区间为32/4/1。
+不依赖手填字段值，不按字段名字猜测。语义索引覆盖inner/array_filler；
+真实负例覆盖隐藏身份冲突、改写/逃逸、错误实参及constructor body副作用。
+1370项CPU测试176.793秒通过无跳过，Clang17/23专项各24项通过，demo/diff
+通过，Sol最终复核无阻断。仅证明正常构造完成时的条件字段区间，后续对象
+历史、launch/source/deploy仍false；无本轮GPU/程序执行。见
+[实录](../experiments/hip-guard-constructor-20260930.md)。
+
 ## 源码运行时守卫供应查询值域
 
 生成隔离、固定来源的HIP候选，仅在forward查询后插入fail-stop guard；

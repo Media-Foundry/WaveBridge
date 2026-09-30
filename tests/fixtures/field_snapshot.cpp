@@ -234,3 +234,41 @@ template<class T> void shared_literal_guard(int input) {
     shared_guard_local = 1;
 }
 template void shared_literal_guard<int>(int);
+
+typedef struct GuardDims {
+    unsigned x, y, z;
+    GuardDims(unsigned a, unsigned b, unsigned c) : x(a), y(b), z(c) {}
+} GuardDimsAlias;
+typedef struct GuardSwapped {
+    unsigned x, y, z;
+    GuardSwapped(unsigned a, unsigned b, unsigned c) : x(b), y(a), z(c) {}
+} GuardSwappedAlias;
+typedef struct GuardOverwritten {
+    unsigned x, y, z;
+    GuardOverwritten(unsigned a, unsigned b, unsigned c) : x(a), y(b), z(c) { x = 0; }
+} GuardOverwrittenAlias;
+#define GUARDED_CONSTRUCT(NAME, RECORD, BETWEEN, FIRST) \
+int NAME(int input) { \
+    int composed_log = composed_exponent(input); \
+    const int composed_power = 1 << composed_log; \
+    int composed_width = guarded_snapshot(); \
+    if (composed_width != 32) stop_now(); \
+    composed_width = composed_power < composed_width ? composed_power : composed_width; \
+    const int composed_threads = 128; \
+    int composed_quotient = composed_threads / composed_width; \
+    BETWEEN \
+    RECORD composed_dims(FIRST, composed_quotient, 1); \
+    return 0; \
+} \
+int NAME##_caller(int input) { \
+    const int composed_input = input; \
+    if (composed_input != 65 && composed_input != 128) return 3; \
+    NAME(composed_input); \
+    return 0; \
+}
+GUARDED_CONSTRUCT(constructed_guard, GuardDimsAlias, , composed_width)
+GUARDED_CONSTRUCT(constructed_swap, GuardSwappedAlias, , composed_width)
+GUARDED_CONSTRUCT(constructed_write, GuardDimsAlias, ++composed_quotient;, composed_width)
+GUARDED_CONSTRUCT(constructed_alias, GuardDimsAlias, int* aliases[] = {&composed_quotient};, composed_width)
+GUARDED_CONSTRUCT(constructed_wrong, GuardDimsAlias, , input)
+GUARDED_CONSTRUCT(constructed_body, GuardOverwrittenAlias, , composed_width)

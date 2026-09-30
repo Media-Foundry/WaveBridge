@@ -8,7 +8,7 @@ from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.verification.field_snapshot import check_query_object, check_query_output, check_query_initializer, check_query_initializer_to_statement, FIELD_READ_PREMISE
 from wavebridge.verification.normal_return_guard import check_enum_binding, check_local_equality
-from wavebridge.verification.field_snapshot import check_query_power_minimum, check_query_power_quotient
+from wavebridge.verification.field_snapshot import check_query_power_minimum, check_query_power_quotient, check_guarded_query_constructor
 
 PLUGIN = os.environ.get("WB_ENUM_CAPTURE_PLUGIN") or os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_ENUM_CAPTURE_COMPILER") or os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -121,6 +121,61 @@ class QueryOutputTests(unittest.TestCase):
             self.assertEqual(check_query_power_quotient(self.payload, *args, *contracts, query_guard_id=selected)["status"], "unknown")
         self.assertEqual(check_query_power_quotient(self.payload, *args, *contracts,
                          query_guard_id=guard, max_ast_nodes=1)["status"], "unknown")
+
+    def constructor_args(self, name):
+        args, guard = self.source_guard_selection(name)
+        function = next(n for n in _walk(self.payload["ast"]) if n.get("id") == args[3]["callee_id"])
+        obj = next(n["id"] for n in _walk(function) if n.get("kind") == "VarDecl" and n.get("name") == "composed_dims")
+        abi = {"int": {"bits": 32, "signed": True}, "unsigned int": {"bits": 32, "signed": False}}
+        return (*args[:3], obj, args[3], *self.contracts("guarded_snapshot"), abi), guard
+
+    def test_constructor_fields_use_real_mapping_not_field_names(self):
+        for name, expected in (("constructed_guard", [32, 4, 1]), ("constructed_swap", [4, 32, 1])):
+            args, guard = self.constructor_args(name)
+            report = check_guarded_query_constructor(self.payload, *args, query_guard_id=guard)
+            self.assertEqual(report["status"], "checked", report)
+            self.assertTrue(report["field_domains_under_source_guard"])
+            self.assertEqual([f["interval"] for f in report["fields"]], [{"lower": v, "upper": v} for v in expected])
+            self.assertFalse(report["post_construction_history_checked"])
+            self.assertFalse(report["launch_binding_checked"])
+            self.assertFalse(report["deployable"])
+
+    def test_constructor_rejects_history_escape_wrong_source_and_body_effects(self):
+        for name in ("constructed_write", "constructed_alias", "constructed_wrong", "constructed_body"):
+            args, guard = self.constructor_args(name)
+            report = check_guarded_query_constructor(self.payload, *args, query_guard_id=guard)
+            self.assertEqual(report["status"], "unknown", (name, report))
+            self.assertFalse(report["field_domains_under_source_guard"])
+
+    def test_constructor_wrong_identity_ABI_budget_and_input_immutability(self):
+        args, guard = self.constructor_args("constructed_guard")
+        before = copy.deepcopy(self.payload)
+        check_guarded_query_constructor(self.payload, *args, query_guard_id=guard)
+        self.assertEqual(before, self.payload)
+        for obj in ("missing", self.constructor_args("constructed_swap")[0][3]):
+            bad = list(args); bad[3] = obj
+            self.assertEqual(check_guarded_query_constructor(self.payload, *bad, query_guard_id=guard)["status"], "unknown")
+        bad = list(args); bad[-1] = {}
+        self.assertEqual(check_guarded_query_constructor(self.payload, *bad, query_guard_id=guard)["status"], "unknown")
+        self.assertEqual(check_guarded_query_constructor(self.payload, *args, query_guard_id=guard, max_ast_nodes=1)["status"], "unknown")
+
+    def test_constructor_hidden_semantic_literal_conflict_is_rejected(self):
+        original = self.payload
+        try:
+            self.payload = copy.deepcopy(original)
+            args, guard = self.constructor_args("constructed_guard")
+            obj = next(n for n in _walk(self.payload["ast"]) if n.get("id") == args[3])
+            literal = next(n for n in _walk(obj) if n.get("kind") == "IntegerLiteral")
+            conflict = copy.deepcopy(literal); conflict["value"] = "2"
+            self.payload["ast"]["array_filler"] = [conflict]
+            # Rebind external premises to the modified payload so rejection
+            # cannot be explained by an unrelated stale protocol hash.
+            args, guard = self.constructor_args("constructed_guard")
+            result = check_guarded_query_constructor(self.payload, *args, query_guard_id=guard)
+            self.assertEqual(result["status"], "unknown", result)
+            self.assertEqual(result["reason"], "literal_identity_conflict", result)
+        finally:
+            self.payload = original
 
     def test_guard_shared_literals_conflicts_and_strict_flags(self):
         functions = [n for n in _walk(self.payload["ast"]) if n.get("kind") == "FunctionDecl" and n.get("name") == "shared_literal_guard"]

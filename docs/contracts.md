@@ -135,6 +135,17 @@ minimum/quotient通过`query_guard_id`消费此fresh结果，与外部数值协�
 不把此局部结论扩展为API对所有调用返回该值。非零条件解除单列并保留原债务；
 机器码、实际运行、launch/source/deploy仍不获保证。
 
+`field_snapshot.check_guarded_query_constructor`fresh检查source-guard数值链，
+再分别保持minimum与quotient到同一直接自动对象DeclStmt入口。两条history
+seed只由本次内部结果产生；公开接口不接收成功报告或字段值。
+目标构造独立运行scalar effects/field forwarding，三个实参只支持上述两个
+标量各一次及一个非负int literal；IntegralCast逐层检查区间保值。
+按实际parameter position→field declaration映射给出字段区间，而非按字段名。
+索引覆盖inner和array_filler，隐藏身份冲突也必须拒绝；共享literal需全内容一致。
+字段区间是各字段的条件hull，不表示笛卡尔积中每个组合都可达。范围严格止于
+正常构造完成，不证明对象后续复制/修改、launch使用或kernel/launch一致性。
+整数ABI、源有效性、正常完成及此前API/noreturn等前提全部继承。
+
 ## 一元 native 调用的条件效果组合
 
 `loop_exit_guards.check_iteration_bounds`显式接收相同一元/using选项，向其
