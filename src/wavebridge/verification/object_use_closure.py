@@ -461,6 +461,7 @@ def _source_order(variable, semantic_paths, semantic_ids, copy_paths, invocation
         source_position = next(i for i, node in enumerate(statements) if node is declaration)
         switches = []
         do_wrappers = []
+        preceding_do_wrappers = []
         for path in semantic_paths.values():
             node = path[-1]
             kind = node.get("kind")
@@ -478,6 +479,22 @@ def _source_order(variable, semantic_paths, semantic_ids, copy_paths, invocation
                     result["unsupported_node"] = {"id": identifier, "kind": kind}
                     raise _Unknown("source_order_do_condition_unsupported")
             scope_positions = [i for i, parent in enumerate(path) if parent is scope]
+            if kind == "DoStmt":
+                common = 0
+                while common < min(len(path), len(source_path)) and path[common] is source_path[common]:
+                    common += 1
+                if (common and common < len(path) and common < len(source_path) and
+                        path[common - 1].get("kind") == "CompoundStmt"):
+                    siblings = _children(path[common - 1], strict=True)
+                    left = next((i for i, child in enumerate(siblings) if child is path[common]), -1)
+                    right = next((i for i, child in enumerate(siblings) if child is source_path[common]), -1)
+                    if 0 <= left < right:
+                        preceding_do_wrappers.append({
+                            "id": identifier, "common_compound_id": path[common - 1].get("id"),
+                            "do_branch_position": left, "source_branch_position": right,
+                            "relation": "lexically_preceding_disjoint_branch_not_effect_or_execution_proof"})
+                        do_wrappers.append(node)
+                        continue
             if len(scope_positions) != 1 or scope_positions[0] + 1 >= len(path):
                 raise _Unknown(f"source_order_{label}_outside_source_scope")
             statement = path[scope_positions[0] + 1]
@@ -529,6 +546,7 @@ def _source_order(variable, semantic_paths, semantic_ids, copy_paths, invocation
                          "copy_enclosing_statement_position": copy_position,
                          "immediate_invocation_chain": chain})
         result.update(status="checked", copies=rows, source_scope_id=scope.get("id"),
+                      preceding_false_do_wrappers=preceding_do_wrappers,
                       structured_switch_ids=[node.get("id") for node in switches],
                       false_condition_do_wrappers=[{
                           "id": node["id"], "body_id": node["inner"][0].get("id"),

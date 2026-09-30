@@ -765,3 +765,10 @@ initialization_selection_domains，conditional_initialization固定null。
 自动对象、完整显式引用及copy/capture子报告。清理报告的source-initialization
 排除项仍是必须另检的义务，不意味着新入口检查了初始化。旧
 `object-explicit-use-structure/v1`保留原数值初始化前置门槛。
+
+`source-copy-structural-order/v1`可记录对象声明路径之前的false-condition
+do包装：do/source路径的最长共同前缀必须以CompoundStmt结束，do分支为
+严格较早的直接兄弟，do本身仍需唯一身份、Compound body及精确false条件。
+`preceding_false_do_wrappers`只描述词法前置关系；do body并非死代码，前置
+效果、可达性、正常完成与对象值保持仍未建立。全函数跳转和break/case归属
+检查不因前置关系放宽。source被do包围、后置/动态条件do仍不在新增子集内。

@@ -791,10 +791,38 @@ class ObjectUseClosureClangTests(unittest.TestCase):
                 self.assertEqual(order["execution_reachability_and_count"], "not_established")
 
     def test_real_general_do_and_crossing_case_are_not_supported(self):
-        for name in ("do_dynamic_flow", "do_true_flow", "do_continue_flow", "do_before_source", "case_into_do"):
+        for name in ("do_dynamic_flow", "do_true_flow", "do_continue_flow", "case_into_do",
+                     "dynamic_do_before_nested_source", "do_after_nested_source", "do_encloses_source"):
             with self.subTest(name=name):
                 order = self.run_check(name)["source_order"]
                 self.assertEqual(order["status"], "unknown", order)
+
+    def test_preceding_false_do_is_classified_without_effect_guarantees(self):
+        for name in ("do_before_source", "do_before_nested_source"):
+            with self.subTest(name=name):
+                source, _ = self.inputs(name, self.payload)
+                report = inspect_uses(self.payload, source["id"], ABI)
+                order = report["source_order"]
+                self.assertEqual(order["status"], "checked", order)
+                self.assertEqual(len(order["preceding_false_do_wrappers"]), 1)
+                row = order["preceding_false_do_wrappers"][0]
+                self.assertLess(row["do_branch_position"], row["source_branch_position"])
+                self.assertEqual(order["source_value_preservation"], "not_established")
+                self.assertEqual(order["execution_reachability_and_count"], "not_established")
+                self.assertEqual(report["initialization_effects_and_cleanup"], "not_established")
+                self.assertFalse(report["deployable"])
+
+    def test_preceding_do_does_not_hide_global_jump_or_break_crossing(self):
+        for kind in ("GotoStmt", "ContinueStmt", "CaseStmt"):
+            payload = copy.deepcopy(self.payload)
+            function = next(n for n in _walk(payload["ast"]) if n.get("kind") == "FunctionDecl" and
+                            n.get("name") == "do_before_nested_source")
+            node = next(n for n in _walk(function) if n.get("kind") == "DoStmt")
+            node["inner"][0].setdefault("inner", []).append({"kind": kind, "id": "bad-transfer"})
+            source, _ = self.inputs("do_before_nested_source", payload)
+            with self.subTest(kind=kind):
+                report = inspect_uses(payload, source["id"], ABI)
+                self.assertEqual(report["source_order"]["status"], "unknown")
 
     def test_do_condition_requires_exact_literal_and_shape(self):
         for mutation in ("bool_integer", "bool_string", "hidden_child", "wrong_type",

@@ -2,6 +2,16 @@
 
 更新日期：2026-09-30。
 
+## 前置 do-while(false) 的结构顺序
+
+已定位真实外层前置do与内层source scope的关系，新增严格共同Compound分叉
+及兄弟先后检查；do精确false、唯一性、全函数控制流和break/case门槛保留。
+真实22次复制重放source_order与前序cleanup观察均checked，但仍是静态结构，
+不判前置body无效果或source必达；初始化、对象历史与部署未建立。
+1378项全测182.912秒无跳过通过，Clang17对象专项50项、Clang23新增两项
+通过，demo/diff通过，Sol复核无阻断。完整Clang23捕获兼容性仍未建立。
+无新HIP/GPU执行，见[实录](../experiments/hip-prelude-order-20260930.md)。
+
 ## 对象引用结构脱离初始化数值门槛
 
 新增独立inspect_uses，不接收数值域或旧报告、不调用初始化checker，旧接口

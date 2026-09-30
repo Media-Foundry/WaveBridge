@@ -229,6 +229,27 @@ void do_dynamic_flow(bool repeat) { Config source(3); do { observe_value(source)
 void do_true_flow() { Config source(3); do { observe_value(source); break; } while (true); }
 void do_continue_flow() { Config source(3); do { observe_value(source); continue; } while (false); }
 void do_before_source() { do {} while (false); Config source(3); observe_value(source); }
+void do_before_nested_source(bool enter, int branch) {
+  do { if (!enter) break; } while (false);
+  if (enter) {
+    Config source(3);
+    switch (branch) {
+      case 0: observe_value(source); break;
+      default: observe_value(source); break;
+    }
+  }
+}
+void dynamic_do_before_nested_source(bool enter) {
+  do {} while (enter);
+  if (enter) { Config source(3); observe_value(source); }
+}
+void do_after_nested_source(bool enter) {
+  if (enter) { Config source(3); observe_value(source); }
+  do {} while (false);
+}
+void do_encloses_source() {
+  do { Config source(3); observe_value(source); } while (false);
+}
 void do_nested_switch(int branch) {
   Config source(3);
   do { switch (branch) { case 0: observe_value(source); break; default: break; } } while (false);
