@@ -450,6 +450,41 @@ class RecordCopyClangTests(unittest.TestCase):
                 result = check(self.root, self.argument_expression(name)["id"], ABI)
                 self.assertEqual(result["parameter_target"]["status"], "unknown", result)
 
+    def test_visible_by_value_callee_keeps_effect_and_linkage_debts(self):
+        expression = self.argument_expression("visible_parameter_copy")
+        result = inspect_effects(self.root, expression["id"], ABI)
+        declaration = next(n for n in _walk(self.root) if n.get("kind") == "FunctionDecl" and
+                           n.get("name") == "visible_parameter")
+        attribute = next(n for n in declaration["inner"] if n.get("kind") == "VisibilityAttr")
+        target = result["parameter_target"]
+        if "visibility" not in attribute:
+            self.assertEqual(target["status"], "unknown")
+        else:
+            self.assertEqual(target["status"], "checked", target)
+            self.assertEqual(target["argument_position"], 0)
+            self.assertEqual(len(target["callee_attribute_observations"]), 1)
+            self.assertEqual(result["object_boundary"]["status"], "checked", result)
+        for key in ("callee_body_effects", "other_argument_effects_and_order",
+                    "linker_resolution_and_interposition", "configuration_api_semantics"):
+            self.assertEqual(target[key], "not_established")
+        self.assertFalse(target["deployable"])
+
+    def test_visible_callee_attribute_evidence_is_not_guessed(self):
+        for mutation in ("missing", "hidden", "protected", "child", "implicit", "inherited", "other"):
+            root = copy.deepcopy(self.root)
+            declaration = next(n for n in _walk(root) if n.get("kind") == "FunctionDecl" and
+                               n.get("name") == "visible_parameter")
+            attribute = next(n for n in declaration["inner"] if n.get("kind") == "VisibilityAttr")
+            if mutation == "missing": attribute.pop("visibility", None)
+            elif mutation in ("hidden", "protected"): attribute["visibility"] = mutation
+            elif mutation == "child": attribute["inner"] = [{"kind": "CallExpr"}]
+            elif mutation in ("implicit", "inherited"): attribute[mutation] = "true"
+            else: attribute["kind"] = "UnmodeledEffectAttr"
+            expression = self.argument_expression("visible_parameter_copy", root)
+            with self.subTest(mutation=mutation):
+                report = inspect_effects(root, expression["id"], ABI)
+                self.assertEqual(report["parameter_target"]["status"], "unknown")
+
     def test_parameter_target_rejects_conflicting_types_positions_and_declarations(self):
         for mutation in ("parameter_type", "parameter_child", "argument_count", "callee_id",
                          "decay_type", "variadic", "duplicate_declaration", "conflicting_call",

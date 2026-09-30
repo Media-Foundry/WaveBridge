@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## 守卫候选 block copy 的按值形参目标
+
+真实配置函数的default VisibilityAttr已按受限规则纳入按值目标绑定，保持
+精确callee/类型/位置及重声明等门槛；新增链接未建立字段与原始属性观察。
+同一候选重放确认block copy对应配置callee参数位置1，parameter_target与
+受限object_boundary均checked；其它实参效果、对象历史/API/部署仍未建立。
+对象闭合仍因旧初始化selection_domain_missing链unknown，不能手填域绕过。
+1374项全测176.304秒无跳过通过，Clang17/23复制专项各32项、demo/diff通过，
+Sol复核无阻断，无新GPU/程序执行。见
+[实录](../experiments/hip-guard-target-20260930.md)。
+
 ## 守卫候选的 launch 与 block 复制局部效果
 
 固定hip-guard profile已fresh绑定所选kernel/launch及block槽copy，来源为上一轮

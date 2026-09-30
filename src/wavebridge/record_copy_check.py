@@ -125,6 +125,8 @@ def _parameter_target(nodes, expressions, expression):
         "other_argument_effects_and_order": "not_established",
         "parameter_cleanup_and_destructor_effects": "not_established",
         "callee_body_effects": "not_established",
+        "callee_attribute_observations": [],
+        "linker_resolution_and_interposition": "not_established",
         "configuration_api_semantics": "not_established", "launch_semantics": "not_established",
         "assumptions": [
             "the structural inspection binds the complete faithful C++ AST and declared integer ABI",
@@ -183,8 +185,16 @@ def _parameter_target(nodes, expressions, expression):
                 _type(reference) != _type(declaration) or _type(referenced) != _type(declaration)):
             raise _Unknown("copy_target_function_shape_or_type_unsupported")
         declaration_children = _children(declaration)
-        if (any(child.get("kind") not in {"ParmVarDecl", "CompoundStmt"} for child in declaration_children) or
-                sum(child.get("kind") == "CompoundStmt" for child in declaration_children) > 1):
+        for child in declaration_children:
+            if child.get("kind") in {"ParmVarDecl", "CompoundStmt"}:
+                continue
+            if (child.get("kind") != "VisibilityAttr" or child.get("visibility") != "default" or
+                    _children(child) or any(key in child and type(child[key]) is not bool
+                                           for key in ("implicit", "inherited"))):
+                raise _Unknown("copy_target_function_children_unsupported")
+            result["callee_attribute_observations"].append({
+                "attribute": child, "scope": "default_symbol_visibility_only_not_linker_resolution"})
+        if sum(child.get("kind") == "CompoundStmt" for child in declaration_children) > 1:
             raise _Unknown("copy_target_function_children_unsupported")
         parameters = [child for child in declaration_children if child.get("kind") == "ParmVarDecl"]
         if len(parameters) != len(children) - 1:

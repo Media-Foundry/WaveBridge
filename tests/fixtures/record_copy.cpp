@@ -9,6 +9,8 @@ void parameter_copy(Plain source) { Plain target(source); }
 #if !defined(WAVEBRIDGE_CAPTURE_EXECUTION) && !defined(WAVEBRIDGE_REBUILD_COPY_EXECUTION)
 void accept_value(int prefix, Plain value);
 void differently_named(Plain value);
+__attribute__((visibility("default"))) void visible_parameter(Plain value, int extra = 0);
+void visible_parameter_copy() { Plain source(3, 5, 7); visible_parameter(source); }
 void accept_reference(const Plain& value);
 template<class T> void accept_generic(T value);
 void argument_copy() { Plain source(3, 5, 7); accept_value(0, source); }

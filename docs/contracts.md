@@ -752,3 +752,9 @@ record上的VisibilityAttr只有在明确visibility=default、无children、impl
 inherited若存在均为bool时接受，并保存完整属性观察。缺失枚举值、其它属性及
 隐藏/受保护visibility仍unknown。这仅分类所选AST的局部读写，不保证链接解析、
 对象历史、生命周期或实际launch字段值；正常同字段复制关系仍需独立检查。
+
+复制的`parameter_target`对子目标函数采用同一default visibility规则，另记录
+callee_attribute_observations与linker_resolution_and_interposition=not_established。
+被选参数仍必须是精确同类型的普通按值record，调用中的其它参数（包括默认
+实参）的求值与顺序、callee body及配置API语义不因此获证。语法绑定checked
+不是形参字段值保持，也不是运行时符号解析保证。
