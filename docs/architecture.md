@@ -55,6 +55,12 @@ fresh重建守卫构造及完整引用保持，再核对按值目标确为同一
 position。它连接条件字段区间与实际语法槽，而非由调用者任意指定一个copy；
 仍不建立位置的运行时API含义、全部配置值、launch执行或部署安全。
 
+`block_configuration.check_guarded_local_coordinate`在上述fresh配置字段之后，
+按精确外部API轴身份派生三维block的local-ID leaf域，再fresh检查所选kernel
+中真实getter及转换产生的局部initializer值。尺寸和域不由协议手填；这条
+路径保留二维布局，不把softmax误塞进旧RMSNorm一维模型。实际API/运行时
+配置实现、硬件限制、初始化后历史和线程参与仍是单独未解除的义务。
+
 `device_evidence.collect`将该配对、行/线程/列整数关系与共享索引/容量检查放在
 同一次调用中；共享支路只接收本次fresh生成的thread报告，根/ABI/选点哈希
 核对一致。结果是带完整条件和未解除义务的证据包，不是源程序、目标改写或

@@ -792,3 +792,17 @@ do包装：do/source路径的最长共同前缀必须以CompoundStmt结束，do�
 configuration_position只是0–3的语法位置，不证明其grid/block/shared/stream
 运行时含义。输出字段区间仍依赖上层对象来源模型和外部API/ABI假设，其他
 配置实参、调用可达性及实际部署没有验收。选点、协议、ABI、预算均绑定hash。
+
+## 从配置派生设备坐标初始化域
+
+`guarded-block-coordinate/v1`保留x/y/z三轴，不复用一维RMSNorm假设。
+它fresh检查配置槽字段，通过`launch-coordinate-assumptions/v1`的精确
+root/kernel/launch/callee/parameter/record/FieldDecl身份映射到轴。协议只能
+提供API角色和local-ID leaf身份/类型/轴号，不能提供维度或上下界。
+
+当前只接受正单点维度，派生`0 <= local_axis < extent`后由真实getter和
+整数转换检查消费；选中initializer必须是所选kernel的直接自动局部声明。
+这连接了host字段到device初始化域，但API和运行时传递仍是假设，物理硬件
+限制、参与者、后续值保持及部署未建立。block_thread_count仅为数学乘积，
+不是合法launch大小的证明。源码字段名字不决定轴，显式角色协议的真实性
+必须另行验证。

@@ -8,6 +8,7 @@ from wavebridge.frontend.native_captures import collect
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.verification.getter_returns import _hash
 from wavebridge.verification.launch_binding import check_guarded_configuration_copy
+from wavebridge.verification.block_configuration import check_guarded_local_coordinate
 
 
 @unittest.skipUnless(query_fixture.PLUGIN, "requires compiler-matched native plugin")
@@ -43,6 +44,76 @@ class GuardedConfigurationTests(unittest.TestCase):
         args, guard, selection = self.arguments(name)
         return check_guarded_configuration_copy(self.payload, selection, *args, query_guard_id=guard,
                                                 configuration_position=position, **options)
+
+    def coordinate_arguments(self, axis=0):
+        args, guard, selection = self.arguments("configured_guard")
+        args = list(args)
+        args[-1] = {**args[-1], "unsigned long": {"bits": 64, "signed": False}}
+        nodes = list(_walk(self.payload["ast"]))
+        record = next(n for n in nodes if n.get("kind") == "CXXRecordDecl" and
+                      n.get("name") == "GuardDimsAlias" and n.get("completeDefinition"))
+        config = next(n for n in nodes if n.get("id") == selection["configuration_declaration_id"])
+        protocol = {"schema_version": "launch-coordinate-assumptions/v1",
+                    **{k: selection[k] for k in ("ast_root_sha256", "kernel_declaration_id", "launch_id",
+                                                "configuration_declaration_id")},
+                    "configuration_parameter_id": [n["id"] for n in config["inner"] if n.get("kind") == "ParmVarDecl"][1],
+                    "record_declaration_id": record["id"], "block_position": 1,
+                    "fields": {n["name"]: n["id"] for n in record["inner"] if n.get("kind") == "FieldDecl"},
+                    "coordinate": {"declaration_id": self.ids["local_leaf"], "return_type": {"qualType": "unsigned long"},
+                                   "axis": axis, "semantics": "workgroup_local_id"},
+                    "semantics": "bound_parameter_axes_define_selected_kernel_workgroup_extents"}
+        local = next(n["id"] for n in nodes if n.get("kind") == "VarDecl" and
+                     n.get("name") == ("local_coordinate_x" if axis == 0 else "local_coordinate_y"))
+        return args, guard, selection, protocol, local
+
+    def test_coordinate_domains_come_from_two_dimensional_configuration(self):
+        before = copy.deepcopy(self.payload)
+        for axis, upper in ((0, 31), (1, 3)):
+            args, guard, selection, protocol, local = self.coordinate_arguments(axis)
+            report = check_guarded_local_coordinate(self.payload, selection, *args, protocol, local, query_guard_id=guard)
+            self.assertEqual(report["status"], "checked", report)
+            self.assertEqual(report["dimensions"], {"x": 32, "y": 4, "z": 1})
+            self.assertEqual(report["block_thread_count"], 128)
+            self.assertEqual(report["result_interval"], {"lower": 0, "upper": upper})
+            self.assertEqual(report["derived_leaf_domain"]["upper"], upper)
+            for key in ("coordinate_API_verified", "runtime_configuration_verified", "hardware_limits_checked",
+                        "coordinate_history_checked", "thread_participation_checked", "source_program_checked", "deployable"):
+                self.assertFalse(report[key])
+        self.assertEqual(before, self.payload)
+
+    def test_axis_roles_are_explicit_assumptions_not_field_name_heuristics(self):
+        args, guard, selection, protocol, local = self.coordinate_arguments()
+        protocol["fields"]["x"], protocol["fields"]["y"] = protocol["fields"]["y"], protocol["fields"]["x"]
+        report = check_guarded_local_coordinate(self.payload, selection, *args, protocol, local, query_guard_id=guard)
+        self.assertEqual(report["status"], "checked", report)
+        self.assertEqual(report["result_interval"], {"lower": 0, "upper": 3})
+        self.assertFalse(report["coordinate_API_verified"])
+
+    def test_coordinate_wrong_owner_axis_and_field_identity_fail_closed(self):
+        args, guard, selection, protocol, local = self.coordinate_arguments()
+        changes = []
+        bad = copy.deepcopy(protocol); bad["coordinate"]["axis"] = 1; changes.append((bad, local))
+        bad = copy.deepcopy(protocol); bad["fields"]["x"] = "wrong"; changes.append((bad, local))
+        bad = copy.deepcopy(protocol); bad["configuration_parameter_id"] = "wrong"; changes.append((bad, local))
+        bad = copy.deepcopy(protocol); bad["coordinate"]["declaration_id"] = self.ids["local_y"]; changes.append((bad, local))
+        bad = copy.deepcopy(protocol); bad["coordinate"]["return_type"] = {"qualType": "unsigned int"}; changes.append((bad, local))
+        changes.append((protocol, args[0]))  # A valid getter initializer, but in the host function.
+        for changed, selected_local in changes:
+            report = check_guarded_local_coordinate(self.payload, selection, *args, changed, selected_local, query_guard_id=guard)
+            self.assertEqual(report["status"], "unknown", report)
+            self.assertFalse(report["coordinate_initialization_domain_checked"])
+
+    def test_coordinate_protocol_cannot_supply_numeric_bounds_or_stale_root(self):
+        args, guard, selection, protocol, local = self.coordinate_arguments()
+        for changed in ({**protocol, "upper": 31},
+                        {**protocol, "coordinate": {**protocol["coordinate"], "upper": 31}},
+                        {**protocol, "fields": {**protocol["fields"], "upper": 31}},
+                        {**protocol, "ast_root_sha256": "old"},
+                        {**protocol, "block_position": True}):
+            report = check_guarded_local_coordinate(self.payload, selection, *args, changed, local, query_guard_id=guard)
+            self.assertEqual(report["status"], "unknown", report)
+        self.assertEqual(check_guarded_local_coordinate(self.payload, selection, *args, protocol, local,
+                         query_guard_id=guard, max_ast_nodes=1)["status"], "unknown")
 
     def test_exact_block_slot_uses_recovered_fields_and_keeps_API_debt(self):
         before = copy.deepcopy(self.payload)

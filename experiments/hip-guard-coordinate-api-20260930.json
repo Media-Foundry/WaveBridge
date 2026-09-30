@@ -1,0 +1,22 @@
+{
+  "schema_version": "launch-coordinate-assumptions/v1",
+  "ast_root_sha256": "037b5ce0092111b2f87f3d5a92468fef7481188457fd10020e04337cc59bd86d",
+  "kernel_declaration_id": "0x7769241d57f0",
+  "launch_id": "0x7769241d5b08",
+  "configuration_declaration_id": "0x2caec780",
+  "configuration_parameter_id": "0x2caec560",
+  "record_declaration_id": "0x2ca675a8",
+  "block_position": 1,
+  "fields": {
+    "x": "0x2ca677a8",
+    "y": "0x2ca67810",
+    "z": "0x2ca67878"
+  },
+  "coordinate": {
+    "declaration_id": "0x2d313928",
+    "return_type": {"qualType": "unsigned long"},
+    "axis": 0,
+    "semantics": "workgroup_local_id"
+  },
+  "semantics": "bound_parameter_axes_define_selected_kernel_workgroup_extents"
+}

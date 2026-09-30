@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## Host配置派生device坐标初始化域
+
+新增二维/三维配置到local-ID域的fresh组合，保留真实softmax的(32,4,1)，
+不误套旧一维RMSNorm模型。外部协议只声明精确API轴/leaf身份与语义，
+不能填写上下界；真实local_idx初始化域[0,31]现从配置派生，再检查getter
+及整数转换。内部22copy与同root绑定保留。
+1390项全测336.992秒无跳过通过，Clang17最终专项8项通过，Clang23新增
+回归在全测通过；demo/diff通过，Sol复核无阻断。无新GPU执行。
+API/运行时、硬件限制、后续历史、参与线程及source/deploy仍未验证，见
+[实录与外部协议边界](../experiments/hip-block-coordinate-20260930.md)。
+
 ## 条件复制字段绑定到精确 launch 槽
 
 新增fresh组合从launch槽自动选copy，重建守卫构造/全部引用保持，再核对

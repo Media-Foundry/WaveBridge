@@ -5,6 +5,117 @@ import json
 from wavebridge.verification.constructor_values import check as check_fields
 
 
+def check_guarded_local_coordinate(payload, selection, initializer_id, assignment_id, quotient_id,
+                                   object_id, power_selection, conversion_contract, output_contract,
+                                   integer_types, axis_protocol, coordinate_initializer_id, *,
+                                   query_guard_id, instantiated_function_id=None, max_ast_nodes=1_000_000):
+    """Derive a device initializer domain from a fresh multidimensional block copy.
+
+    The protocol identifies API axes and the local-ID leaf, but supplies no
+    dimensions or coordinate bounds. API/ABI realization remains an assumption.
+    """
+    from wavebridge.verification.launch_binding import check_guarded_configuration_copy
+    from wavebridge.verification.initializer_domain import check_source
+    from wavebridge.verification.getter_returns import _hash
+
+    result = {"schema_version": "guarded-block-coordinate/v1", "status": "unknown", "reason": None,
+              "scope": "selected_device_local_initializer_under_explicit_configuration_and_coordinate_API",
+              "checks": {}, "dimensions": None, "derived_leaf_domain": None,
+              "coordinate_initialization_domain_checked": False, "coordinate_API_verified": False,
+              "runtime_configuration_verified": False, "hardware_limits_checked": False,
+              "coordinate_history_checked": False, "thread_participation_checked": False,
+              "source_program_checked": False, "deployable": False, "assumptions": []}
+    try:
+        keys = {"schema_version", "ast_root_sha256", "kernel_declaration_id", "launch_id",
+                "configuration_declaration_id", "configuration_parameter_id", "record_declaration_id",
+                "block_position", "fields", "coordinate", "semantics"}
+        if (not isinstance(axis_protocol, dict) or set(axis_protocol) != keys or
+                axis_protocol["schema_version"] != "launch-coordinate-assumptions/v1" or
+                axis_protocol["semantics"] != "bound_parameter_axes_define_selected_kernel_workgroup_extents" or
+                type(axis_protocol["block_position"]) is not int or axis_protocol["block_position"] != 1):
+            raise ValueError("explicit_axis_API_protocol_required_without_numeric_bounds")
+        axes, coordinate = axis_protocol["fields"], axis_protocol["coordinate"]
+        if (not isinstance(axes, dict) or set(axes) != {"x", "y", "z"} or
+                any(not isinstance(v, str) or not v for v in axes.values()) or len(set(axes.values())) != 3 or
+                not isinstance(coordinate, dict) or set(coordinate) != {"declaration_id", "return_type", "axis", "semantics"} or
+                coordinate["semantics"] != "workgroup_local_id" or type(coordinate["axis"]) is not int or
+                coordinate["axis"] not in (0, 1, 2)):
+            raise ValueError("axis_or_coordinate_identity_protocol_invalid")
+        if (not isinstance(selection, dict) or any(axis_protocol[k] != selection.get(k)
+                for k in ("ast_root_sha256", "kernel_declaration_id", "launch_id", "configuration_declaration_id"))):
+            raise ValueError("axis_protocol_selection_mismatch")
+        bound = check_guarded_configuration_copy(payload, selection, initializer_id, assignment_id, quotient_id,
+                    object_id, power_selection, conversion_contract, output_contract, integer_types,
+                    query_guard_id=query_guard_id, configuration_position=1,
+                    instantiated_function_id=instantiated_function_id, max_ast_nodes=max_ast_nodes)
+        result["checks"]["configuration"] = bound
+        if bound["status"] != "checked" or bound["configuration_slot_field_domains_under_model"] is not True:
+            raise ValueError("fresh_configuration_field_domains_not_checked")
+        result["assumptions"] = bound["assumptions"] + [
+            "the bound configuration parameter fields define the selected kernel workgroup extents according to the explicit axis API protocol",
+            "the exact external coordinate leaf denotes the stated workgroup local axis for this selected kernel invocation",
+            "runtime realizes that configuration and all kernel/API preconditions hold; these premises are not verified here"]
+        copied = bound["checks"]["copy"]
+        if (axis_protocol["configuration_parameter_id"] != bound["configuration_parameter_id"] or
+                axis_protocol["record_declaration_id"] != copied["record_declaration_id"]):
+            raise ValueError("axis_protocol_record_or_parameter_mismatch")
+        fields = {f["field_id"]: f["interval"] for f in bound["fields"]}
+        if len(fields) != 3 or set(fields) != set(axes.values()):
+            raise ValueError("axis_fields_not_exact_record_bijection")
+        dimensions = {}
+        for axis, identifier in axes.items():
+            interval = fields[identifier]
+            if (type(interval.get("lower")) is not int or type(interval.get("upper")) is not int or
+                    interval["lower"] != interval["upper"] or interval["lower"] <= 0):
+                raise ValueError("positive_singleton_dimensions_required")
+            dimensions[axis] = interval["lower"]
+        axis = ("x", "y", "z")[coordinate["axis"]]
+        leaf = {"schema_version": "getter-leaf-domain/v1", "declaration_id": coordinate["declaration_id"],
+                "return_type": coordinate["return_type"], "arguments": [coordinate["axis"]],
+                "lower": 0, "upper": dimensions[axis] - 1}
+        result.update(dimensions=dimensions, block_thread_count=dimensions["x"] * dimensions["y"] * dimensions["z"],
+                      derived_leaf_domain=leaf, selected_axis=axis)
+        # A valid initializer in another function must not consume this launch's domain.
+        root, index, pending, count = payload["ast"], {}, [payload["ast"]], 0
+        while pending:
+            node = pending.pop(); count += 1
+            if count > max_ast_nodes or not isinstance(node, dict):
+                raise ValueError("coordinate_owner_AST_budget_or_shape_invalid")
+            index.setdefault(node.get("id"), []).append(node)
+            for slot in ("inner", "array_filler"):
+                children = node.get(slot, [])
+                if not isinstance(children, list) or any(not isinstance(c, dict) for c in children):
+                    raise ValueError("coordinate_owner_AST_children_invalid")
+                pending.extend(c for c in children if c)
+        kernels = index.get(bound["kernel_declaration_id"], [])
+        declarations = index.get(coordinate_initializer_id, [])
+        if len(kernels) != 1 or len(declarations) != 1:
+            raise ValueError("coordinate_owner_or_declaration_not_unique")
+        bodies = [n for n in kernels[0].get("inner", []) if n.get("kind") == "CompoundStmt"]
+        direct = [v for body in bodies for stmt in body.get("inner", []) if stmt.get("kind") == "DeclStmt"
+                  for v in stmt.get("inner", []) if v is declarations[0]]
+        if len(bodies) != 1 or len(direct) != 1:
+            raise ValueError("coordinate_initializer_not_direct_selected_kernel_local")
+        initialized = check_source(root, coordinate_initializer_id, leaf, integer_types, max_ast_nodes=max_ast_nodes)
+        result["checks"]["initializer"] = initialized
+        result["assumptions"] = list(dict.fromkeys(result["assumptions"] + initialized["assumptions"]))
+        if (initialized["status"] != "checked" or
+                initialized["input_sha256"]["root"] != bound["input_sha256"]["root"] or
+                initialized["input_sha256"]["leaf_contract"] != _hash(leaf) or
+                initialized["input_sha256"]["integer_types"] != _hash(integer_types)):
+            raise ValueError("fresh_coordinate_initializer_not_checked")
+        result.update(status="checked", coordinate_initialization_domain_checked=True,
+                      kernel_declaration_id=bound["kernel_declaration_id"], launch_id=bound["launch_id"],
+                      coordinate_initializer_id=coordinate_initializer_id, result_interval=initialized["result_interval"],
+                      input_sha256={"root": bound["input_sha256"]["root"], "payload": _hash(payload),
+                                    "configuration_inputs": _hash(bound["input_sha256"]),
+                                    "axis_protocol": _hash(axis_protocol),
+                                    "coordinate_initializer_id": _hash(coordinate_initializer_id)})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def check(chain, site, integer_types, axis_binding):
     result = {"schema_version": "block-configuration-check/v1", "status": "unknown",
               "reason": None, "field_check": None, "dimensions": None,
