@@ -14,6 +14,8 @@ NATIVE_SHA = "a59c12247f796fe2034ba03ecc43782f77ac3942496b18a140ceacbb24c7ff45"
 KERNEL_ID = "0x30d762e0"
 HIP_NATIVE_SHA = "46ac52b1c672fadd0e5a66bb3ab380373e0cd69929713d96e7010f375a0cd63e"
 HIP_KERNEL_ID = "0x745c579e5490"
+HIP_GUARD_NATIVE_SHA = "df7d0b37e1d7ca16977f6d133285705d004a655e880b87b635148a373816e8b5"
+HIP_GUARD_KERNEL_ID = "0x7769241d57f0"
 
 
 def selected_copy_source(binding, position):
@@ -253,16 +255,17 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
         host_minimum_quotient=False, host_quotient_history=False, constructor_argument_effects=False,
         constructor_field_forwarding=False, profile="cuda", host_dimensions=False, power_input_domain=None):
     native, output = Path(native).resolve(), Path(output).resolve()
-    if profile not in {"cuda", "hip"}:
+    if profile not in {"cuda", "hip", "hip-guard"}:
         raise ValueError("unsupported_input_profile")
     if power_input_domain is not None and (not host_dimensions or len(power_input_domain) != 2):
         raise ValueError("power_domain_requires_host_dimensions_and_two_bounds")
-    if profile == "hip" and any((host_minimum_update, host_minimum_history,
+    if profile != "cuda" and any((host_minimum_update, host_minimum_history,
             host_minimum_quotient, host_quotient_history, constructor_argument_effects,
             constructor_field_forwarding)):
         raise ValueError("cuda_only_selection_not_available_in_hip_profile")
-    native_sha, kernel_id = ((NATIVE_SHA, KERNEL_ID) if profile == "cuda" else
-                             (HIP_NATIVE_SHA, HIP_KERNEL_ID))
+    native_sha, kernel_id = {"cuda": (NATIVE_SHA, KERNEL_ID),
+                             "hip": (HIP_NATIVE_SHA, HIP_KERNEL_ID),
+                             "hip-guard": (HIP_GUARD_NATIVE_SHA, HIP_GUARD_KERNEL_ID)}[profile]
     if sha(native) != native_sha or output.exists():
         raise ValueError("native_mismatch_or_output_exists")
     before = implementation_hashes()
@@ -290,13 +293,23 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
                      "configuration_expression_ids": [arg["id"] for arg in site["configuration_arguments"]]}
         checked = check(root, selection)
     object_report = None
+    copy_report = None
     dimensions_report = (check_host_dimensions(root, checked, power_input_domain=power_input_domain)
                          if host_dimensions and checked.get("status") == "checked" else None)
     if threads_object and checked.get("status") == "checked":
         from wavebridge.verification.object_use_closure import inspect_structure
+        from wavebridge.record_copy_check import inspect_effects
+
+        # Independent of the initialization-value gate: this only checks the
+        # selected copy's local effects, never preservation up to that copy.
+        selected_variable = ("0x30d69b78" if profile == "cuda" else selected_copy_source(checked, 1))
+        selected_slot = next(s for s in checked["configuration_slots"] if s["position"] == 1)
+        abi = {"int": {"bits": 32, "signed": True},
+               "unsigned int": {"bits": 32, "signed": False}}
+        copy_report = inspect_effects(root, selected_slot["expression_ast"].get("id"), abi,
+                                      max_ast_nodes=10_000_000)
 
         # Exact development-input selection, not a constructor-value oracle.
-        selected_variable = ("0x30d69b78" if profile == "cuda" else selected_copy_source(checked, 1))
         owners = []
         pending = [(root, None)]
         while pending:
@@ -308,8 +321,6 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
             pending.extend((child, owner) for child in node.get("inner", []))
         if len(owners) != 1 or owners[0] is None:
             raise ValueError("threads_owner_not_unique")
-        abi = {"int": {"bits": 32, "signed": True},
-               "unsigned int": {"bits": 32, "signed": False}}
         object_report = inspect_structure(capture["payload"], selected_variable, abi, {},
                                          instantiated_function_id=owners[0]["id"],
                                          max_ast_nodes=10_000_000)
@@ -382,6 +393,7 @@ def run(native, output, *, threads_object=False, host_minimum_update=False, host
               "selection": selection, "launch_discovery": facts, "native_sha256": native_sha,
               "input_profile": profile,
               "threads_object_check": object_report,
+              "threads_slot_copy_effects": copy_report,
               "host_dimensions_diagnostic": dimensions_report,
               "host_minimum_update_check": minimum_report,
               "host_minimum_history_check": history_report,
@@ -406,7 +418,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--profile", choices=("cuda", "hip"), default="cuda")
+    parser.add_argument("--profile", choices=("cuda", "hip", "hip-guard"), default="cuda")
     parser.add_argument("--threads-object", action="store_true")
     parser.add_argument("--host-dimensions", action="store_true")
     parser.add_argument("--power-input-domain", nargs=2, type=int, metavar=("LOWER", "UPPER"))

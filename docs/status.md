@@ -2,6 +2,18 @@
 
 更新日期：2026-09-30。
 
+## 守卫候选的 launch 与 block 复制局部效果
+
+固定hip-guard profile已fresh绑定所选kernel/launch及block槽copy，来源为上一轮
+构造对象。SDK dim3的default VisibilityAttr原被copy局部效果一律拒绝，现按
+既有constructor策略受限支持并记录原属性；缺观测/异常属性仍unknown。
+真实02报告launch与copy局部effects checked，但object_boundary、parameter_target
+及初始化值域依赖的对象闭合仍unknown，配置值/source/deploy均false。
+真实对象有switch内22次引用，不能以单copy演示替代历史检查。
+1372项全测178.032秒无跳过通过，Clang17/23复制专项各30项、驱动6项、demo/diff
+通过，Sol复核无阻断。无新GPU/程序执行，失败01工件保留，见
+[实录](../experiments/hip-guard-launch-20260930.md)。
+
 ## 守卫值域连接真实构造字段
 
 fresh源码数值链、两个标量历史检查、实参效果、转换保值与精确constructor

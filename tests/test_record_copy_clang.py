@@ -1,5 +1,6 @@
 """Copy-time field equality is deliberately separate from object history."""
 import copy
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,7 +19,7 @@ class RecordCopyClangTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         report = collect(Path(__file__).parent / "fixtures/record_copy.cpp",
-                         shutil.which("clang++"), ["-std=c++17"], "implicit_copy",
+                         os.environ.get("WB_VISIBILITY_COMPILER", shutil.which("clang++")), ["-std=c++17"], "implicit_copy",
                          full_translation_unit=True, dependency_binding="required")
         if report["status"] != "collected":
             raise AssertionError(report)
@@ -80,6 +81,33 @@ class RecordCopyClangTests(unittest.TestCase):
             report = inspect_effects(self.root, expression_id, ABI)
         self.assertEqual(report["status"], "checked", report)
         self.assertEqual(report["schema_version"], "record-copy-structure/v1")
+
+    def test_default_visibility_is_local_evidence_not_history(self):
+        report = self.run_effects("visible_copy")
+        record = next(n for n in _walk(self.root) if n.get("id") == report["record_declaration_id"])
+        attribute = next(n for n in record["inner"] if n.get("kind") == "VisibilityAttr")
+        if "visibility" not in attribute:
+            self.assertEqual(report["status"], "unknown")
+        else:
+            self.assertEqual(report["status"], "checked", report)
+            self.assertEqual(len(report["local_copy_effects"]["record_attribute_observations"]), 1)
+            self.assertEqual(report["source_object_preservation"], "not_established")
+            self.assertFalse(report["deployable"])
+        self.assertNotEqual(self.run_effects("visible_writing_copy")["status"], "checked")
+
+    def test_copy_visibility_missing_or_unsupported_evidence_fails_closed(self):
+        for mutation in ("missing", "hidden", "protected", "child", "implicit", "inherited", "other"):
+            root = copy.deepcopy(self.root)
+            record = next(n for n in _walk(root) if n.get("kind") == "CXXRecordDecl" and
+                          n.get("name") == "VisibleCopy" and n.get("completeDefinition"))
+            attribute = next(n for n in record["inner"] if n.get("kind") == "VisibilityAttr")
+            if mutation == "missing": attribute.pop("visibility", None)
+            elif mutation in ("hidden", "protected"): attribute["visibility"] = mutation
+            elif mutation == "child": attribute["inner"] = [{"kind": "CallExpr"}]
+            elif mutation in ("implicit", "inherited"): attribute[mutation] = "true"
+            else: attribute["kind"] = "UnmodeledEffectAttr"
+            with self.subTest(mutation=mutation):
+                self.assertEqual(self.run_effects("visible_copy", root)["status"], "unknown")
 
     def test_structure_effect_entry_rejects_wrong_mapping_and_binds_inputs(self):
         rejected = self.run_effects("swapped_copy")

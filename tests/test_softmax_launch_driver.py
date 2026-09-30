@@ -80,7 +80,7 @@ class SoftmaxLaunchDriverTests(unittest.TestCase):
     def test_hip_object_check_uses_fresh_slot_and_exact_owner(self):
         root = {"kind": "TranslationUnitDecl", "inner": [{"kind": "FunctionDecl", "id": "owner",
                 "inner": [{"kind": "VarDecl", "id": "hip-object"}]}]}
-        slot = {"position": 1, "expression_ast": {"kind": "CXXConstructExpr", "inner": [
+        slot = {"position": 1, "expression_ast": {"kind": "CXXConstructExpr", "id": "copy", "inner": [
             {"kind": "DeclRefExpr", "referencedDecl": {"kind": "VarDecl", "id": "hip-object"}}]}}
         binding = {"status": "checked", "configuration_slots": [slot]}
         site = {"launch_id": "launch", "configuration_declaration_id": "config",
@@ -94,11 +94,15 @@ class SoftmaxLaunchDriverTests(unittest.TestCase):
                     patch.object(driver, "select_entry", return_value={"id": driver.HIP_KERNEL_ID}), \
                     patch.object(driver, "inspect", return_value={"sites": [site], "unresolved_sites": []}), \
                     patch.object(driver, "check", return_value=binding), \
+                    patch("wavebridge.record_copy_check.inspect_effects",
+                          return_value={"status": "checked", "scope": "fixture_local_only"}) as effects, \
                     patch("wavebridge.verification.object_use_closure.inspect_structure",
                           return_value={"status": "unknown", "reason": "fixture"}) as fresh:
                 result = driver.run(native, output, profile="hip", threads_object=True)
             self.assertEqual(fresh.call_args.args[:2], (payload, "hip-object"))
             self.assertEqual(fresh.call_args.kwargs["instantiated_function_id"], "owner")
+            self.assertEqual(effects.call_args.args[:2], (root, "copy"))
+            self.assertEqual(result["threads_slot_copy_effects"]["status"], "checked")
             self.assertEqual(result["threads_object_check"]["status"], "unknown")
             self.assertFalse(result["configuration_values_established"])
             self.assertFalse(result["deployable"])
@@ -107,9 +111,10 @@ class SoftmaxLaunchDriverTests(unittest.TestCase):
         options = ("host_minimum_update", "host_minimum_history",
                    "host_minimum_quotient", "host_quotient_history",
                    "constructor_argument_effects", "constructor_field_forwarding")
-        for option in options:
-            with self.subTest(option=option), self.assertRaisesRegex(ValueError, "cuda_only"):
-                driver.run("missing", "unused", profile="hip", **{option: True})
+        for profile in ("hip", "hip-guard"):
+            for option in options:
+                with self.subTest(profile=profile, option=option), self.assertRaisesRegex(ValueError, "cuda_only"):
+                    driver.run("missing", "unused", profile=profile, **{option: True})
 
     def test_profile_and_hash_mismatch_stop_before_read(self):
         with self.assertRaisesRegex(ValueError, "power_domain_requires"):
@@ -119,10 +124,14 @@ class SoftmaxLaunchDriverTests(unittest.TestCase):
         with patch.object(driver, "sha", return_value=driver.NATIVE_SHA):
             with self.assertRaisesRegex(ValueError, "native_mismatch"):
                 driver.run("missing", "unused", profile="hip")
+        with patch.object(driver, "sha", return_value=driver.HIP_NATIVE_SHA):
+            with self.assertRaisesRegex(ValueError, "native_mismatch"):
+                driver.run("missing", "unused", profile="hip-guard")
 
     def test_profiles_bind_their_own_kernel_and_propagate_unknown(self):
         for profile, digest, kernel in (("cuda", driver.NATIVE_SHA, driver.KERNEL_ID),
-                                       ("hip", driver.HIP_NATIVE_SHA, driver.HIP_KERNEL_ID)):
+                                       ("hip", driver.HIP_NATIVE_SHA, driver.HIP_KERNEL_ID),
+                                       ("hip-guard", driver.HIP_GUARD_NATIVE_SHA, driver.HIP_GUARD_KERNEL_ID)):
             with self.subTest(profile=profile), tempfile.TemporaryDirectory() as directory:
                 native, output = Path(directory) / "native", Path(directory) / "nested/report"
                 root = {"kind": "TranslationUnitDecl"}

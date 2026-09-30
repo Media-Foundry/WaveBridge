@@ -145,6 +145,19 @@ unsigned rebuilding_copy() {
 int main() { return rebuilding_copy() == 102 ? 0 : 1; }
 #endif
 
+typedef struct __attribute__((visibility("default"))) VisibleCopy {
+  unsigned x;
+} VisibleCopy;
+void visible_copy() { VisibleCopy source{3}; VisibleCopy target(source); }
+typedef struct __attribute__((visibility("default"))) VisibleWritingCopy {
+  unsigned x;
+  VisibleWritingCopy(unsigned value) : x(value) {}
+  VisibleWritingCopy(const VisibleWritingCopy& other) : x(other.x) { x = 99; }
+} VisibleWritingCopy;
+void visible_writing_copy() {
+  VisibleWritingCopy source(3); VisibleWritingCopy target(source);
+}
+
 #ifdef WAVEBRIDGE_CAPTURE_EXECUTION
 int main() {
   if (captured_copy() != 3) return 1;

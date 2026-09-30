@@ -744,3 +744,11 @@ init/condition/increment、prefix/guard 和全部 work；内层前后兄弟语�
 `work_count_bounds` 仅针对每次实际到达的单次内层循环执行，不累计所有
 外层迭代；外部区间也须在该次内层入口成立。不宣称精确逐输入次数、完整
 覆盖、可达性、终止、浮点等价或部署安全，full-domain/source/deploy 仍 false。
+
+## Copy constructor 的 default visibility
+
+`record_copy_check.inspect_effects`与普通constructor局部效果采用同一受限规则：
+record上的VisibilityAttr只有在明确visibility=default、无children、implicit/
+inherited若存在均为bool时接受，并保存完整属性观察。缺失枚举值、其它属性及
+隐藏/受保护visibility仍unknown。这仅分类所选AST的局部读写，不保证链接解析、
+对象历史、生命周期或实际launch字段值；正常同字段复制关系仍需独立检查。

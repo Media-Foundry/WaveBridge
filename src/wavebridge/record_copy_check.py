@@ -55,6 +55,7 @@ def _local_effects(record, declaration, parameter, fields, mappings):
         "destination_accesses": "not_established",
         "additional_address_publication": "not_established",
         "field_ids": [],
+        "record_attribute_observations": [],
         "source_program_checked": False, "deployable": False,
         "assumptions": [
             "the structural inspection and its input hashes bind this local classification",
@@ -67,10 +68,20 @@ def _local_effects(record, declaration, parameter, fields, mappings):
         "target_allocation_and_lifetime": "not_established",
         "interpretation": "accesses_by_AST_source_parameter_and_destination_roles_not_dynamic_storage_disjointness",
     }
-    # Record attributes can affect layout/semantics; do not interpret them by
-    # spelling or inherit the value checker's broader attribute tolerance.
-    if any(str(child.get("kind", "")).endswith("Attr") for child in _children(record)):
-        return result
+    # Match constructor_effects' narrow AST-local policy, not linker semantics.
+    # Missing visibility evidence is not inferred from the attribute's name.
+    for attribute in _children(record):
+        if not str(attribute.get("kind", "")).endswith("Attr"):
+            continue
+        if (attribute.get("kind") != "VisibilityAttr" or
+                attribute.get("visibility") != "default" or _children(attribute) or
+                any(key in attribute and type(attribute[key]) is not bool
+                    for key in ("implicit", "inherited"))):
+            return result
+        result["record_attribute_observations"].append({
+            "attribute": attribute,
+            "scope": "default_symbol_visibility_only_not_linker_resolution",
+        })
     if any(declaration.get(flag) is True for flag in (
             "isDeleted", "explicitlyDeleted", "isInvalid", "isInvalidDecl", "isVariadic")):
         return result
