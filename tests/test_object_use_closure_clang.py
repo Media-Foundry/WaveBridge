@@ -10,7 +10,7 @@ from unittest.mock import patch
 from wavebridge.frontend.clang_ast import _walk
 from wavebridge.frontend.native_captures import collect
 from wavebridge.verification.integer_selection import _hash
-from wavebridge.verification.object_use_closure import _reference_use_effects, check, inspect_structure
+from wavebridge.verification.object_use_closure import _reference_use_effects, check, inspect_structure, inspect_uses
 
 PLUGIN = os.environ.get("WB_NATIVE_CAPTURE_PLUGIN")
 COMPILER = os.environ.get("WB_NATIVE_CAPTURE_COMPILER", "clang++")
@@ -80,6 +80,43 @@ class ObjectUseClosureClangTests(unittest.TestCase):
                 if row["variable_declaration_id"] == variable["id"]]
         self.assertEqual(len(rows), 1)
         return rows[0]
+
+    def test_uses_do_not_require_or_invoke_numeric_initialization(self):
+        source, _ = self.inputs("dynamic_switch_copies", self.payload)
+        old = inspect_structure(self.payload, source["id"], ABI, {})
+        self.assertEqual(old["status"], "unknown")
+        with patch("wavebridge.verification.object_use_closure.check_object_initialization",
+                   side_effect=AssertionError("uses must not consume initialization values")):
+            report = inspect_uses(self.payload, source["id"], ABI)
+        self.assertEqual(report["status"], "checked", report)
+        self.assertEqual(report["schema_version"], "object-explicit-uses/v1")
+        self.assertEqual(report["copy_count"], 2)
+        self.assertIsNone(report["conditional_initialization"])
+        for key in ("initialization_values", "initialization_effects_and_cleanup",
+                    "initialization_completion", "source_object_preservation", "source_lifetime"):
+            self.assertEqual(report[key], "not_established")
+        self.assertFalse(report["deployable"])
+
+    def test_uses_reject_unclosed_references_and_invalid_source(self):
+        for name in ("direct_write", "reference_alias", "write_in_other_branch"):
+            source, _ = self.inputs(name, self.payload)
+            self.assertEqual(inspect_uses(self.payload, source["id"], ABI)["status"], "unknown")
+        for mutation in ("static", "tls", "duplicate", "budget", "hidden_use"):
+            payload = copy.deepcopy(self.payload)
+            source, _ = self.inputs("dynamic_switch_copies", payload)
+            kwargs = {}
+            if mutation == "static": source["storageClass"] = "static"
+            elif mutation == "tls": source["tls"] = "dynamic"
+            elif mutation == "duplicate": payload["ast"]["array_filler"] = [copy.deepcopy(source)]
+            elif mutation == "budget": kwargs["max_ast_nodes"] = 1
+            else:
+                function = next(n for n in _walk(payload["ast"]) if n.get("kind") == "FunctionDecl" and
+                                n.get("name") == "dynamic_switch_copies")
+                function["array_filler"] = [{"kind": "DeclRefExpr", "id": "hidden-use",
+                    "type": source["type"], "referencedDecl": {
+                        "kind": "VarDecl", "id": source["id"], "type": source["type"]}}]
+            with self.subTest(mutation=mutation):
+                self.assertEqual(inspect_uses(payload, source["id"], ABI, **kwargs)["status"], "unknown")
 
     def test_local_record_cleanup_scope_relations_are_lexical_only(self):
         report = self.run_structure("local_cleanup_enclosing_lambda")

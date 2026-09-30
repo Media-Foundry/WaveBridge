@@ -565,8 +565,16 @@ def _template_marker(node: dict[str, Any]) -> bool:
 
 
 def _semantic_inventory(root, variable_id, captures, budget, *, partial_result=None,
-                        instantiated_function_id=None):
+                        instantiated_function_id=None, semantic_slots=False):
     """Recover the one shared static explicit-reference inventory."""
+    def inventory_children(node, *, strict=False):
+        children = _children(node, strict=strict)
+        if semantic_slots:
+            filler = node.get("array_filler", [])
+            if not isinstance(filler, list) or any(not isinstance(c, dict) for c in filler):
+                raise _Unknown("array_filler_not_list_of_objects")
+            children += [c for c in filler if c]
+        return children
     nodes: list[dict[str, Any]] = []
     index: dict[str, list[dict[str, Any]]] = {}
     parents: dict[int, list[dict[str, Any]]] = {}
@@ -581,7 +589,7 @@ def _semantic_inventory(root, variable_id, captures, budget, *, partial_result=N
         node_id = node.get("id")
         if isinstance(node_id, str) and node_id:
             index.setdefault(node_id, []).append(node)
-        children = _children(node)
+        children = inventory_children(node)
         for child in children:
             parents.setdefault(id(child), []).append(node)
         pending.extend(children)
@@ -647,7 +655,7 @@ def _semantic_inventory(root, variable_id, captures, budget, *, partial_result=N
                 semantic_refs.append((node, lambda_path))
                 if len(semantic_refs) > MAX_EXPLICIT_USES:
                     raise _Unknown("explicit_source_use_budget_exceeded")
-        children = _children(node, strict=True)
+        children = inventory_children(node, strict=True)
         if kind != "LambdaExpr":
             for child in children:
                 walk(child, lambda_path, path)
@@ -967,6 +975,27 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
                       *, max_ast_nodes: int | None = None,
                       instantiated_function_id: str | None = None) -> dict[str, Any]:
     """Close supported explicit-use syntax without assuming a live object."""
+    return _inspect_structure(payload, variable_id, integer_types, initialization_selection_domains,
+                              max_ast_nodes=max_ast_nodes,
+                              instantiated_function_id=instantiated_function_id)
+
+
+def inspect_uses(payload: object, variable_id: object, integer_types: object,
+                 *, max_ast_nodes: int | None = None,
+                 instantiated_function_id: str | None = None) -> dict[str, Any]:
+    """Inspect uses independently of initialization values, effects or completion.
+
+    This entry accepts neither initialization domains nor successful reports.
+    An initializer, including its cleanup, requires a separate fresh check.
+    """
+    return _inspect_structure(payload, variable_id, integer_types, {},
+                              max_ast_nodes=max_ast_nodes,
+                              instantiated_function_id=instantiated_function_id,
+                              uses_only=True)
+
+
+def _inspect_structure(payload, variable_id, integer_types, initialization_selection_domains,
+                       *, max_ast_nodes=None, instantiated_function_id=None, uses_only=False):
     budget = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
     result: dict[str, Any] = {
         "schema_version": "object-explicit-use-structure/v1",
@@ -1007,6 +1036,11 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
                    "max_explicit_uses": MAX_EXPLICIT_USES,
                    "note": "fresh subchecks rescan and rehash the complete AST independently"},
     }
+    if uses_only:
+        result.update(schema_version="object-explicit-uses/v1",
+                      initialization_values="not_established",
+                      initialization_effects_and_cleanup="not_established",
+                      initialization_completion="not_established")
     if type(budget) is not int or not 1 <= budget <= HARD_MAX_AST_NODES:
         result["reason"] = "invalid_ast_node_budget"
         return result
@@ -1029,12 +1063,14 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
         result["reason"] = "invalid_inputs"
         return result
     root = payload["ast"]
-    initialization = check_object_initialization(
+    initialization = None if uses_only else check_object_initialization(
         payload, variable_id, integer_types, initialization_selection_domains,
         max_ast_nodes=budget, instantiated_function_id=instantiated_function_id)
     result["conditional_initialization"] = initialization
-    root_hash = (initialization.get("input_sha256") or {}).get("root")
+    root_hash = None if uses_only else (initialization.get("input_sha256") or {}).get("root")
     try:
+        if uses_only:
+            root_hash = _hash(root)
         result["input_sha256"] = {
             "root": root_hash,
             "variable_id": _hash(variable_id),
@@ -1052,14 +1088,31 @@ def inspect_structure(payload: object, variable_id: object, integer_types: objec
     except (TypeError, ValueError, RecursionError):
         result["reason"] = "input_hash_unsupported"
         return result
-    if initialization.get("status") != "checked" or not isinstance(root_hash, str):
+    if (not uses_only and initialization.get("status") != "checked") or not isinstance(root_hash, str):
         result["reason"] = "fresh_conditional_object_initialization_not_checked"
         return result
 
     try:
         inventory = _semantic_inventory(root, variable_id, payload["captures"], budget,
-                                        instantiated_function_id=instantiated_function_id)
+                                        instantiated_function_id=instantiated_function_id,
+                                        semantic_slots=uses_only)
         variable = inventory["variable"]
+        if uses_only:
+            info = variable.get("type", {})
+            if not isinstance(info, dict):
+                raise _Unknown("source_type_evidence_missing")
+            spelling = info.get("desugaredQualType", info.get("qualType", ""))
+            path = inventory["semantic_paths"].get(id(variable), ())
+            children = _children(variable, strict=True)
+            if (not isinstance(spelling, str) or not spelling or "&" in spelling or
+                    "volatile" in spelling.split() or
+                    variable.get("storageClass") not in (None, "auto", "register") or
+                    any(variable.get(k) not in (None, "none") for k in ("tls", "tlsKind")) or
+                    len(path) < 3 or path[-2].get("kind") != "DeclStmt" or
+                    path[-3].get("kind") != "CompoundStmt" or
+                    _children(path[-2], strict=True) != [variable] or len(children) != 1 or
+                    children[0].get("kind") not in {"CXXConstructExpr", "ExprWithCleanups"}):
+                raise _Unknown("uses_source_not_single_automatic_direct_object_declaration")
         function_id = inventory["function_id"]
         result["function_id"] = function_id
         semantic_paths = inventory["semantic_paths"]

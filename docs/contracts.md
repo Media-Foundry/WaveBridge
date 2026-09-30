@@ -758,3 +758,10 @@ callee_attribute_observations与linker_resolution_and_interposition=not_establis
 被选参数仍必须是精确同类型的普通按值record，调用中的其它参数（包括默认
 实参）的求值与顺序、callee body及配置API语义不因此获证。语法绑定checked
 不是形参字段值保持，也不是运行时符号解析保证。
+
+`object-explicit-uses/v1`由`object_use_closure.inspect_uses`产生，不接收
+initialization_selection_domains，conditional_initialization固定null。
+初始化值、效果和清理、完成状态均not_established；结构检查仍fresh绑定
+自动对象、完整显式引用及copy/capture子报告。清理报告的source-initialization
+排除项仍是必须另检的义务，不意味着新入口检查了初始化。旧
+`object-explicit-use-structure/v1`保留原数值初始化前置门槛。

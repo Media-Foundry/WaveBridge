@@ -7,6 +7,13 @@ void plain_copy() {
   Config source(3);
   Config target(source);
 }
+void dynamic_switch_copies(int branch, unsigned value) {
+  Config source(value);
+  switch (branch) {
+    case 0: { Config target(source); break; }
+    case 1: { Config target(source); break; }
+  }
+}
 void three_branches(int branch) {
   Config source(3);
   [&]() {

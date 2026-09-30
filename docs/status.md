@@ -2,6 +2,17 @@
 
 更新日期：2026-09-30。
 
+## 对象引用结构脱离初始化数值门槛
+
+新增独立inspect_uses，不接收数值域或旧报告、不调用初始化checker，旧接口
+不变。真实HIP重放完成全部22个显式引用/直接复制结构检查，逐次按值目标与
+对象边界checked；初始化值/效果/cleanup/完成及动态历史仍未建立。
+source_order因source_order_do_outside_source_scope保持unknown，前序cleanup
+亦unknown，不能以父级checked放行配置或部署。
+1376项全测179.203秒无跳过通过，Clang17专项48项通过；额外Clang23专项
+29项失败与基线旧模块完全相同，新两项通过，完整兼容性未建立。无新HIP/GPU
+运行，见[实录](../experiments/hip-independent-uses-20260930.md)。
+
 ## 守卫候选 block copy 的按值形参目标
 
 真实配置函数的default VisibilityAttr已按受限规则纳入按值目标绑定，保持
