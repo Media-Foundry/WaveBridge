@@ -2,6 +2,15 @@
 
 更新日期：2026-10-03。
 
+## 首个真实加载循环的缺口已定位
+
+同一完整HIP AST的首个双层加载循环，原始header分别恢复0..<2和0..<4，
+step均1；默认完整递推在共同的infinity填充调用处unknown（call_in_body）。
+旧break分区入口不适用于这两个普通for，不能以插入break或删除调用解决。
+下一项是复用普通嵌套恢复并检查精确wrapper/leaf效果，然后连接local_idx全程
+保持与列访问；本次仅诊断，无新增GPU或列覆盖保证。见
+[原始AST诊断](../experiments/hip-loading-diagnostic-20261003.md)。
+
 ## 配置派生坐标到首个加载循环之前
 
 新增fresh配置域→initializer→同kernel历史检查，不手填leaf区间或消费旧通过
