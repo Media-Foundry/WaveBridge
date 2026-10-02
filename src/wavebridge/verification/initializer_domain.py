@@ -17,6 +17,149 @@ from wavebridge.verification.kernel_arguments import _abi_type, _Unknown
 MAX_CASTS = 32
 
 
+def check_fixed_nested_entry(payload, declaration_id, outer_loop_id, inner_loop_id,
+                             leaf_contract, integer_types, history_call_protocols,
+                             work_call_protocols, *, max_ast_nodes=None):
+    """Preserve a local through ordinary, one-level constant-bound ForStmt nests.
+
+    Unlike the exit-guard path, no synthetic break partition is introduced.
+    Finite header sequences do not establish valid memory, body completion or
+    reachability. Store non-aliasing and external call effects remain premises.
+    """
+    from wavebridge.analysis.column_loops import (
+        observe_header, _recover_loop, _check_body, _check_nested_loop,
+        _Unknown as BodyUnknown)
+    from wavebridge.verification.builtin_calls import check_call_no_memory_write
+    from wavebridge.verification.scalar_call_effects import check_no_memory_write
+
+    result = {"schema_version": "initializer-to-fixed-nested-entry/v1",
+              "status": "unknown", "reason": None, "history_check": None,
+              "header_check": None, "recurrence_check": None,
+              "nested_checks": [], "call_effect_checks": {}, "assumptions": [],
+              "scope": "initialized_local_at_each_reached_fixed_nested_loop_entry",
+              "value_preserved_to_nested_entry": False,
+              "external_call_effects_verified": False, "reachability_proved": False,
+              "body_completion_proved": False, "column_coverage_checked": False,
+              "source_program_checked": False, "deployable": False}
+    budget = 1_000_000 if max_ast_nodes is None else max_ast_nodes
+    try:
+        if (not isinstance(work_call_protocols, dict) or len(work_call_protocols) > 64 or
+                any(not isinstance(k, str) or not k or not isinstance(v, dict)
+                    for k, v in work_call_protocols.items()) or
+                not isinstance(inner_loop_id, str) or not inner_loop_id or inner_loop_id == outer_loop_id or
+                not isinstance(integer_types, dict) or integer_types.get("int", {}).get("signed") is not True):
+            raise _Unknown("invalid_fixed_nested_inputs")
+        bits = integer_types["int"]["bits"]
+        history = check_to_statement(payload, declaration_id, outer_loop_id, leaf_contract,
+                                     integer_types, history_call_protocols, max_ast_nodes=budget)
+        result["history_check"] = history
+        result["assumptions"].extend(history["assumptions"])
+        if history["status"] != "checked" or history["value_preserved_to_statement"] is not True:
+            raise _Unknown("outer_entry_history_not_checked")
+        root = payload["ast"]
+        header = observe_header(root, outer_loop_id, bits, max_ast_nodes=budget)
+        result["header_check"] = header
+        if header["status"] != "observed":
+            raise _Unknown("outer_header_not_observed")
+        if header["input_sha256"]["root"] != history["input_sha256"]["root"]:
+            raise _Unknown("input_changed_between_checks")
+        result["assumptions"].extend(header["assumptions"])
+        nodes, pending, count = {}, [root], 0
+        while pending:
+            node = pending.pop()
+            count += 1
+            if count > budget:
+                raise _Unknown("semantic_ast_node_budget_exceeded")
+            if not isinstance(node, dict):
+                raise _Unknown("malformed_semantic_node")
+            nodes.setdefault(node.get("id"), []).append(node)
+            for key in ("inner", "array_filler"):
+                children = node.get(key, [])
+                if not isinstance(children, list) or any(not isinstance(n, dict) for n in children):
+                    raise _Unknown("malformed_semantic_children")
+                pending.extend(children)
+        outer, = nodes[outer_loop_id]
+        inner, = nodes.get(inner_loop_id, [])
+        if inner.get("kind") != "ForStmt":
+            raise _Unknown("inner_not_for_statement")
+
+        def call(node):
+            identifier = node.get("id")
+            if identifier not in work_call_protocols:
+                return False
+            reports = result["call_effect_checks"]
+            if identifier not in reports:
+                protocol = work_call_protocols[identifier]
+                if protocol.get("schema_version") == "scalar-leaf-effect-assumption/v1":
+                    checked = check_no_memory_write(root, identifier, protocol, max_ast_nodes=budget)
+                else:
+                    checked = check_call_no_memory_write(payload, identifier, protocol, max_ast_nodes=budget)
+                reports[identifier] = checked
+                result["assumptions"].extend(checked.get("assumptions", []))
+            return reports[identifier]["status"] == "checked"
+
+        def label_effect_policy(recovered):
+            if not result["call_effect_checks"]:
+                return
+            recovered["assumptions"]["external_call_effects"] = "explicit_unverified_protocols"
+            for key in ("body_preserves_induction", "body_preserves_bound"):
+                if recovered.get(key) == "established_in_supported_effect_subset":
+                    recovered[key] = "established_under_external_call_effect_assumptions"
+            for child in recovered.get("nested_loops", []):
+                child["enclosing_storage_preserved"] = "established_under_external_call_effect_assumptions"
+                label_effect_policy(child["recurrence"])
+
+        recurrence = _recover_loop(root, outer, bits, call_callback=call)
+        label_effect_policy(recurrence)
+        result["recurrence_check"] = recurrence
+        if recurrence["status"] != "recovered":
+            raise _Unknown("outer_recurrence_not_recovered:" + str(recurrence["reason"]))
+        start, bound, step = recurrence["start"], recurrence["bound"], recurrence["step"]
+        if (start["kind"] != "integer_literal" or bound["kind"] != "constant_declaration" or
+                start["value"] < 0 or bound["value"] < 0):
+            raise _Unknown("outer_domain_not_nonnegative_constants")
+        count = max(0, (bound["value"] - start["value"] + step - 1) // step)
+        final = start["value"] + count * step
+        if final > (1 << (bits - 1)) - 1:
+            raise _Unknown("outer_signed_increment_overflow")
+        if recurrence["induction"]["declaration_id"] == declaration_id:
+            raise _Unknown("protected_local_is_outer_induction")
+
+        def nested(node):
+            checked = _check_nested_loop(root, node, bits, {declaration_id}, call_callback=call)
+            label_effect_policy(checked["recurrence"])
+            if result["call_effect_checks"]:
+                checked["enclosing_storage_preserved"] = "established_under_external_call_effect_assumptions"
+            result["nested_checks"].append({"loop_id": node["id"], "check": checked})
+
+        # Inspect ALL components, including siblings after the inner loop: they
+        # can change the protected value before the next outer iteration.
+        for component in (outer["inner"][0], *outer["inner"][2:]):
+            _check_body(component, {declaration_id}, call_callback=call, nested_callback=nested)
+        selected = [c for c in result["nested_checks"] if c["loop_id"] == inner_loop_id]
+        if len(selected) != 1:
+            raise _Unknown("selected_inner_not_checked")
+        result["unused_call_protocol_ids"] = sorted(set(work_call_protocols) - set(result["call_effect_checks"]))
+        if result["unused_call_protocol_ids"]:
+            raise _Unknown("unused_work_call_protocols")
+        result["assumptions"].extend([
+            "all loop memory stores do not alias the protected local or recurrence storage",
+            "source execution is valid; objects remain live without asynchronous interference",
+            "reached loop bodies and invoked calls complete normally; header counts alone do not prove completion"])
+        result.update(status="checked", value_preserved_to_nested_entry=True,
+                      result_interval=history["result_interval"], declaration_id=declaration_id,
+                      outer_loop_id=outer_loop_id, inner_loop_id=inner_loop_id,
+                      outer_header_iterations=count, outer_final_induction=final,
+                      input_sha256={"history": history["input_sha256"], "header": header["input_sha256"],
+                                    "inner_loop_id": _hash(inner_loop_id), "native_envelope": _hash(payload),
+                                    "work_call_protocols": _hash(work_call_protocols), "budget": _hash(budget)})
+    except (BodyUnknown, _Unknown) as error:
+        result["reason"] = str(error)
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError):
+        result["reason"] = "unsupported_fixed_nested_representation"
+    return result
+
+
 def check_nested_iteration_bounds(payload, declaration_id, outer_loop_id, inner_loop_id,
                                    leaf_contract, integer_types, history_call_protocols,
                                    work_call_protocols, inner_call_protocols, declaration_intervals, *,

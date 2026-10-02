@@ -2,6 +2,18 @@
 
 更新日期：2026-10-03。
 
+## 普通固定嵌套循环的条件局部值保持
+
+新增check_fixed_nested_entry，不插入break，复用普通循环恢复与完整callsite
+效果检查，扫描两层所有组件及inner前后兄弟；semantic身份扫描含array_filler
+且受预算限制。真实HIP加载双循环在显式leaf域和builtin效果假设下checked，
+local_idx在每次实际到达inner入口时保持[0,31]，header序列长度2/4。
+配置链本轮未fresh重跑，不能拼接旧成功报告升级保证；列覆盖、body完成、
+源程序及部署仍未建立。详情见
+[普通双循环实录](../experiments/hip-fixed-loading-20261003.md)。
+1399项全测415.704秒无跳过通过，相关15项及新增专项5项通过，demo/diff通过，
+Sol最终复核无阻断；无新增GPU执行。
+
 ## 首个真实加载循环的缺口已定位
 
 同一完整HIP AST的首个双层加载循环，原始header分别恢复0..<2和0..<4，
