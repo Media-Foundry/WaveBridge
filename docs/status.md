@@ -1,6 +1,16 @@
 # 当前状态
 
-更新日期：2026-09-30。
+更新日期：2026-10-03。
+
+## 配置派生坐标到首个加载循环之前
+
+新增fresh配置域→initializer→同kernel历史检查，不手填leaf区间或消费旧通过
+报告。真实HIP AST重放条件checked：local_idx的[0,31]保持至首个外层加载
+ForStmt首次求值之前。前缀五条语句已检查；循环头/循环体/后续迭代、可达性、
+列覆盖、API/运行时及source/deploy仍未建立，no-alias等外部假设完整保留。
+1394项全测406.952秒无跳过通过，Clang17/23专项各12项通过，demo/diff通过。
+无新增GPU执行。9月30日启动的验收于10月3日恢复后核对完成，见
+[实录与边界](../experiments/hip-coordinate-history-20260930.md)。
 
 ## Host配置派生device坐标初始化域
 

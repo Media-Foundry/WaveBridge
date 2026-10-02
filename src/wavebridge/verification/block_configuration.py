@@ -116,6 +116,71 @@ def check_guarded_local_coordinate(payload, selection, initializer_id, assignmen
     return result
 
 
+def check_guarded_coordinate_to_statement(payload, selection, initializer_id, assignment_id, quotient_id,
+                                         object_id, power_selection, conversion_contract, output_contract,
+                                         integer_types, axis_protocol, coordinate_initializer_id, statement_id,
+                                         call_protocols, *, query_guard_id, instantiated_function_id=None,
+                                         max_ast_nodes=1_000_000, use_static_branches=False):
+    """Carry a configuration-derived coordinate to a later direct statement.
+
+    This checks the prefix only. A selected loop's body and subsequent entries
+    are deliberately outside this conclusion, including when that body writes
+    the coordinate. All history no-alias/valid-execution premises remain.
+    """
+    from wavebridge.verification.initializer_domain import check_to_statement
+    from wavebridge.verification.getter_returns import _hash
+
+    result = {"schema_version": "guarded-coordinate-to-statement/v1", "status": "unknown", "reason": None,
+              "scope": "configuration_derived_coordinate_at_first_entry_to_selected_direct_statement",
+              "checks": {}, "assumptions": [], "result_interval": None,
+              "value_preserved_to_statement": False, "target_body_checked": False,
+              "target_evaluation_checked": False,
+              "later_iterations_checked": False, "target_reachability_proved": False,
+              "coordinate_API_verified": False, "runtime_configuration_verified": False,
+              "source_program_checked": False, "deployable": False}
+    try:
+        if (not isinstance(statement_id, str) or not statement_id or not isinstance(call_protocols, dict) or
+                len(call_protocols) > 64 or type(use_static_branches) is not bool or
+                any(not isinstance(k, str) or not k or not isinstance(v, dict) for k, v in call_protocols.items())):
+            raise ValueError("invalid_history_selection_or_protocols")
+        coordinate = check_guarded_local_coordinate(payload, selection, initializer_id, assignment_id, quotient_id,
+                        object_id, power_selection, conversion_contract, output_contract, integer_types,
+                        axis_protocol, coordinate_initializer_id, query_guard_id=query_guard_id,
+                        instantiated_function_id=instantiated_function_id, max_ast_nodes=max_ast_nodes)
+        result["checks"]["coordinate"] = coordinate
+        result["assumptions"] = list(coordinate["assumptions"])
+        if coordinate["status"] != "checked" or coordinate["coordinate_initialization_domain_checked"] is not True:
+            raise ValueError("fresh_configuration_coordinate_domain_not_checked")
+        leaf = coordinate["derived_leaf_domain"]
+        history = check_to_statement(payload, coordinate_initializer_id, statement_id, leaf, integer_types,
+                                     call_protocols, max_ast_nodes=max_ast_nodes,
+                                     use_static_branches=use_static_branches)
+        result["checks"]["history"] = history
+        result["assumptions"] = list(dict.fromkeys(result["assumptions"] + history["assumptions"]))
+        if history["status"] != "checked" or history["value_preserved_to_statement"] is not True:
+            raise ValueError("fresh_coordinate_history_not_checked")
+        if (history["selection"]["function_id"] != coordinate["kernel_declaration_id"] or
+                history["selection"]["declaration_id"] != coordinate_initializer_id or
+                history["selection"]["target_statement_id"] != statement_id or
+                history["result_interval"] != coordinate["result_interval"] or
+                history["input_sha256"] != {"root": coordinate["input_sha256"]["root"],
+                    "declaration_id": _hash(coordinate_initializer_id), "leaf_contract": _hash(leaf),
+                    "integer_types": _hash(integer_types), "statement_id": _hash(statement_id),
+                    "call_protocols": _hash(call_protocols), "static_branches": _hash(use_static_branches)}):
+            raise ValueError("fresh_history_domain_or_input_binding_mismatch")
+        result.update(status="checked", value_preserved_to_statement=True,
+                      kernel_declaration_id=coordinate["kernel_declaration_id"], launch_id=coordinate["launch_id"],
+                      coordinate_initializer_id=coordinate_initializer_id, statement_id=statement_id,
+                      result_interval=coordinate["result_interval"],
+                      input_sha256={"root": coordinate["input_sha256"]["root"],
+                                    "coordinate_inputs": _hash(coordinate["input_sha256"]),
+                                    "history_inputs": _hash(history["input_sha256"]),
+                                    "max_ast_nodes": _hash(max_ast_nodes)})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def check(chain, site, integer_types, axis_binding):
     result = {"schema_version": "block-configuration-check/v1", "status": "unknown",
               "reason": None, "field_check": None, "dimensions": None,

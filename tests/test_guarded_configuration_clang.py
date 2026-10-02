@@ -9,6 +9,7 @@ from wavebridge.frontend.clang_ast import _walk
 from wavebridge.verification.getter_returns import _hash
 from wavebridge.verification.launch_binding import check_guarded_configuration_copy
 from wavebridge.verification.block_configuration import check_guarded_local_coordinate
+from wavebridge.verification.block_configuration import check_guarded_coordinate_to_statement
 
 
 @unittest.skipUnless(query_fixture.PLUGIN, "requires compiler-matched native plugin")
@@ -29,13 +30,13 @@ class GuardedConfigurationTests(unittest.TestCase):
         cls.payload = report["payload"]
         cls.ids = {n["name"]: n["id"] for n in _walk(cls.payload["ast"]) if n.get("kind") == "FunctionDecl"}
 
-    def arguments(self, name):
+    def arguments(self, name, kernel_name="guarded_target"):
         args, guard = self.constructor_args(name)
         function = next(n for n in _walk(self.payload["ast"]) if n.get("id") == args[4]["callee_id"])
         launch = next(n for n in _walk(function) if n.get("kind") == "CUDAKernelCallExpr")
         config = launch["inner"][1]
         selection = {"schema_version": "launch-selection/v1", "ast_root_sha256": _hash(self.payload["ast"]),
-                     "kernel_declaration_id": self.ids["guarded_target"], "launch_id": launch["id"],
+                     "kernel_declaration_id": self.ids[kernel_name], "launch_id": launch["id"],
                      "configuration_declaration_id": self.ids["cudaConfigureCall"],
                      "configuration_expression_ids": [n["id"] for n in config["inner"][1:]]}
         return args, guard, selection
@@ -45,8 +46,8 @@ class GuardedConfigurationTests(unittest.TestCase):
         return check_guarded_configuration_copy(self.payload, selection, *args, query_guard_id=guard,
                                                 configuration_position=position, **options)
 
-    def coordinate_arguments(self, axis=0):
-        args, guard, selection = self.arguments("configured_guard")
+    def coordinate_arguments(self, axis=0, name="configured_guard", kernel_name="guarded_target"):
+        args, guard, selection = self.arguments(name, kernel_name)
         args = list(args)
         args[-1] = {**args[-1], "unsigned long": {"bits": 64, "signed": False}}
         nodes = list(_walk(self.payload["ast"]))
@@ -62,9 +63,55 @@ class GuardedConfigurationTests(unittest.TestCase):
                     "coordinate": {"declaration_id": self.ids["local_leaf"], "return_type": {"qualType": "unsigned long"},
                                    "axis": axis, "semantics": "workgroup_local_id"},
                     "semantics": "bound_parameter_axes_define_selected_kernel_workgroup_extents"}
-        local = next(n["id"] for n in nodes if n.get("kind") == "VarDecl" and
+        kernel = next(n for n in nodes if n.get("id") == selection["kernel_declaration_id"])
+        local = next(n["id"] for n in _walk(kernel) if n.get("kind") == "VarDecl" and
                      n.get("name") == ("local_coordinate_x" if axis == 0 else "local_coordinate_y"))
         return args, guard, selection, protocol, local
+
+    def history_arguments(self, kernel="guarded_target"):
+        name = "configured_guard" if kernel == "guarded_target" else "configured_" + kernel
+        args, guard, selection, protocol, local = self.coordinate_arguments(name=name, kernel_name=kernel)
+        function = next(n for n in _walk(self.payload["ast"]) if n.get("id") == selection["kernel_declaration_id"])
+        target = next(n["id"] for n in _walk(function) if n.get("kind") == "ForStmt")
+        return args, guard, selection, protocol, local, target
+
+    def test_coordinate_history_connects_derived_domain_to_first_loop_entry(self):
+        args, guard, selection, protocol, local, target = self.history_arguments()
+        before = copy.deepcopy(self.payload)
+        report = check_guarded_coordinate_to_statement(self.payload, selection, *args, protocol, local, target, {},
+                                                       query_guard_id=guard)
+        self.assertEqual(report["status"], "checked", report)
+        self.assertTrue(report["value_preserved_to_statement"])
+        self.assertEqual(report["result_interval"], {"lower": 0, "upper": 31})
+        self.assertEqual(report["checks"]["history"]["selection"]["function_id"], selection["kernel_declaration_id"])
+        self.assertTrue(any("alias" in a for a in report["assumptions"]))
+        self.assertEqual(before, self.payload)
+
+    def test_coordinate_history_rejects_prefix_writes_and_reference_alias(self):
+        for kernel in ("changed_coordinate", "aliased_coordinate", "opaque_coordinate"):
+            args, guard, selection, protocol, local, target = self.history_arguments(kernel)
+            report = check_guarded_coordinate_to_statement(self.payload, selection, *args, protocol, local, target, {},
+                                                           query_guard_id=guard)
+            self.assertEqual(report["checks"]["coordinate"]["status"], "checked", report)
+            self.assertEqual(report["status"], "unknown", report)
+            self.assertFalse(report["value_preserved_to_statement"])
+
+    def test_coordinate_first_entry_does_not_check_loop_body_or_later_iterations(self):
+        args, guard, selection, protocol, local, target = self.history_arguments("body_changed_coordinate")
+        report = check_guarded_coordinate_to_statement(self.payload, selection, *args, protocol, local, target, {},
+                                                       query_guard_id=guard)
+        self.assertEqual(report["status"], "checked", report)
+        for flag in ("target_body_checked", "target_evaluation_checked", "later_iterations_checked", "target_reachability_proved",
+                     "source_program_checked", "deployable"):
+            self.assertFalse(report[flag])
+
+    def test_coordinate_history_wrong_target_and_unused_protocol_stay_unknown(self):
+        args, guard, selection, protocol, local, target = self.history_arguments()
+        other = self.history_arguments("changed_coordinate")[-1]
+        for selected, calls in ((other, {}), (target, {"not_consumed": {}}), ("missing", {})):
+            report = check_guarded_coordinate_to_statement(self.payload, selection, *args, protocol, local, selected, calls,
+                                                           query_guard_id=guard)
+            self.assertEqual(report["status"], "unknown", report)
 
     def test_coordinate_domains_come_from_two_dimensional_configuration(self):
         before = copy.deepcopy(self.payload)
