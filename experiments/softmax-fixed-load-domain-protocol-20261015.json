@@ -1,0 +1,15 @@
+{
+  "schema_version": "fixed-load-external-development-domain/v1",
+  "native_file_sha256": "df7d0b37e1d7ca16977f6d133285705d004a655e880b87b635148a373816e8b5",
+  "input_parameter_id": "0x7769241d54b8",
+  "count_parameter_id": "0x7769241d55f0",
+  "count_interval": [0, 128],
+  "pointer_binding": {
+    "offset_declaration_id": "0x7769241ab5e0",
+    "row_declaration_id": "0x7769241aabe8",
+    "stride_parameter_id": "0x7769241d5588",
+    "row_interval": [0, 4095],
+    "stride_interval": [0, 128]
+  },
+  "scope": "UNVERIFIED external development domain, not a recovered launch or GPU workload. Count is assumed at function entry; row/stride at offset evaluation. Row/stride bounds reuse the earlier analysis window, newly bound to this exact native artifact. Stride is not assumed equal to count. Allocation, pointer representability, input immutability and common count across lanes remain unchecked."
+}

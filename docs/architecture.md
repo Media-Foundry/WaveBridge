@@ -85,6 +85,14 @@ root/native envelope、kernel owner、局部与两个循环ID、ABI和协议输�
 参与族前提下成立，不检查load地址、指针历史或实际线程参与。该入口仍使用
 显式leaf域，未与host配置fresh组合；source/deploy保持false。
 
+`column_coverage.check_fixed_guarded_loads`在fresh标签检查后，核对实际float
+load的typed下标、守卫count的0/n选择、自动二维数组写入位置，并复用
+`guarded_stores`的入口指针历史核心。完整函数内pointer/offset/n的显式
+引用闭合与root哈希核对，使偏移连接到同一输入参数，而不是仅比较标签。
+外部row/stride快照域和n入口域仍是条件；stride不等于n的默认假设被明确
+禁止。结论止于选定赋值时的地址/目标对应，不证明分配、输入内容、后续
+数组保持或实际lane参与；host配置尚未fresh组合，source/deploy保持false。
+
 `device_evidence.collect`将该配对、行/线程/列整数关系与共享索引/容量检查放在
 同一次调用中；共享支路只接收本次fresh生成的thread报告，根/ABI/选点哈希
 核对一致。结果是带完整条件和未解除义务的证据包，不是源程序、目标改写或

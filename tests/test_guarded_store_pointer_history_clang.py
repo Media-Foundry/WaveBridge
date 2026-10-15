@@ -8,7 +8,8 @@ import tempfile
 import unittest
 
 from wavebridge.frontend.clang_ast import _walk, collect
-from wavebridge.verification.guarded_stores import check, check_entry_pointer
+from wavebridge.verification.guarded_stores import (
+    _check_entry_pointer_history, check, check_entry_pointer)
 
 
 CLANG = shutil.which("clang++")
@@ -235,6 +236,26 @@ void array_filler_escape(float *output, int row, int stride, int m, int n) {
     }
   }
 }
+
+#define READ_CASE(NAME, BEFORE, AFTER) \
+void NAME(const float *input, int row, int stride, int n) { \
+  int local_idx = getter(); \
+  int first_batch = row; \
+  int idx_offset = first_batch * stride + local_idx; \
+  BEFORE \
+  input += idx_offset; \
+  AFTER \
+  for (int outer = 0; outer < OUTER_COUNT; ++outer) { \
+    for (int it = 0; it < INNER_COUNT; ++it) { \
+      float loaded = input[outer * n + it * 32]; \
+      (void)loaded; \
+    } \
+  } \
+}
+READ_CASE(readonly_good, , )
+READ_CASE(readonly_write, , ++n;)
+READ_CASE(readonly_alias, int &alias = n;, (void)alias;)
+READ_CASE(readonly_pointer_alias, const float *&alias = input;, (void)alias;)
 """
 
 
@@ -327,6 +348,37 @@ class GuardedStorePointerHistoryClangTests(unittest.TestCase):
             *arguments, pointer_binding=binding, max_ast_nodes=max_ast_nodes,
             use_source_constants=True)
 
+    def run_core(self, name="readonly_good", *, pointer_type="const float *",
+                 readonly=True, max_ast_nodes=None):
+        function = self.function(name)
+        body = next(child for child in function.get("inner", []) if child.get("kind") == "CompoundStmt")
+        variables = {node.get("name"): node for node in _walk(function)
+                     if node.get("kind") == "VarDecl" and node.get("name")}
+        params = {node.get("name"): node for node in function.get("inner", [])
+                  if node.get("kind") == "ParmVarDecl"}
+        outer = next(node for node in body.get("inner", []) if node.get("kind") == "ForStmt")
+        inner = next(node for node in _walk(outer)
+                     if node.get("kind") == "ForStmt" and node is not outer)
+        source_statement = next(i for i, node in enumerate(body["inner"])
+                                if node.get("kind") == "DeclStmt" and
+                                any(child is variables["local_idx"] for child in node.get("inner", [])))
+        outer_statement = body["inner"].index(outer)
+        selection = {"function_id": function["id"], "declaration_id": variables["local_idx"]["id"],
+                     "target_statement_id": outer["id"], "declaration_statement_index": source_statement,
+                     "target_statement_index": outer_statement}
+        binding = {"offset_declaration_id": variables["idx_offset"]["id"],
+                   "row_declaration_id": variables["first_batch"]["id"],
+                   "stride_parameter_id": params["stride"]["id"],
+                   "row_interval": [0, 2], "stride_interval": [0, 128]}
+        relation = {"row_id": variables["outer"]["id"], "count_id": params["n"]["id"],
+                    "iteration_id": variables["it"]["id"], "stride": 32}
+        return _check_entry_pointer_history(
+            self.payload, variables["local_idx"]["id"], outer["id"], {"lower": 0, "upper": 31},
+            selection, ABI32, params["input"]["id"], binding, relation,
+            pointer_type=pointer_type,
+            readonly_parameter_ids=(params["n"]["id"],) if readonly else (),
+            max_ast_nodes=max_ast_nodes)
+
     def test_exact_entry_relative_pointer_history_is_checked(self):
         result = self.run_check()
         self.assertEqual(result["status"], "checked", result)
@@ -402,6 +454,24 @@ class GuardedStorePointerHistoryClangTests(unittest.TestCase):
                 limited = self.run_check(max_ast_nodes=budget)
                 self.assertEqual(limited["status"], "unknown", limited)
                 self.assertFalse(limited["output_pointer_history_checked"])
+
+    def test_neutral_core_supports_const_input_and_closes_readonly_parameter_uses(self):
+        result = self.run_core()
+        self.assertEqual(result["status"], "checked", result)
+        self.assertTrue(result["pointer_history_checked"])
+        self.assertEqual(result["pointer_type"], "const float *")
+        self.assertTrue(any(item["classification"] == "readonly_parameter_value_read"
+                            for item in result["reference_classifications"]))
+        self.assertFalse(result["source_program_checked"])
+        self.assertFalse(result["deployable"])
+
+    def test_neutral_core_rejects_readonly_writes_aliases_and_pointer_alias(self):
+        for name in ("readonly_write", "readonly_alias", "readonly_pointer_alias"):
+            with self.subTest(name=name):
+                result = self.run_core(name)
+                self.assertEqual(result["status"], "unknown", result)
+                self.assertFalse(result["pointer_history_checked"])
+        self.assertEqual(self.run_core(pointer_type="float *")["status"], "unknown")
 
 
 if __name__ == "__main__":

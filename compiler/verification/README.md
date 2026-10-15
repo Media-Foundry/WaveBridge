@@ -1,5 +1,38 @@
 # 编译器关系检查
 
+## 固定嵌套循环的选定加载地址对应
+
+`column_coverage.check_fixed_guarded_loads(payload, declaration_id, outer_loop_id,
+inner_loop_id, leaf_contract, integer_types, history_call_protocols,
+work_call_protocols, input_declaration_id, count_parameter_id, count_interval,
+*, pointer_binding, max_ast_nodes=1_000_000)` 从同一完整AST重新检查列标签、
+选定float加载和入口指针历史，不接受旧成功报告或生成器提供的关系。
+
+支持普通零起点、单位步长、常量上界的双循环，guard为`column < count`，
+count是同函数int参数n、其局部副本，或纯整数比较选择的`0/n`。
+true arm必须只有`elements[outer][inner] = input[outer*n+inner*W]`，允许
+受限signed整数加减乘的等价重排，逐个中间运算检查溢出；elements必须为
+先前直接声明的自动float[M][K]。内层不得有该输入参数的额外直接引用。
+不接受任意浮点转换、复杂别名或通用指针表达式。
+
+共享的私有`guarded_stores._check_entry_pointer_history`核对入口后唯一直接
+`input += offset`、`offset = snapshot_row * stride + lane`及完整函数内
+pointer/offset/n的显式用途闭合；旧guarded-store公共接口继续fresh检查后
+使用同一核心。两侧root哈希必须一致，const float*输入与float*输出分开。
+row/stride域是offset求值时的外部快照；n域是函数入口的外部协议，不由
+函数名或硬编码128推断。`count_domain_checked_under_external_interval`
+仅指入口域及已记录noalias/effect前提下保持到选定load，不是运行时域证明。
+
+条件结论是在每次实际到达所选赋值时，源地址相对入口input的float元素偏移为
+`snapshot_row*stride + outer*n + column`，且目标为`elements[outer][inner]`。
+stride与n保持不同符号，不假定相等。它不保证input内容不变，也不保证该赋值
+之后elements未被覆盖；不是全函数加载清单或完整内存覆盖证明。
+
+显式保留既有/保留别名的间接写不修改pointer、offset、n及已有保护存储等
+前提；实际线程参与、逐行共同count、分配与指针可表示性、输入内容保持、
+source/deploy均未建立。当前入口使用外部leaf域，尚未fresh组合host配置。
+实录与固定开发域见[加载关系实录](../../experiments/hip-fixed-loads-20261015.md)。
+
 ## 固定嵌套循环的条件列标签覆盖
 
 `column_coverage.check_fixed_guarded_labels(payload, declaration_id, outer_loop_id,

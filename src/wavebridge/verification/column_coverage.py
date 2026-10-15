@@ -6,6 +6,284 @@ import json
 from wavebridge.verification.integer_conversion import check_interval as check_conversion
 
 
+def check_fixed_guarded_loads(payload, declaration_id, outer_loop_id, inner_loop_id,
+                              leaf_contract, integer_types, history_call_protocols,
+                              work_call_protocols, input_declaration_id, count_parameter_id,
+                              count_interval, *, pointer_binding, max_ast_nodes=1_000_000):
+    """Bind one guarded float load site to source labels and entry pointer history.
+
+    Count/row/stride domains are explicit external premises. This does not prove
+    allocation, immutable input contents, physical participation or GPU execution.
+    """
+    from wavebridge.analysis.integer_constants import evaluate as constant
+    from wavebridge.verification.getter_returns import _hash
+    from wavebridge.verification.guarded_stores import _check_entry_pointer_history
+
+    report = {"schema_version": "fixed-guarded-load-relation/v1", "status": "unknown", "reason": None,
+              "scope": "one_selected_direct_guarded_load_address_and_destination_at_assignment",
+              "labels_check": None, "pointer_history_check": None, "constant_checks": [], "assumptions": [],
+              "guarded_load_relation_checked": False, "entry_pointer_history_checked": False,
+              "count_domain_checked_under_external_interval": False,
+              "count_common_across_lanes_checked": False, "actual_thread_participation_checked": False,
+              "memory_load_coverage_checked": False, "input_contents_preserved": False,
+              "source_program_checked": False, "deployable": False}
+    try:
+        labels = check_fixed_guarded_labels(payload, declaration_id, outer_loop_id, inner_loop_id,
+                    leaf_contract, integer_types, history_call_protocols, work_call_protocols,
+                    max_ast_nodes=max_ast_nodes)
+        report["labels_check"] = labels
+        report["assumptions"] = list(labels["assumptions"])
+        if labels["status"] != "checked" or labels["formal_label_coverage_checked"] is not True:
+            raise ValueError("fresh_guarded_labels_not_checked")
+        if (not isinstance(count_interval, (list, tuple)) or len(count_interval) != 2 or
+                any(type(v) is not int for v in count_interval) or
+                not 0 <= count_interval[0] <= count_interval[1] <= labels["capacity"]):
+            raise ValueError("invalid_external_count_interval")
+        root = payload["ast"]
+        index, pending, visited = {}, [root], 0
+        while pending:
+            node = pending.pop()
+            visited += 1
+            if visited > max_ast_nodes or not isinstance(node, dict):
+                raise ValueError("semantic_ast_budget_or_representation")
+            if isinstance(node.get("id"), str):
+                index.setdefault(node["id"], []).append(node)
+            for key in ("inner", "array_filler"):
+                children = node.get(key, [])
+                if not isinstance(children, list):
+                    raise ValueError("malformed_semantic_children")
+                pending.extend(children)
+
+        def unique(identifier):
+            nodes = index.get(identifier, [])
+            if len(nodes) != 1:
+                raise ValueError("load_identity_not_unique")
+            return nodes[0]
+
+        def typ(node):
+            info = node.get("type", {})
+            if "typeAliasDeclId" in info and "desugaredQualType" not in info:
+                raise ValueError("unresolved_load_type_alias")
+            return info.get("desugaredQualType", info.get("qualType"))
+
+        def plain(node):
+            if node.get("array_filler", []) != [] or not isinstance(node.get("inner", []), list):
+                raise ValueError("unexpected_load_semantic_slot")
+            # Clang may reuse pure literal nodes across template instantiations.
+            # Only identical, childless signed-int prvalues may share identity.
+            if node.get("kind") == "IntegerLiteral":
+                copies = index.get(node.get("id"), [])
+                if (not copies or any(n != node for n in copies) or node.get("inner", []) != [] or
+                        typ(node) != "int" or node.get("valueCategory") != "prvalue"):
+                    raise ValueError("unsupported_shared_integer_literal")
+            elif unique(node.get("id")) is not node:
+                raise ValueError("load_identity_mismatch")
+            return node.get("inner", [])
+
+        def ref(node):
+            plain(node)
+            target = node.get("referencedDecl", {})
+            declaration = unique(target.get("id"))
+            if (node.get("kind") != "DeclRefExpr" or node.get("inner", []) != [] or
+                    node.get("valueCategory") != "lvalue" or
+                    declaration.get("kind") not in {"VarDecl", "ParmVarDecl"} or
+                    target.get("kind") != declaration.get("kind") or
+                    target.get("type") != declaration.get("type") or node.get("type") != declaration.get("type")):
+                raise ValueError("load_reference_declaration_mismatch")
+            return declaration
+
+        def cast(node, cast_kind, result_type):
+            children = plain(node)
+            if (node.get("kind") != "ImplicitCastExpr" or node.get("castKind") != cast_kind or
+                    typ(node) != result_type or node.get("valueCategory") != "prvalue" or len(children) != 1):
+                raise ValueError("unsupported_load_conversion")
+            return children[0]
+
+        def int_atom(node):
+            children = plain(node)
+            if node.get("kind") == "ParenExpr" and typ(node) in {"int", "const int"} and len(children) == 1:
+                return int_atom(children[0])
+            if node.get("kind") == "IntegerLiteral":
+                value = int(node["value"], 0)
+                if not minimum <= value <= maximum:
+                    raise ValueError("load_literal_outside_signed_abi")
+                return (None, value)
+            bare = cast(node, "LValueToRValue", "int")
+            declaration = ref(bare)
+            if typ(declaration) not in {"int", "const int"}:
+                raise ValueError("load_atom_not_signed_int")
+            return (declaration["id"], None)
+
+        entry = labels["entry_check"]
+        history = entry["history_check"]
+        function = unique(history["selection"]["function_id"])
+        params = [n for n in function["inner"] if n.get("kind") == "ParmVarDecl"]
+        count_param, pointer = unique(count_parameter_id), unique(input_declaration_id)
+        if count_param not in params or typ(count_param) != "int" or pointer not in params or typ(pointer) != "const float *":
+            raise ValueError("load_parameters_not_supported_same_function_types")
+        bits = integer_types["int"]["bits"]
+        minimum, maximum = -(1 << (bits - 1)), (1 << (bits - 1)) - 1
+        outer = entry["recurrence_check"]
+        outer_id = outer["induction"]["declaration_id"]
+        inner_id, width, iterations = labels["induction_declaration_id"], labels["width"], labels["iterations"]
+        batches = outer["bound"].get("value")
+        if (outer["start"].get("kind") != "integer_literal" or outer["start"].get("value") != 0 or
+                outer["step"] != 1 or type(batches) is not int or not 1 <= batches <= 4096 or
+                len({outer_id, inner_id, count_parameter_id, declaration_id, input_declaration_id}) != 5):
+            raise ValueError("unsupported_load_loop_family")
+
+        bound = unique(labels["count_declaration_id"])
+        count_mode = "direct_parameter"
+        if bound is not count_param:
+            initializer, = plain(bound)
+            children = plain(initializer)
+            if initializer.get("kind") == "ConditionalOperator":
+                if typ(initializer) != "int" or initializer.get("valueCategory") != "prvalue" or len(children) != 3:
+                    raise ValueError("unsupported_count_conditional")
+                predicate = children[0]
+                while predicate.get("kind") == "ParenExpr":
+                    parts = plain(predicate)
+                    if typ(predicate) != "bool" or len(parts) != 1:
+                        raise ValueError("unsupported_count_predicate_wrapper")
+                    predicate = parts[0]
+                operands = plain(predicate)
+                if (predicate.get("kind") != "BinaryOperator" or typ(predicate) != "bool" or
+                        predicate.get("opcode") not in {"<", "<=", ">", ">=", "==", "!="} or len(operands) != 2):
+                    raise ValueError("unsupported_count_predicate")
+                for operand in operands:
+                    int_atom(operand)
+                if set(int_atom(n) for n in children[1:]) != {(None, 0), (count_parameter_id, None)}:
+                    raise ValueError("count_not_zero_or_selected_parameter")
+                count_mode = "zero_or_parameter_selected_by_source_comparison"
+            elif int_atom(initializer) != (count_parameter_id, None):
+                raise ValueError("count_not_selected_parameter")
+            else:
+                count_mode = "parameter_snapshot"
+
+        guard = unique(labels["guard_id"])
+        then = guard["inner"][1]
+        statements = plain(then)
+        if then.get("kind") != "CompoundStmt" or len(statements) != 1:
+            raise ValueError("load_guard_arm_not_one_assignment")
+        assignment, = statements
+        operands = plain(assignment)
+        if (assignment.get("kind") != "BinaryOperator" or assignment.get("opcode") != "=" or
+                typ(assignment) != "float" or assignment.get("valueCategory") != "lvalue" or len(operands) != 2):
+            raise ValueError("load_not_plain_float_assignment")
+
+        def subscript(node, result_type):
+            parts = plain(node)
+            if node.get("kind") != "ArraySubscriptExpr" or typ(node) != result_type or node.get("valueCategory") != "lvalue" or len(parts) != 2:
+                raise ValueError("unsupported_load_subscript")
+            return parts
+
+        dest_base, dest_inner = subscript(operands[0], "float")
+        row_base, dest_outer = subscript(cast(dest_base, "ArrayToPointerDecay", "float *"), f"float[{iterations}]")
+        dest = ref(cast(row_base, "ArrayToPointerDecay", f"float (*)[{iterations}]"))
+        plain(dest)
+        if (typ(dest) != f"float[{batches}][{iterations}]" or dest.get("kind") != "VarDecl" or
+                dest.get("storageClass") not in (None, "auto", "register") or
+                any(dest.get(k) is not None for k in ("tls", "tlsKind", "thread_local", "threadLocal")) or
+                dest.get("inner", []) != [] or dest.get("init") is not None or
+                int_atom(dest_outer) != (outer_id, None) or int_atom(dest_inner) != (inner_id, None)):
+            raise ValueError("destination_not_automatic_iteration_array")
+        function_body, = [n for n in function["inner"] if n.get("kind") == "CompoundStmt"]
+        prefix = function_body["inner"][:history["selection"]["target_statement_index"]]
+        if not any(n.get("kind") == "DeclStmt" and plain(n) == [dest] for n in prefix):
+            raise ValueError("destination_not_direct_pre_loop_array")
+        load = cast(operands[1], "LValueToRValue", "float")
+        load_base, load_index = subscript(load, "const float")
+        pointer_ref = cast(load_base, "LValueToRValue", "const float *")
+        if ref(pointer_ref) is not pointer:
+            raise ValueError("load_uses_different_input_pointer")
+        pending = [unique(inner_loop_id)]
+        input_uses = []
+        while pending:
+            node = pending.pop()
+            if node.get("kind") == "DeclRefExpr" and node.get("referencedDecl", {}).get("id") == input_declaration_id:
+                input_uses.append(node)
+            pending.extend(node.get("inner", []) + node.get("array_filler", []))
+        if len(input_uses) != 1 or input_uses[0] is not pointer_ref:
+            raise ValueError("additional_direct_input_use_in_inner_loop")
+
+        domains = {outer_id: (0, batches - 1), inner_id: (0, iterations - 1), count_parameter_id: tuple(count_interval)}
+
+        def polynomial(node, depth=0):
+            children = plain(node)
+            if depth > 32 or typ(node) not in {"int", "const int"}:
+                raise ValueError("unsupported_load_index_type_or_depth")
+            if node.get("kind") == "ParenExpr" and len(children) == 1:
+                return polynomial(children[0], depth + 1)
+            if node.get("kind") != "BinaryOperator":
+                identifier, value = int_atom(node)
+                if identifier in domains:
+                    return {(identifier,): 1}, domains[identifier]
+                if identifier is not None:
+                    checked = constant(root, identifier, bits)
+                    report["constant_checks"].append(checked)
+                    if checked["status"] != "evaluated":
+                        raise ValueError("load_index_unknown_constant")
+                    for source in checked["sources"]:
+                        unique(source["declaration_id"])
+                    value = checked["value"]
+                return ({(): value} if value else {}), (value, value)
+            op = node.get("opcode")
+            if op not in {"+", "-", "*"} or node.get("valueCategory") != "prvalue" or len(children) != 2:
+                raise ValueError("unsupported_load_index_operator")
+            a, b = [polynomial(c, depth + 1) for c in children]
+            terms = {}
+            if op == "*":
+                for ka, va in a[0].items():
+                    for kb, vb in b[0].items():
+                        key = tuple(sorted(ka + kb))
+                        if len(key) > 2:
+                            raise ValueError("load_index_degree_budget")
+                        terms[key] = terms.get(key, 0) + va * vb
+                endpoints = [x * y for x in a[1] for y in b[1]]
+                interval = min(endpoints), max(endpoints)
+            else:
+                sign = 1 if op == "+" else -1
+                terms = {key: a[0].get(key, 0) + sign * b[0].get(key, 0) for key in a[0].keys() | b[0].keys()}
+                interval = ((a[1][0] + b[1][0], a[1][1] + b[1][1]) if sign == 1 else
+                            (a[1][0] - b[1][1], a[1][1] - b[1][0]))
+            if len(terms) > 64 or interval[0] < minimum or interval[1] > maximum:
+                raise ValueError("load_index_budget_or_intermediate_signed_overflow")
+            return {k: v for k, v in terms.items() if v}, interval
+
+        terms, interval = polynomial(load_index)
+        if terms != {tuple(sorted((outer_id, count_parameter_id))): 1, (inner_id,): width}:
+            raise ValueError("load_index_not_row_count_plus_iteration_width")
+        relation = {"row_id": outer_id, "count_id": count_parameter_id, "iteration_id": inner_id, "stride": width}
+        pointer_check = _check_entry_pointer_history(payload, declaration_id, outer_loop_id,
+            entry["result_interval"], history["selection"], integer_types, input_declaration_id,
+            pointer_binding, relation, pointer_type="const float *", readonly_parameter_ids=(count_parameter_id,),
+            max_ast_nodes=max_ast_nodes)
+        report["pointer_history_check"] = pointer_check
+        report["assumptions"].extend(pointer_check["assumptions"])
+        report["assumptions"].extend([
+            "selected count parameter lies in the external interval at function entry",
+            "all recorded source-validity, call-effect, no-alias and normal-execution premises hold",
+            "address correspondence is at the selected assignment only; input contents and later destination retention are not established"])
+        if pointer_check["status"] != "checked" or pointer_check["pointer_history_checked"] is not True:
+            raise ValueError("entry_pointer_history_not_checked: " + str(pointer_check["reason"]))
+        if pointer_check["input_sha256"]["root"] != labels["input_sha256"]["root"]:
+            raise ValueError("load_pointer_root_mismatch")
+        report.update(status="checked", guarded_load_relation_checked=True, entry_pointer_history_checked=True,
+            count_domain_checked_under_external_interval=True, count_mode=count_mode,
+            count_interval=list(count_interval), guard_count_interval=[0 if count_mode.startswith("zero_or") else count_interval[0], count_interval[1]],
+            load_expression_id=load["id"], assignment_id=assignment["id"], destination_declaration_id=dest["id"],
+            destination_indices=[outer_id, inner_id], relative_index_relation=relation, relative_index_interval=list(interval),
+            entry_relative_offset_relation=pointer_check["entry_relative_offset_relation"],
+            column_relation="row_at_snapshot*stride_at_snapshot + outer*count + column",
+            input_sha256={"root": labels["input_sha256"]["root"], "labels": _hash(labels["input_sha256"]),
+                          "pointer_history": _hash(pointer_check["input_sha256"]), "input_id": _hash(input_declaration_id),
+                          "count_id": _hash(count_parameter_id), "count_interval": _hash(count_interval),
+                          "load": _hash(load), "assignment": _hash(assignment)})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError, StopIteration) as error:
+        report["reason"] = str(error)
+    return report
+
+
 def check_fixed_guarded_labels(payload, declaration_id, outer_loop_id, inner_loop_id,
                                leaf_contract, integer_types, history_call_protocols,
                                work_call_protocols, *, max_ast_nodes=1_000_000):

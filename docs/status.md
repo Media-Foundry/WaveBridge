@@ -2,6 +2,21 @@
 
 更新日期：2026-10-15。
 
+## 选定加载已连接入口指针历史与列标签
+
+新增check_fixed_guarded_loads，从同一完整AST重新检查标签、count的0/n来源、
+实际float加载下标和自动二维数组目标，再复用指针历史核心。真实HIP守卫
+候选重放93.230秒、条件checked；选定地址相对入口input为
+`first_batch快照*stride快照 + i*n + column`，不假定stride等于n。
+n在完整函数的10处显式引用均按值只读；域保持仍依赖外部入口区间和noalias/
+effect前提。row/stride为外部快照域，配置链未fresh组合；共同count、实际
+线程参与、完整load覆盖、输入内容、source/deploy仍false，无新增GPU执行。
+Clang17/23相关专项各30项通过、无跳过，包括10项加载组合回归与真实CPU
+哨兵地址对照；demo/diff通过，Sol有界实现及只读复核无阻断。
+最终全量1423项518.941秒通过、无跳过；这些为本地验收，未核验本提交远端CI。
+不升级WB-03完整验收；见
+[加载关系实录](../experiments/hip-fixed-loads-20261015.md)。
+
 ## 源码列标签连接形式覆盖
 
 新增check_fixed_guarded_labels，在同一AST重新检查普通嵌套入口、标签仿射
