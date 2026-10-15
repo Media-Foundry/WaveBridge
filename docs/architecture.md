@@ -93,6 +93,14 @@ load的typed下标、守卫count的0/n选择、自动二维数组写入位置，
 禁止。结论止于选定赋值时的地址/目标对应，不证明分配、输入内容、后续
 数组保持或实际lane参与；host配置尚未fresh组合，source/deploy保持false。
 
+组合入口`block_configuration.check_guarded_coordinate_to_fixed_loads`解除上述
+独立加载入口的手填leaf域连接缺口：同次fresh检查配置/字段/复制、API轴域、
+getter，再用派生域重新检查加载树。与普通内层入口共享精确绑定逻辑，检查
+owner、root/native、ABI、选点和协议输入哈希；不接受旧成功报告或手填lane域。
+外部count/row/stride窗口、API与运行时语义、noalias及正常执行仍是条件。
+它把kernel/launch配置和所选加载关系连接起来，不是实际参与、全内存覆盖、
+输入值保持或GPU部署证明。
+
 `device_evidence.collect`将该配对、行/线程/列整数关系与共享索引/容量检查放在
 同一次调用中；共享支路只接收本次fresh生成的thread报告，根/ABI/选点哈希
 核对一致。结果是带完整条件和未解除义务的证据包，不是源程序、目标改写或

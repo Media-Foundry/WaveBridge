@@ -2,6 +2,21 @@
 
 更新日期：2026-10-15。
 
+## Host配置到选定加载的fresh组合
+
+新增check_guarded_coordinate_to_fixed_loads：先重新检查配置字段/复制、API轴
+派生域及getter，再以本次派生leaf域检查完整加载路径。没有旧通过报告或
+手填lane域入口，普通内层入口的完整身份/哈希核对抽出为共用私有函数。
+真实native CUDA新增5项组合回归99.222秒通过，配置16/源码32不匹配、
+错误下标、n/pointer改写、owner/loop/root错绑、unused协议等均不能放行；
+既有16项配置回归202.096秒通过，demo/diff通过，Sol只读复核无阻断。
+完整HIP重放695.167秒条件checked：本次配置(32,4,1)派生lane域[0,31]，
+经22个配置copy的条件保持检查连接到实际加载地址，源码运行前后哈希一致。
+最终全量1428项628.887秒通过、无跳过；均为本地验收，未核验本提交远端CI。
+外部count/row/stride域、API/runtime、noalias/effect等前提未解除，无GPU运行，
+也不升级完整验收。
+见[配置到加载实录](../experiments/hip-configured-loads-20261015.md)。
+
 ## 选定加载已连接入口指针历史与列标签
 
 新增check_fixed_guarded_loads，从同一完整AST重新检查标签、count的0/n来源、

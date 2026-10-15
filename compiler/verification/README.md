@@ -1,5 +1,26 @@
 # 编译器关系检查
 
+## Host配置派生域到选定加载地址
+
+`block_configuration.check_guarded_coordinate_to_fixed_loads`接收与
+`check_guarded_coordinate_to_fixed_nested_entry`相同的源码、配置选点、外部
+API/ABI协议、coordinate及双循环ID、history/work调用协议，另外接收
+`input_declaration_id, count_parameter_id, count_interval`和必填关键字
+`pointer_binding`。没有leaf域或旧成功报告参数。
+
+入口依次fresh检查配置槽/字段保持、三轴尺寸派生的local-ID域及getter，
+再把本次leaf域传给下述`check_fixed_guarded_loads`。共用私有绑定函数核对
+kernel owner、coordinate和循环身份、root/native envelope、ABI、完整历史
+输入、调用协议及预算；加载与pointer子报告再核对同root和实际输入选点。
+旧普通内层入口API与保证范围不变，不重复检查同一加载树来拼接成功状态。
+
+`fresh_configuration_composed=true`仅表示上述重新检查在同次调用完成，
+并不验证配置API或运行时实现。地址、目标及count条件域沿用加载检查的范围；
+count、row和stride外部数值窗口仍独立于自动派生的lane域。未建立实际线程
+参与、共同count、完整内存覆盖、分配、输入内容、source/deploy等事实。
+在配置派生宽度与源码label步长不符时，不得使用旧leaf域继续放行。
+详见[配置到加载实录](../../experiments/hip-configured-loads-20261015.md)。
+
 ## 固定嵌套循环的选定加载地址对应
 
 `column_coverage.check_fixed_guarded_loads(payload, declaration_id, outer_loop_id,

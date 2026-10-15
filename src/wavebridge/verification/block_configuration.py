@@ -181,6 +181,116 @@ def check_guarded_coordinate_to_statement(payload, selection, initializer_id, as
     return result
 
 
+def _bind_fixed_entry(coordinate, entry, payload, coordinate_initializer_id,
+                      outer_loop_id, inner_loop_id, integer_types,
+                      history_call_protocols, work_call_protocols, max_ast_nodes):
+    """Bind two freshly computed child reports; not a public report-input API."""
+    from wavebridge.verification.getter_returns import _hash
+
+    leaf = coordinate["derived_leaf_domain"]
+    history = entry["history_check"]
+    expected_history = {"root": coordinate["input_sha256"]["root"],
+        "declaration_id": _hash(coordinate_initializer_id), "leaf_contract": _hash(leaf),
+        "integer_types": _hash(integer_types), "statement_id": _hash(outer_loop_id),
+        "call_protocols": _hash(history_call_protocols), "static_branches": _hash(False)}
+    if (history["selection"]["function_id"] != coordinate["kernel_declaration_id"] or
+            entry["declaration_id"] != coordinate_initializer_id or entry["outer_loop_id"] != outer_loop_id or
+            entry["inner_loop_id"] != inner_loop_id or entry["result_interval"] != coordinate["result_interval"] or
+            history["input_sha256"] != expected_history or entry["input_sha256"]["history"] != expected_history or
+            entry["input_sha256"]["header"] != {"root": expected_history["root"],
+                "loop_id": _hash(outer_loop_id), "int_bits": _hash(integer_types["int"]["bits"])} or
+            entry["input_sha256"]["inner_loop_id"] != _hash(inner_loop_id) or
+            entry["input_sha256"]["native_envelope"] != _hash(payload) or
+            entry["input_sha256"]["work_call_protocols"] != _hash(work_call_protocols) or
+            entry["input_sha256"]["budget"] != _hash(max_ast_nodes)):
+        raise ValueError("fresh_configuration_nested_binding_mismatch")
+    return expected_history["root"]
+
+
+def check_guarded_coordinate_to_fixed_loads(
+        payload, selection, initializer_id, assignment_id, quotient_id, object_id,
+        power_selection, conversion_contract, output_contract, integer_types, axis_protocol,
+        coordinate_initializer_id, outer_loop_id, inner_loop_id, history_call_protocols,
+        work_call_protocols, input_declaration_id, count_parameter_id, count_interval, *,
+        pointer_binding, query_guard_id, instantiated_function_id=None, max_ast_nodes=1_000_000):
+    """Fresh host configuration -> coordinate/history -> selected source load.
+
+    No caller-supplied leaf interval or previous successful report is accepted.
+    Count/row/stride domains and API/effect/no-alias premises remain external;
+    address correspondence is not whole-memory coverage or deployment safety.
+    """
+    from wavebridge.verification.column_coverage import check_fixed_guarded_loads
+    from wavebridge.verification.getter_returns import _hash
+
+    result = {"schema_version": "guarded-configured-fixed-loads/v1", "status": "unknown", "reason": None,
+              "scope": "selected_source_load_address_under_fresh_configuration_derived_coordinate_domain",
+              "checks": {}, "assumptions": [], "result_interval": None, "dimensions": None,
+              "fresh_configuration_composed": False, "guarded_load_relation_checked": False,
+              "entry_pointer_history_checked": False, "count_domain_checked_under_external_interval": False,
+              "coordinate_API_verified": False, "runtime_configuration_verified": False,
+              "external_call_effects_verified": False, "hardware_limits_checked": False,
+              "actual_thread_participation_checked": False, "count_common_across_lanes_checked": False,
+              "memory_load_coverage_checked": False, "input_contents_preserved": False,
+              "reachability_proved": False, "body_completion_proved": False,
+              "source_program_checked": False, "deployable": False}
+    try:
+        if (any(not isinstance(i, str) or not i for i in
+                (coordinate_initializer_id, outer_loop_id, inner_loop_id, input_declaration_id, count_parameter_id)) or
+                outer_loop_id == inner_loop_id or any(
+                    not isinstance(p, dict) or len(p) > 64 or
+                    any(not isinstance(k, str) or not k or not isinstance(v, dict) for k, v in p.items())
+                    for p in (history_call_protocols, work_call_protocols))):
+            raise ValueError("invalid_configured_load_selection_or_protocols")
+        coordinate = check_guarded_local_coordinate(
+            payload, selection, initializer_id, assignment_id, quotient_id, object_id,
+            power_selection, conversion_contract, output_contract, integer_types, axis_protocol,
+            coordinate_initializer_id, query_guard_id=query_guard_id,
+            instantiated_function_id=instantiated_function_id, max_ast_nodes=max_ast_nodes)
+        result["checks"]["coordinate"] = coordinate
+        result["assumptions"] = list(coordinate["assumptions"])
+        if coordinate["status"] != "checked" or coordinate["coordinate_initialization_domain_checked"] is not True:
+            raise ValueError("fresh_configuration_coordinate_not_checked")
+        loads = check_fixed_guarded_loads(payload, coordinate_initializer_id, outer_loop_id, inner_loop_id,
+            coordinate["derived_leaf_domain"], integer_types, history_call_protocols, work_call_protocols,
+            input_declaration_id, count_parameter_id, count_interval, pointer_binding=pointer_binding,
+            max_ast_nodes=max_ast_nodes)
+        result["checks"]["loads"] = loads
+        result["assumptions"] = list(dict.fromkeys(result["assumptions"] + loads["assumptions"]))
+        if loads["status"] != "checked" or any(loads[key] is not True for key in
+                ("guarded_load_relation_checked", "entry_pointer_history_checked", "count_domain_checked_under_external_interval")):
+            raise ValueError("fresh_configured_load_relation_not_checked")
+        labels = loads["labels_check"]
+        entry = labels["entry_check"]
+        root_hash = _bind_fixed_entry(coordinate, entry, payload, coordinate_initializer_id,
+            outer_loop_id, inner_loop_id, integer_types, history_call_protocols, work_call_protocols, max_ast_nodes)
+        pointer = loads["pointer_history_check"]
+        if (labels["input_sha256"]["root"] != root_hash or loads["input_sha256"]["root"] != root_hash or
+                pointer["input_sha256"]["root"] != root_hash or
+                loads["input_sha256"]["input_id"] != _hash(input_declaration_id) or
+                loads["input_sha256"]["count_id"] != _hash(count_parameter_id) or
+                loads["input_sha256"]["count_interval"] != _hash(count_interval) or
+                pointer["input_sha256"]["pointer_binding"] != _hash(pointer_binding) or
+                pointer["input_sha256"]["integer_types"] != _hash(integer_types) or
+                pointer["input_sha256"]["source_interval"] != _hash(coordinate["result_interval"])):
+            raise ValueError("fresh_configuration_load_binding_mismatch")
+        result.update(status="checked", fresh_configuration_composed=True, guarded_load_relation_checked=True,
+            entry_pointer_history_checked=True, count_domain_checked_under_external_interval=True,
+            result_interval=coordinate["result_interval"], dimensions=coordinate["dimensions"],
+            kernel_declaration_id=coordinate["kernel_declaration_id"], launch_id=coordinate["launch_id"],
+            coordinate_initializer_id=coordinate_initializer_id, outer_loop_id=outer_loop_id, inner_loop_id=inner_loop_id,
+            input_declaration_id=input_declaration_id, count_parameter_id=count_parameter_id,
+            entry_relative_offset_relation=loads["entry_relative_offset_relation"],
+            column_relation=loads["column_relation"], load_expression_id=loads["load_expression_id"],
+            destination_declaration_id=loads["destination_declaration_id"],
+            input_sha256={"root": root_hash, "native_envelope": _hash(payload),
+                          "coordinate_inputs": _hash(coordinate["input_sha256"]),
+                          "load_inputs": _hash(loads["input_sha256"]),
+                          "pointer_binding": _hash(pointer_binding), "count_interval": _hash(count_interval)})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def check_guarded_coordinate_to_fixed_nested_entry(
         payload, selection, initializer_id, assignment_id, quotient_id, object_id,
         power_selection, conversion_contract, output_contract, integer_types, axis_protocol,
@@ -228,28 +338,14 @@ def check_guarded_coordinate_to_fixed_nested_entry(
         result["assumptions"] = list(dict.fromkeys(result["assumptions"] + entry["assumptions"]))
         if entry["status"] != "checked" or entry["value_preserved_to_nested_entry"] is not True:
             raise ValueError("fresh_fixed_nested_entry_not_checked")
-        history = entry["history_check"]
-        expected_history = {"root": coordinate["input_sha256"]["root"],
-            "declaration_id": _hash(coordinate_initializer_id), "leaf_contract": _hash(leaf),
-            "integer_types": _hash(integer_types), "statement_id": _hash(outer_loop_id),
-            "call_protocols": _hash(history_call_protocols), "static_branches": _hash(False)}
-        if (history["selection"]["function_id"] != coordinate["kernel_declaration_id"] or
-                entry["declaration_id"] != coordinate_initializer_id or entry["outer_loop_id"] != outer_loop_id or
-                entry["inner_loop_id"] != inner_loop_id or entry["result_interval"] != coordinate["result_interval"] or
-                history["input_sha256"] != expected_history or entry["input_sha256"]["history"] != expected_history or
-                entry["input_sha256"]["header"] != {"root": expected_history["root"],
-                    "loop_id": _hash(outer_loop_id), "int_bits": _hash(integer_types["int"]["bits"])} or
-                entry["input_sha256"]["inner_loop_id"] != _hash(inner_loop_id) or
-                entry["input_sha256"]["native_envelope"] != _hash(payload) or
-                entry["input_sha256"]["work_call_protocols"] != _hash(work_call_protocols) or
-                entry["input_sha256"]["budget"] != _hash(max_ast_nodes)):
-            raise ValueError("fresh_configuration_nested_binding_mismatch")
+        root_hash = _bind_fixed_entry(coordinate, entry, payload, coordinate_initializer_id,
+            outer_loop_id, inner_loop_id, integer_types, history_call_protocols, work_call_protocols, max_ast_nodes)
         result.update(status="checked", fresh_configuration_composed=True,
                       value_preserved_to_nested_entry=True, result_interval=entry["result_interval"],
                       kernel_declaration_id=coordinate["kernel_declaration_id"], launch_id=coordinate["launch_id"],
                       coordinate_initializer_id=coordinate_initializer_id,
                       outer_loop_id=outer_loop_id, inner_loop_id=inner_loop_id,
-                      input_sha256={"root": expected_history["root"],
+                      input_sha256={"root": root_hash,
                                     "coordinate_inputs": _hash(coordinate["input_sha256"]),
                                     "entry_inputs": _hash(entry["input_sha256"])})
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
