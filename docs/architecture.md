@@ -101,6 +101,13 @@ owner、root/native、ABI、选点和协议输入哈希；不接受旧成功报�
 它把kernel/launch配置和所选加载关系连接起来，不是实际参与、全内存覆盖、
 输入值保持或GPU部署证明。
 
+`lane_uniformity.check_prefix`独立检查首次到达所选直接语句前的标量源码前缀，
+将精确API叶和同次调用参数的外部共同性前提，经getter、整数操作、赋值及
+if控制依赖传播到局部值；不由相同数值域推出相等，也不接受局部uniform oracle。
+当前真实案例只建立first_batch/local_batches在clamp后、local_idx初始化前的
+条件共同值。尚未与加载组合，不能据此解除count共同性、迭代对应或实际参与
+义务；整数定义良好、同target转换语义与API语义仍是外部前提。
+
 `device_evidence.collect`将该配对、行/线程/列整数关系与共享索引/容量检查放在
 同一次调用中；共享支路只接收本次fresh生成的thread报告，根/ABI/选点哈希
 核对一致。结果是带完整条件和未解除义务的证据包，不是源程序、目标改写或

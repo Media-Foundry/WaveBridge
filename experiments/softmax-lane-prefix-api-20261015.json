@@ -1,0 +1,16 @@
+{
+  "schema_version": "lane-family-api-assumptions/v1",
+  "ast_root_sha256": "037b5ce0092111b2f87f3d5a92468fef7481188457fd10020e04337cc59bd86d",
+  "function_id": "0x7769241d57f0",
+  "family": "same_invocation_same_workgroup_fixed_local_yz_vary_local_x",
+  "scalar_arguments_common_assumed": true,
+  "coordinate_calls_stable_and_no_memory_write_assumed": true,
+  "property_receivers_valid_and_static_semantics_assumed": true,
+  "same_target_integer_semantics_assumed": true,
+  "leaves": [
+    {"declaration_id": "0x2d314cf8", "return_type": {"qualType": "unsigned long"}, "arguments": [1], "semantics": "workgroup_size"},
+    {"declaration_id": "0x2d314340", "return_type": {"qualType": "unsigned long"}, "arguments": [0], "semantics": "workgroup_id"},
+    {"declaration_id": "0x2d313928", "return_type": {"qualType": "unsigned long"}, "arguments": [1], "semantics": "workgroup_local_id"}
+  ],
+  "evidence_reference": "UNVERIFIED development API assumptions for the exact frozen HIP translation unit; not device, SDK implementation or launch proof"
+}

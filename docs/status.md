@@ -2,6 +2,19 @@
 
 更新日期：2026-10-15。
 
+## 跨x-lane共同值的源码前缀检查
+
+新增lane_uniformity.check_prefix，不接受人工局部uniform结论或数值区间。
+按源码传播整数表达式、赋值及if控制依赖，fresh检查property/getter到精确
+external leaf；类型别名以声明/typed CallExpr的去糖证据处理。真实HIP完整
+AST两次重放均条件checked，共26.098秒：first_batch及裁剪后local_batches
+在local_idx声明首次入口共同。支持依据是固定同调用/workgroup/y/z而变化x
+的外部API族语义和源码关系，不是相同区间。API真实性、整数定义良好仍未验证。
+Clang17/23新增专项各6项通过（2.343/2.413秒），demo/diff通过；最终全量
+1434项631.042秒通过、无跳过。这些为本地验收，未核验本提交远端CI。
+尚未连接后续count、循环保持、实际参与或加载组合；source/deploy保持false，
+无新增GPU，不升级WB-03完整验收。见[前缀实录](../experiments/hip-lane-prefix-20261015.md)。
+
 ## Host配置到选定加载的fresh组合
 
 新增check_guarded_coordinate_to_fixed_loads：先重新检查配置字段/复制、API轴

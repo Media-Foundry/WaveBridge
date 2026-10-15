@@ -1,5 +1,21 @@
 # 模型、检查与证据协议
 
+## Lane族的外部API语义与源码前缀关系
+
+`lane-family-api-assumptions/v1`不提供任何局部变量的共同值结论。它精确绑定
+同一完整AST和function，以及`same_invocation_same_workgroup_fixed_local_yz_vary_local_x`
+比较族。`leaves`只包含external function声明、去糖返回类型、一个0/1/2的axis
+实参及workgroup_local_id/workgroup_id/workgroup_size语义。参数共同值、leaf
+稳定/无写入、property receiver存活及扩展语义、同target整数语义须显式true，
+并有非空evidence_reference；所有这些前提的实际真实性仍unverified。
+
+消费方`lane_uniformity.check_prefix`fresh检查各getter定义和标量前缀，建立
+同输入经过相同确定操作后的关系。不需要先假定row/local_batches/count共同，
+也不把getter值域或lane区间当作共同性证据。整数溢出、实现相关转换的数值域
+和实际线程到达未被验证；只在有效且正常到达同一首次入口的执行之间比较。
+target本身、之后的普通语句不执行，非局部控制仍全函数拒绝。后续count共同性
+需要独立的存储保持与外层迭代对应，现有加载与部署门控不自动消费这一报告。
+
 ## 同次原生枚举类型观测
 
 native envelope可包含enum_types与ast_int_bits。前者记录被访问的完整、非依赖

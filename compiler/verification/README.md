@@ -1,5 +1,33 @@
 # 编译器关系检查
 
+## 源码标量前缀的跨 lane 共同值
+
+`lane_uniformity.check_prefix(root, function_id, target_statement_id, declaration_id,
+api_contract)`重新检查完整TU内、函数body入口到直接target语句首次入口的前缀。
+不求值target，也不消费旧报告、数值区间或人工局部uniform列表。支持automatic
+内建整数声明、纯整数表达式、直接赋值、compound和普通if；引用/指针逃逸、
+不透明调用和不支持语句保持unknown。函数内goto/label/asm/捕获等一律拒绝。
+
+每个局部值携带源码依赖集合；if对两支写集合合并，并加入条件依赖，即使
+两支都赋常量也不抹掉varying条件。只写无关变量的varying分支不污染选定值。
+因此这是受限关系检查，不是区间分析，也不要求匹配特定算子或clamp模板。
+它不会发现`x-x`等抵消；依赖varying时unknown并不表示已有不等值反例。
+
+严格`lane-family-api-assumptions/v1`绑定root/function、固定同次调用同workgroup
+及local y/z、变化local x的族、精确external leaf声明/axis/语义，以及外部
+参数共同值、API稳定且无写入、property receiver有效和同target整数语义前提。
+local-ID axis0为varying，其他轴、workgroup ID/size为该族的common输入；
+任何未使用leaf、旧root或额外字段均unknown。不按函数名判断API。
+getter是fresh检查的单return零参调用链；MS property receiver由现有link入口
+重新核验，external leaf支持int/unsigned int字面axis实参。size_t等返回别名
+使用绑定到精确callee声明的typed CallExpr去糖类型，不用类型名字猜性质。
+
+`common_value_at_target_checked`仅描述选定变量在这个首次入口的共同值。
+不检查signed溢出或转换数值保持：相同且定义良好的整数操作在同target的
+确定语义下保持相等，不表示unsigned→int前后数值相等。API、实际参与、
+算术有效性、后续循环count和source/deploy始终未验证。后续组合必须重新
+检查prefix、建立到count使用点的保持并对齐外层迭代，不能拼接历史checked。
+
 ## Host配置派生域到选定加载地址
 
 `block_configuration.check_guarded_coordinate_to_fixed_loads`接收与
