@@ -78,6 +78,13 @@ root/native envelope、kernel owner、局部与两个循环ID、ABI和协议输�
 该组合不消除外部API、provenance、调用效果、noalias和正常完成等前提，
 线程参与、硬件限制与列覆盖仍分别未建立。
 
+`column_coverage.check_fixed_guarded_labels`在fresh普通嵌套检查之后，从真实
+标签声明、typed仿射表达式及`< count`守卫连接形式lane×iteration覆盖。
+它逐运算检查signed溢出、重新求源码常量并保护count存储；不把表达式中的
+同名常量或旧成功报告当作证据。结论只在每个逻辑行的共同count和完整形式
+参与族前提下成立，不检查load地址、指针历史或实际线程参与。该入口仍使用
+显式leaf域，未与host配置fresh组合；source/deploy保持false。
+
 `device_evidence.collect`将该配对、行/线程/列整数关系与共享索引/容量检查放在
 同一次调用中；共享支路只接收本次fresh生成的thread报告，根/ABI/选点哈希
 核对一致。结果是带完整条件和未解除义务的证据包，不是源程序、目标改写或

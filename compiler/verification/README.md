@@ -1,5 +1,32 @@
 # 编译器关系检查
 
+## 固定嵌套循环的条件列标签覆盖
+
+`column_coverage.check_fixed_guarded_labels(payload, declaration_id, outer_loop_id,
+inner_loop_id, leaf_contract, integer_types, history_call_protocols,
+work_call_protocols, max_ast_nodes=1_000_000)`从同一完整AST重新执行普通嵌套入口
+检查，再绑定内层直接的单个自动int标签声明及紧随其后的普通`if (label < count)`。
+count只能是当前函数的int形参或内层循环前紧邻的单个自动int声明，其存储在
+内层所有组件中被条件保护；调用只消费本次fresh效果检查，不接受旧成功报告。
+其中针对count的间接写入/既有保留别名不别名该存储是独立显式前提，不能
+用继承的lane/induction noalias前提自动替代；没有建立完整别名分析。
+
+标签表达式支持signed int的引用、整数常量、保值wrapper和受限`+/-/*`。
+每个运算节点独立检查中间范围，不能用代数消去掩盖溢出；常量重新从源码求值。
+必须恢复为`lane + it*W`，其中入口域为`[0,W-1]`、`1<=W<=1024`，内层为
+`it=0; it<K; ++it`、`1<=K<=4096`，且`W*K`可由声明的signed int ABI表示。
+关键身份唯一，语义索引包含array_filler；标量及选中结构节点上的异常槽位
+保持unknown。超出支持子集和预算不足也不放行。
+
+`fixed-guarded-column-labels/v1`的checked只描述形式lane×iteration族：每个
+固定outer iteration／逻辑行有相同`n∈[0,W*K]`时，满足guard的标签恰好为
+`[0,n)`，各出现一次。唯一性由`lane=c%W,it=c//W`给出，不逐列展开。
+该族各坐标恰有一个实例、完整正常执行及共同n仍是显式前提，不是线程参与证明。
+`guard_count_entry_domain_checked`、`actual_thread_participation_checked`、
+`memory_load_coverage_checked`、`pointer_history_checked`、source/deploy始终false。
+故错误load地址也可能具有合法标签；测试专门保留这种情况，防止扩大保证。
+本入口接收显式leaf域，不自动继承已有host配置链，二者需要另行fresh组合。
+
 ## 条件一元 native 效果
 
 `check_iteration_bounds`提供相同opt-in并fresh调用work检查。外部输入区间

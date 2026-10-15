@@ -2,6 +2,20 @@
 
 更新日期：2026-10-15。
 
+## 源码列标签连接形式覆盖
+
+新增check_fixed_guarded_labels，在同一AST重新检查普通嵌套入口、标签仿射
+表达式和`< count`，逐运算检查signed范围并保护count存储。真实HIP守卫候选
+重放条件checked：W=32、内层4次，形式标签[0,127]；共同n∈[0,128]时标签
+[0,n)恰出现一次。该形式lane族及逐行共同n仍是假设，实际线程参与、count
+入口域、指针历史/load覆盖、source/deploy均false，host配置链本轮未fresh
+组合。没有新GPU执行，不升级WB-03完整验收。见
+[源码标签实录](../experiments/hip-fixed-labels-20261015.md)。
+Clang17/23各8项专项通过，包括真实CPU计数对照和语义错误/不支持负例；
+首版计数fixture的else清零问题已修正并保留失败日志。显式补明count独立
+间接别名前提后，最终全量1411项459.779秒、双Clang专项和真实重放均通过，
+无跳过；demo/diff通过，Sol只读复核无阻断。这些是本地验收，不是远端CI结果。
+
 ## 配置派生域与普通内层入口已fresh组合
 
 同一次重新检查配置、getter初始化、历史和普通固定嵌套循环，得到真实HIP

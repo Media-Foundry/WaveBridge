@@ -6,6 +6,229 @@ import json
 from wavebridge.verification.integer_conversion import check_interval as check_conversion
 
 
+def check_fixed_guarded_labels(payload, declaration_id, outer_loop_id, inner_loop_id,
+                               leaf_contract, integer_types, history_call_protocols,
+                               work_call_protocols, *, max_ast_nodes=1_000_000):
+    """Match source labels/guard to a dense formal lane-by-iteration family.
+
+    This is NOT load coverage: actual participation, pointer offsets, allocation,
+    loaded values and the guard count's entry domain remain separate obligations.
+    """
+    from wavebridge.verification.initializer_domain import check_fixed_nested_entry
+    from wavebridge.verification.getter_returns import _hash
+    from wavebridge.analysis.integer_constants import evaluate as constant
+    from wavebridge.analysis.column_loops import _check_body, _Unknown as BodyUnknown
+
+    report = {"schema_version": "fixed-guarded-column-labels/v1", "status": "unknown", "reason": None,
+              "scope": "source_guarded_labels_over_explicit_formal_lane_and_iteration_family",
+              "entry_check": None, "constant_checks": [], "assumptions": [],
+              "formal_label_coverage_checked": False, "actual_thread_participation_checked": False,
+              "guard_count_entry_domain_checked": False, "memory_load_coverage_checked": False,
+              "pointer_history_checked": False, "source_program_checked": False, "deployable": False}
+    try:
+        entry = check_fixed_nested_entry(payload, declaration_id, outer_loop_id, inner_loop_id,
+                    leaf_contract, integer_types, history_call_protocols, work_call_protocols,
+                    max_ast_nodes=max_ast_nodes)
+        report["entry_check"] = entry
+        report["assumptions"] = list(entry["assumptions"])
+        if entry["status"] != "checked" or not entry["value_preserved_to_nested_entry"]:
+            raise ValueError("fresh_fixed_nested_entry_not_checked")
+        root = payload["ast"]
+        index, parents, pending, used = {}, {}, [(root, None)], 0
+        while pending:
+            node, parent = pending.pop()
+            used += 1
+            if used > max_ast_nodes:
+                raise ValueError("semantic_ast_node_budget_exceeded")
+            if not isinstance(node, dict):
+                raise ValueError("malformed_ast")
+            if isinstance(node.get("id"), str):
+                index.setdefault(node["id"], []).append(node)
+                parents.setdefault(node["id"], []).append(parent)
+            for key in ("inner", "array_filler"):
+                children = node.get(key, [])
+                if not isinstance(children, list):
+                    raise ValueError("malformed_children")
+                pending.extend((child, node) for child in children)
+
+        def unique(identifier):
+            candidates = index.get(identifier, [])
+            if len(candidates) != 1:
+                raise ValueError("identity_not_unique")
+            return candidates[0]
+
+        def spelling(node):
+            info = node.get("type", {})
+            if "typeAliasDeclId" in info and "desugaredQualType" not in info:
+                raise ValueError("unresolved_type_alias")
+            return info.get("desugaredQualType", info.get("qualType"))
+
+        def plain_slots(node):
+            # None of the selected scalar expressions or structural nodes has
+            # an array filler. Do not ignore synthetic hidden semantic children.
+            if node.get("array_filler", []) != []:
+                raise ValueError("unexpected_semantic_slot")
+
+        def unwrap(node):
+            while node.get("kind") in {"ParenExpr", "ImplicitCastExpr"}:
+                plain_slots(node)
+                if (spelling(node) not in {"int", "const int"} or len(node.get("inner", [])) != 1 or
+                        (node["kind"] == "ImplicitCastExpr" and node.get("castKind") not in {"LValueToRValue", "NoOp"})):
+                    raise ValueError("unsupported_integer_wrapper")
+                node = node["inner"][0]
+            return node
+
+        def reference(node):
+            node = unwrap(node)
+            ref = node.get("referencedDecl", {})
+            if (node.get("kind") != "DeclRefExpr" or spelling(node) not in {"int", "const int"} or
+                    node.get("valueCategory") != "lvalue" or node.get("inner", []) != [] or
+                    node.get("array_filler", []) != [] or unique(node.get("id")) is not node):
+                raise ValueError("expected_plain_integer_reference")
+            decl = unique(ref.get("id"))
+            if (decl.get("kind") not in {"VarDecl", "ParmVarDecl"} or decl.get("type") != ref.get("type") or
+                    decl.get("kind") != ref.get("kind") or spelling(decl) not in {"int", "const int"}):
+                raise ValueError("reference_declaration_mismatch")
+            return decl
+
+        loop = unique(inner_loop_id)
+        body = loop["inner"][-1]
+        plain_slots(loop)
+        plain_slots(body)
+        if body.get("kind") != "CompoundStmt" or len(body.get("inner", [])) != 2:
+            raise ValueError("expected_index_declaration_then_guard")
+        statement, guard = body["inner"]
+        plain_slots(statement)
+        plain_slots(guard)
+        if statement.get("kind") != "DeclStmt" or len(statement.get("inner", [])) != 1:
+            raise ValueError("index_not_single_declaration")
+        label = statement["inner"][0]
+        plain_slots(label)
+        if (label.get("kind") != "VarDecl" or unique(label.get("id")) is not label or spelling(label) != "int" or
+                label.get("storageClass") not in (None, "auto", "register") or label.get("tls") is not None or
+                label.get("thread_local") is not None or len(label.get("inner", [])) != 1):
+            raise ValueError("index_not_automatic_initialized_int")
+        if (guard.get("kind") != "IfStmt" or
+                any(guard.get(k) for k in ("hasInit", "hasVar", "isConstexpr", "isConsteval")) or
+                len(guard.get("inner", [])) != (3 if guard.get("hasElse") else 2)):
+            raise ValueError("unsupported_column_guard")
+        condition = guard["inner"][0]
+        plain_slots(condition)
+        if (condition.get("kind") != "BinaryOperator" or condition.get("opcode") != "<" or
+                spelling(condition) != "bool" or len(condition.get("inner", [])) != 2 or
+                reference(condition["inner"][0])["id"] != label["id"]):
+            raise ValueError("guard_not_label_less_than_count")
+        bound = reference(condition["inner"][1])
+        plain_slots(bound)
+        function = unique(entry["history_check"]["selection"]["function_id"])
+        if bound not in function.get("inner", []):
+            parent, = parents[inner_loop_id]
+            statements = parent.get("inner", []) if parent.get("kind") == "CompoundStmt" else []
+            position = next(i for i, n in enumerate(statements) if n is loop)
+            if (position == 0 or statements[position - 1].get("kind") != "DeclStmt" or
+                    statements[position - 1].get("inner") != [bound] or
+                    bound.get("storageClass") not in (None, "auto", "register") or
+                    bound.get("tls") is not None or bound.get("thread_local") is not None or
+                    len(bound.get("inner", [])) != 1):
+                raise ValueError("count_not_parameter_or_immediate_outer_local")
+        if bound["id"] in {label["id"], declaration_id}:
+            raise ValueError("count_role_alias")
+        fresh_calls = entry["call_effect_checks"]
+        for part in (loop["inner"][0], *loop["inner"][2:]):
+            _check_body(part, {bound["id"]},
+                        call_callback=lambda call: fresh_calls.get(call.get("id"), {}).get("status") == "checked")
+
+        nested, = [n["check"] for n in entry["nested_checks"] if n["loop_id"] == inner_loop_id]
+        recurrence = nested["recurrence"]
+        induction = recurrence["induction"]["declaration_id"]
+        count = nested["iterations"]
+        domain = entry["result_interval"]
+        width = domain["upper"] + 1
+        if (domain["lower"] != 0 or not 1 <= width <= 1024 or not 1 <= count <= 4096 or
+                recurrence["start"].get("value") != 0 or
+                recurrence["start"]["kind"] != "integer_literal" or recurrence["step"] != 1 or
+                bound["id"] == induction):
+            raise ValueError("unsupported_formal_lane_iteration_family")
+        bits = integer_types["int"]["bits"]
+        minimum, maximum = -(1 << (bits - 1)), (1 << (bits - 1)) - 1
+        domains = {declaration_id: (0, width - 1), induction: (0, count - 1)}
+
+        def affine(node, depth=0):
+            plain_slots(node)
+            if depth > 32 or spelling(node) not in {"int", "const int"}:
+                raise ValueError("unsupported_index_expression")
+            unique(node.get("id"))
+            children = node.get("inner", [])
+            if node.get("kind") in {"ParenExpr", "ImplicitCastExpr"}:
+                bare = unwrap(node)
+                return affine(bare, depth + 1)
+            kind = node.get("kind")
+            if kind == "DeclRefExpr":
+                decl = reference(node)
+                identifier = decl["id"]
+                if identifier in domains:
+                    return ({identifier: 1}, 0, domains[identifier])
+                checked = constant(root, identifier, bits)
+                report["constant_checks"].append(checked)
+                if checked["status"] != "evaluated":
+                    raise ValueError("index_read_not_source_constant")
+                for source in checked["sources"]:
+                    unique(source["declaration_id"])
+                value = checked["value"]
+                return ({}, value, (value, value))
+            if kind == "IntegerLiteral" and not children:
+                value = int(node["value"], 0)
+                if not minimum <= value <= maximum:
+                    raise ValueError("literal_outside_signed_abi")
+                return ({}, value, (value, value))
+            if kind != "BinaryOperator" or node.get("opcode") not in {"+", "-", "*"} or len(children) != 2:
+                raise ValueError("index_expression_not_affine_subset")
+            a, b = (affine(c, depth + 1) for c in children)
+            op = node["opcode"]
+            if op == "*":
+                if a[0] and b[0]:
+                    raise ValueError("nonlinear_index")
+                variable, factor = (a, b) if a[0] else (b, a)
+                coefficients = {k: v * factor[1] for k, v in variable[0].items()}
+                offset = a[1] * b[1]
+                values = [x * y for x in a[2] for y in b[2]]
+                interval = min(values), max(values)
+            else:
+                sign = 1 if op == "+" else -1
+                coefficients = {k: a[0].get(k, 0) + sign * b[0].get(k, 0) for k in a[0].keys() | b[0].keys()}
+                offset = a[1] + sign * b[1]
+                interval = ((a[2][0] + b[2][0], a[2][1] + b[2][1]) if sign == 1 else
+                            (a[2][0] - b[2][1], a[2][1] - b[2][0]))
+            if interval[0] < minimum or interval[1] > maximum:
+                raise ValueError("index_intermediate_signed_overflow")
+            return ({k: v for k, v in coefficients.items() if v}, offset, interval)
+
+        coefficients, offset, interval = affine(label["inner"][0])
+        if coefficients != {declaration_id: 1, induction: width} or offset != 0 or width * count > maximum:
+            raise ValueError("index_not_dense_lane_iteration_layout")
+        # Euclidean division gives the unique pair t=c%width, it=c//width.
+        # Restricting c<n for any n in [0,width*count] preserves exact prefix coverage.
+        report["assumptions"].extend([
+            "formal family contains exactly one instance of every coordinate in the entry interval",
+            "every formal instance executes the complete recovered inner header sequence normally",
+            "for each fixed reached outer iteration (one logical row), all formal lane instances share one n with 0 <= n <= capacity",
+            "all inner-loop indirect stores, including through prior or retained aliases, do not alias the selected count storage",
+            "stores and external calls respect the recorded no-alias and effect premises"])
+        if _hash(root) != entry["input_sha256"]["history"]["root"]:
+            raise ValueError("input_changed_between_checks")
+        report.update(status="checked", formal_label_coverage_checked=True,
+            label_declaration_id=label["id"], guard_id=guard["id"], count_declaration_id=bound["id"],
+            induction_declaration_id=induction, width=width, iterations=count, capacity=width * count,
+            supported_count_domain={"lower": 0, "upper": width * count}, label_interval=list(interval),
+            relation={"coordinate_coefficient": 1, "induction_coefficient": width, "offset": 0},
+            count_storage_preserved="conditional_on_recorded_no_alias_and_call_effect_premises",
+            input_sha256={"entry": entry["input_sha256"], "root": _hash(root),
+                          "label_initializer": _hash(label["inner"][0]), "guard": _hash(condition)})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError, StopIteration, BodyUnknown) as error:
+        report["reason"] = str(error)
+    return report
+
+
 def check(columns, starts, stride, *, int_bits=32):
     report = {
         "schema_version": "column-coverage/v1", "status": "unknown", "reason": None,
