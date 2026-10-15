@@ -10,6 +10,7 @@ from wavebridge.verification.getter_returns import _hash
 from wavebridge.verification.launch_binding import check_guarded_configuration_copy
 from wavebridge.verification.block_configuration import check_guarded_local_coordinate
 from wavebridge.verification.block_configuration import check_guarded_coordinate_to_statement
+from wavebridge.verification.block_configuration import check_guarded_coordinate_to_fixed_nested_entry
 
 
 @unittest.skipUnless(query_fixture.PLUGIN, "requires compiler-matched native plugin")
@@ -86,6 +87,67 @@ class GuardedConfigurationTests(unittest.TestCase):
         self.assertEqual(report["checks"]["history"]["selection"]["function_id"], selection["kernel_declaration_id"])
         self.assertTrue(any("alias" in a for a in report["assumptions"]))
         self.assertEqual(before, self.payload)
+
+    def nested_arguments(self, kernel="nested_coordinate"):
+        args, guard, selection, protocol, local, outer = self.history_arguments(kernel)
+        function = next(n for n in _walk(self.payload["ast"]) if n.get("id") == selection["kernel_declaration_id"])
+        loops = [n for n in _walk(function) if n.get("kind") == "ForStmt"]
+        return [self.payload, selection, *args, protocol, local, outer, loops[1]["id"], {}, {}], guard
+
+    def test_fresh_configuration_domain_reaches_each_fixed_inner_entry(self):
+        args, guard = self.nested_arguments()
+        report = check_guarded_coordinate_to_fixed_nested_entry(*args, query_guard_id=guard)
+        self.assertEqual(report["status"], "checked", report["reason"])
+        self.assertTrue(report["fresh_configuration_composed"])
+        self.assertEqual(report["result_interval"], {"lower": 0, "upper": 31})
+        self.assertEqual(report["checks"]["entry"]["outer_header_iterations"], 2)
+        for flag in ("coordinate_API_verified", "runtime_configuration_verified", "reachability_proved",
+                     "thread_participation_checked", "hardware_limits_checked",
+                     "external_call_effects_verified", "body_completion_proved", "column_coverage_checked",
+                     "source_program_checked", "deployable"):
+            self.assertFalse(report[flag])
+
+    def test_fresh_nested_connection_rejects_write_after_inner(self):
+        args, guard = self.nested_arguments("nested_changed_coordinate")
+        report = check_guarded_coordinate_to_fixed_nested_entry(*args, query_guard_id=guard)
+        self.assertEqual(report["checks"]["coordinate"]["status"], "checked")
+        self.assertEqual(report["status"], "unknown")
+        self.assertFalse(report["value_preserved_to_nested_entry"])
+
+    def test_fresh_nested_connection_rejects_wrong_loop_and_unused_protocol(self):
+        args, guard = self.nested_arguments()
+        args[-3] = self.nested_arguments("nested_changed_coordinate")[0][-3]
+        self.assertEqual(check_guarded_coordinate_to_fixed_nested_entry(*args, query_guard_id=guard)["status"], "unknown")
+        args, guard = self.nested_arguments()
+        args[-1] = {"unused": {"status": "checked"}}
+        self.assertEqual(check_guarded_coordinate_to_fixed_nested_entry(*args, query_guard_id=guard)["status"], "unknown")
+
+    def test_fresh_nested_native_call_keeps_external_effect_labels(self):
+        args, guard = self.nested_arguments("nested_call_coordinate")
+        self.assertEqual(check_guarded_coordinate_to_fixed_nested_entry(*args, query_guard_id=guard)["status"], "unknown")
+        nodes = list(_walk(self.payload["ast"]))
+        function = next(n for n in nodes if n.get("id") == self.ids["nested_call_coordinate"])
+        outer = next(n for n in _walk(function) if n.get("kind") == "ForStmt")
+        call, = [n for n in _walk(outer) if n.get("kind") == "CallExpr"]
+        wrapper = next(n for n in nodes if n.get("id") == self.ids["fill_value"])
+        leaf, = [n for n in _walk(wrapper) if n.get("kind") == "CallExpr"]
+        args[-1] = {call["id"]: {"schema_version": "builtin-leaf-effect-assumption/v1",
+            "native_envelope_sha256": _hash(self.payload), "call_expression_id": leaf["id"],
+            "callee_declaration_id": self.ids["__builtin_huge_valf"],
+            "builtin_no_memory_write_assumed": True, "valid_call_and_normal_return_assumed": True,
+            "evidence_reference": "synthetic unverified test assumption"}}
+        report = check_guarded_coordinate_to_fixed_nested_entry(*args, query_guard_id=guard)
+        entry = report["checks"].get("entry", {})
+        self.assertEqual(report["status"], "checked", (report["reason"], entry.get("reason"),
+            {k: (v.get("reason"), v.get("target_check", {}).get("reason"),
+                 v.get("target_check", {}).get("leaf_check", {}).get("reason"),
+                 v.get("target_check", {}).get("leaf_check", {}).get("structure_check", {}).get("reason"))
+             for k, v in entry.get("call_effect_checks", {}).items()}))
+        self.assertFalse(report["external_call_effects_verified"])
+        self.assertEqual(entry["recurrence_check"]["body_preserves_induction"],
+                         "established_under_external_call_effect_assumptions")
+        self.assertEqual(entry["nested_checks"][0]["check"]["enclosing_storage_preserved"],
+                         "established_under_external_call_effect_assumptions")
 
     def test_coordinate_history_rejects_prefix_writes_and_reference_alias(self):
         for kernel in ("changed_coordinate", "aliased_coordinate", "opaque_coordinate"):

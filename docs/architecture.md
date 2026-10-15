@@ -72,7 +72,11 @@ position。它连接条件字段区间与实际语法槽，而非由调用者任
 不要求或插入break分区；内层前后兄弟语句均检查，以覆盖后续外层迭代。
 调用交给已有完整callsite/wrapper效果检查，协议缺失或未消费均不接受。
 结论是每次实际到达内层入口时的条件域，不是列覆盖、body完成或部署证明；
-与配置自动派生域的fresh组合尚需单独接通。
+`block_configuration.check_guarded_coordinate_to_fixed_nested_entry`将其与本次
+fresh配置派生的leaf域组合；不接受手填区间或旧成功报告，精确核对
+root/native envelope、kernel owner、局部与两个循环ID、ABI和协议输入哈希。
+该组合不消除外部API、provenance、调用效果、noalias和正常完成等前提，
+线程参与、硬件限制与列覆盖仍分别未建立。
 
 `device_evidence.collect`将该配对、行/线程/列整数关系与共享索引/容量检查放在
 同一次调用中；共享支路只接收本次fresh生成的thread报告，根/ABI/选点哈希

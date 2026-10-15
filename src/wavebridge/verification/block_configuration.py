@@ -181,6 +181,82 @@ def check_guarded_coordinate_to_statement(payload, selection, initializer_id, as
     return result
 
 
+def check_guarded_coordinate_to_fixed_nested_entry(
+        payload, selection, initializer_id, assignment_id, quotient_id, object_id,
+        power_selection, conversion_contract, output_contract, integer_types, axis_protocol,
+        coordinate_initializer_id, outer_loop_id, inner_loop_id, history_call_protocols,
+        work_call_protocols, *, query_guard_id, instantiated_function_id=None,
+        max_ast_nodes=1_000_000):
+    """Fresh configuration-derived domain at every reached fixed inner entry.
+
+    No old successful report or caller-supplied coordinate interval is accepted.
+    This remains conditional on all configuration/API, effect and no-alias
+    premises, and does not establish column coverage or source correctness.
+    """
+    from wavebridge.verification.initializer_domain import check_fixed_nested_entry
+    from wavebridge.verification.getter_returns import _hash
+
+    result = {"schema_version": "guarded-coordinate-to-fixed-nested-entry/v1",
+              "status": "unknown", "reason": None, "checks": {}, "assumptions": [],
+              "scope": "configuration_derived_coordinate_at_each_reached_fixed_inner_entry",
+              "result_interval": None, "value_preserved_to_nested_entry": False,
+              "fresh_configuration_composed": False, "coordinate_API_verified": False,
+              "runtime_configuration_verified": False, "external_call_effects_verified": False,
+              "thread_participation_checked": False, "hardware_limits_checked": False,
+              "reachability_proved": False, "body_completion_proved": False,
+              "column_coverage_checked": False, "source_program_checked": False, "deployable": False}
+    try:
+        if (any(not isinstance(i, str) or not i for i in (outer_loop_id, inner_loop_id)) or
+                inner_loop_id == outer_loop_id or any(
+                    not isinstance(p, dict) or len(p) > 64 or
+                    any(not isinstance(k, str) or not k or not isinstance(v, dict) for k, v in p.items())
+                    for p in (history_call_protocols, work_call_protocols))):
+            raise ValueError("invalid_fixed_nested_selection_or_protocols")
+        coordinate = check_guarded_local_coordinate(
+            payload, selection, initializer_id, assignment_id, quotient_id, object_id,
+            power_selection, conversion_contract, output_contract, integer_types, axis_protocol,
+            coordinate_initializer_id, query_guard_id=query_guard_id,
+            instantiated_function_id=instantiated_function_id, max_ast_nodes=max_ast_nodes)
+        result["checks"]["coordinate"] = coordinate
+        result["assumptions"] = list(coordinate["assumptions"])
+        if coordinate["status"] != "checked" or coordinate["coordinate_initialization_domain_checked"] is not True:
+            raise ValueError("fresh_configuration_coordinate_not_checked")
+        leaf = coordinate["derived_leaf_domain"]
+        entry = check_fixed_nested_entry(payload, coordinate_initializer_id, outer_loop_id, inner_loop_id,
+                    leaf, integer_types, history_call_protocols, work_call_protocols, max_ast_nodes=max_ast_nodes)
+        result["checks"]["entry"] = entry
+        result["assumptions"] = list(dict.fromkeys(result["assumptions"] + entry["assumptions"]))
+        if entry["status"] != "checked" or entry["value_preserved_to_nested_entry"] is not True:
+            raise ValueError("fresh_fixed_nested_entry_not_checked")
+        history = entry["history_check"]
+        expected_history = {"root": coordinate["input_sha256"]["root"],
+            "declaration_id": _hash(coordinate_initializer_id), "leaf_contract": _hash(leaf),
+            "integer_types": _hash(integer_types), "statement_id": _hash(outer_loop_id),
+            "call_protocols": _hash(history_call_protocols), "static_branches": _hash(False)}
+        if (history["selection"]["function_id"] != coordinate["kernel_declaration_id"] or
+                entry["declaration_id"] != coordinate_initializer_id or entry["outer_loop_id"] != outer_loop_id or
+                entry["inner_loop_id"] != inner_loop_id or entry["result_interval"] != coordinate["result_interval"] or
+                history["input_sha256"] != expected_history or entry["input_sha256"]["history"] != expected_history or
+                entry["input_sha256"]["header"] != {"root": expected_history["root"],
+                    "loop_id": _hash(outer_loop_id), "int_bits": _hash(integer_types["int"]["bits"])} or
+                entry["input_sha256"]["inner_loop_id"] != _hash(inner_loop_id) or
+                entry["input_sha256"]["native_envelope"] != _hash(payload) or
+                entry["input_sha256"]["work_call_protocols"] != _hash(work_call_protocols) or
+                entry["input_sha256"]["budget"] != _hash(max_ast_nodes)):
+            raise ValueError("fresh_configuration_nested_binding_mismatch")
+        result.update(status="checked", fresh_configuration_composed=True,
+                      value_preserved_to_nested_entry=True, result_interval=entry["result_interval"],
+                      kernel_declaration_id=coordinate["kernel_declaration_id"], launch_id=coordinate["launch_id"],
+                      coordinate_initializer_id=coordinate_initializer_id,
+                      outer_loop_id=outer_loop_id, inner_loop_id=inner_loop_id,
+                      input_sha256={"root": expected_history["root"],
+                                    "coordinate_inputs": _hash(coordinate["input_sha256"]),
+                                    "entry_inputs": _hash(entry["input_sha256"])})
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError) as error:
+        result["reason"] = str(error)
+    return result
+
+
 def check(chain, site, integer_types, axis_binding):
     result = {"schema_version": "block-configuration-check/v1", "status": "unknown",
               "reason": None, "field_check": None, "dimensions": None,

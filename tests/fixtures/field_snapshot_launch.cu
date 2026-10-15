@@ -26,6 +26,22 @@ COORDINATE_TARGET(aliased_coordinate, using Ref = int&; Ref alias = local_coordi
 COORDINATE_TARGET(body_changed_coordinate, , ++local_coordinate_x;)
 COORDINATE_TARGET(opaque_coordinate, int later = local_y();, )
 
+__attribute__((device)) float fill_value() { return __builtin_huge_valf(); }
+#define NESTED_COORDINATE_TARGET(NAME, AFTER, VALUE) \
+__attribute__((global)) void NAME(int value) { \
+    int local_coordinate_y = local_y(); \
+    int local_coordinate_x = local_x(); \
+    constexpr int batches = 2, iterations = 4; \
+    float output[2][4]; \
+    for (int i=0; i<batches; ++i) { \
+        for (int j=0; j<iterations; ++j) output[i][j] = VALUE; \
+        AFTER \
+    } \
+}
+NESTED_COORDINATE_TARGET(nested_coordinate, , local_coordinate_x + j*32)
+NESTED_COORDINATE_TARGET(nested_changed_coordinate, ++local_coordinate_x;, local_coordinate_x + j*32)
+NESTED_COORDINATE_TARGET(nested_call_coordinate, , fill_value())
+
 GUARDED_CONSTRUCT(configured_guard, GuardDimsAlias, , composed_width,
     guarded_target<<<GuardDimsAlias(1, 1, 1), composed_dims>>>(input);)
 GUARDED_CONSTRUCT(configured_grid, GuardDimsAlias, , composed_width,
@@ -41,3 +57,9 @@ GUARDED_CONSTRUCT(configured_body_changed_coordinate, GuardDimsAlias, , composed
     body_changed_coordinate<<<GuardDimsAlias(1, 1, 1), composed_dims>>>(input);)
 GUARDED_CONSTRUCT(configured_opaque_coordinate, GuardDimsAlias, , composed_width,
     opaque_coordinate<<<GuardDimsAlias(1, 1, 1), composed_dims>>>(input);)
+GUARDED_CONSTRUCT(configured_nested_coordinate, GuardDimsAlias, , composed_width,
+    nested_coordinate<<<GuardDimsAlias(1, 1, 1), composed_dims>>>(input);)
+GUARDED_CONSTRUCT(configured_nested_changed_coordinate, GuardDimsAlias, , composed_width,
+    nested_changed_coordinate<<<GuardDimsAlias(1, 1, 1), composed_dims>>>(input);)
+GUARDED_CONSTRUCT(configured_nested_call_coordinate, GuardDimsAlias, , composed_width,
+    nested_call_coordinate<<<GuardDimsAlias(1, 1, 1), composed_dims>>>(input);)
